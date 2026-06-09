@@ -61,3 +61,28 @@ def test_replace_one(win):
     fb.replace_one()        # seleciona a 1a
     fb.replace_one()        # substitui e vai para a proxima
     assert "dog" in ed.text()
+
+
+def test_replace_all_regex_largura_zero_nao_trava(win):
+    # REGRESSAO (pentest v0.6): "a*" produz matches de LARGURA ZERO; o loop
+    # original (findFirst/replace/findNext) nunca avançava -> congelava a GUI.
+    ed = win.current_editor()
+    ed.setText("aaa bbb aaa")
+    fb = win.find_bar
+    fb.cb_regex.setChecked(True)
+    fb.find_edit.setText("a*")
+    fb.replace_edit.setText("X")
+    n = fb.replace_all()                 # tem que RETORNAR (sem loop infinito)
+    assert n < 500_000                   # respeitou o backstop _REPLACE_CAP
+    assert "aaa" not in ed.text()        # os runs reais de 'a' foram trocados
+
+
+def test_replace_all_ancora_nao_trava(win):
+    # "^" casa largura zero no inicio de cada linha -> tambem nao pode travar.
+    ed = win.current_editor()
+    ed.setText("l1\nl2\nl3")
+    fb = win.find_bar
+    fb.cb_regex.setChecked(True)
+    fb.find_edit.setText("^")
+    fb.replace_edit.setText("> ")
+    fb.replace_all()                     # so precisa RETORNAR, sem hang

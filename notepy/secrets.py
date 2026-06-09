@@ -158,6 +158,13 @@ def _is_placeholder(snippet: str) -> bool:
     longa de caractere, valor-exemplo conhecido, ou frase 'your-...-here'). Um
     segredo REAL que por azar contenha 'dummy' como substring NAO e descartado
     (isso era um bypass: bastava embutir 'dummy'/'xxxx' no segredo para escondê-lo).
+
+    NOTA (limitacao conhecida, pentest v0.6): um token que contenha 8+ caracteres
+    IDENTICOS seguidos (ex.: 'AKIAXXXXXXXXXXXXXXXX', 'ghp_aaaaaaaa…') e tratado
+    como placeholder via _REPEAT_RE. Isso veta corretamente exemplos/placeholders
+    (o caso comum); o custo e nao detectar um token REAL degenerado com essa forma
+    — estatisticamente improvavel num token aleatorio real. Trade-off a favor da
+    precisao (manter este filtro evita falsos-positivos em 'XXXX...'/'${...}').
     """
     s = snippet.strip()
     low = s.lower()

@@ -18,6 +18,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+# Backstop absoluto: nenhuma operacao de "Substituir tudo" pode iterar mais que
+# isto. Defende contra qualquer loop inesperado congelar a GUI permanentemente.
+_REPLACE_CAP = 500_000
+
 
 class FindBar(QWidget):
     def __init__(self, get_editor, parent=None):
@@ -137,14 +141,31 @@ class FindBar(QWidget):
         if ed is None or ed.isReadOnly() or not expr:
             return 0
         re_, cs, wo = self._opts()
+        rep = self.replace_edit.text()
         count = 0
         ed.beginUndoAction()
-        found = ed.findFirst(expr, re_, cs, wo, False, True, 0, 0)   # do inicio, sem wrap
-        while found:
-            ed.replace(self.replace_edit.text())
-            count += 1
-            found = ed.findNext()
-        ed.endUndoAction()
+        try:
+            found = ed.findFirst(expr, re_, cs, wo, False, True, 0, 0)   # do inicio, sem wrap
+            last_zero = -1
+            while found and count < _REPLACE_CAP:
+                if not ed.hasSelectedText():
+                    # Match de LARGURA ZERO (regex como "a*", "^", "\\b"): nao ha
+                    # texto a substituir e o cursor nao avança sozinho -> o loop
+                    # original travava a GUI pra sempre. Pulamos 1 posicao e
+                    # seguimos; se nem o salto avançar, abortamos.
+                    line, idx = ed.getCursorPosition()
+                    pos = ed.positionFromLineIndex(line, idx)
+                    if pos == last_zero or pos >= ed.length():
+                        break
+                    last_zero = pos
+                    nl, ni = ed.lineIndexFromPosition(pos + 1)
+                    found = ed.findFirst(expr, re_, cs, wo, False, True, nl, ni)
+                    continue
+                ed.replace(rep)
+                count += 1
+                found = ed.findNext()
+        finally:
+            ed.endUndoAction()
         self._active = False
         self.status.setText(f"{count} substituida(s)")
         return count

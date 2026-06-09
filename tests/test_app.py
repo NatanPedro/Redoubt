@@ -79,6 +79,32 @@ def test_clipboard_redacao(win):
     assert "AKIA3FK7XQ2MNP8RTUVW" in cb.text()          # redacao OFF -> real
 
 
+def test_clipboard_redacao_protege_com_aba_nao_redigida_em_foco(win):
+    # REGRESSAO (pentest v0.6): a aba DONA da copia nao e sempre a focada. Com 2+
+    # abas, copiar de uma aba redigida vazava se a aba em foco nao estivesse redigida.
+    a = win.current_editor()
+    a.setText('token = AKIA3FK7XQ2MNP8RTUVW')
+    a.set_redaction(True); a._rescan_secrets()
+    win.new_file()                                      # aba B (sem redacao) vira a focada
+    assert win.current_editor() is not a
+    cb = QApplication.clipboard()
+    cb.setText("AKIA3FK7XQ2MNP8RTUVW"); win._sanitize_clipboard()
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in cb.text()      # mascarado pela aba A redigida
+
+
+def test_lock_esvazia_undo(win):
+    # REGRESSAO (pentest v0.6): sem esvaziar o undo, Ctrl+Z reconstruia o texto-claro
+    # anterior ao travamento.
+    ed = win.current_editor()
+    ed.setText("api_key = AKIA3FK7XQ2MNP8RTUVW")
+    ed.insertAt(" x", 0, 0)                             # cria historico de undo
+    assert ed.SendScintilla(ed.SCI_CANUNDO)
+    ed.is_vault = True
+    ed._vault_password = "master12"
+    assert ed.lock()
+    assert not ed.SendScintilla(ed.SCI_CANUNDO)         # lock zerou o undo
+
+
 # --------------------------------------------------------------------------- #
 # Burn note
 # --------------------------------------------------------------------------- #
@@ -125,3 +151,27 @@ def test_encoding_detection(tmp_path):
     bom = tmp_path / "b.txt"
     bom.write_bytes(b"\xef\xbb\xbf" + "com bom".encode("utf-8"))
     assert read_text(str(bom))[1] == "utf-8-sig"          # so com BOM real
+
+
+def test_read_text_utf16_decodifica_e_e_varrivel(tmp_path):
+    # REGRESSAO (pentest v0.6): UTF-16 caia em cp1252/latin-1 (mojibake) e o
+    # segredo ficava invisivel -> selo "LIMPO" falso.
+    from notepy import secrets
+    f = tmp_path / "u16.txt"
+    f.write_bytes("senha = AKIA3FK7XQ2MNP8RTUVW".encode("utf-16"))
+    text, enc = read_text(str(f))
+    assert enc == "utf-16"
+    assert "AKIA3FK7XQ2MNP8RTUVW" in text                  # decodificado certo
+    assert len(secrets.scan(text)) >= 1                    # e a Sentinela enxerga
+
+
+def test_read_text_nul_nao_trunca(tmp_path):
+    # REGRESSAO (pentest v0.6): SCI_SETTEXT trunca no \x00 -> conteudo (e segredo)
+    # apos o NUL sumia e o selo mostrava "LIMPO".
+    from notepy import secrets
+    f = tmp_path / "nul.txt"
+    f.write_bytes(b"antes\x00AKIA3FK7XQ2MNP8RTUVW\x00depois")
+    text, _ = read_text(str(f))
+    assert "\x00" not in text                              # NUL neutralizado (vira ␀)
+    assert "AKIA3FK7XQ2MNP8RTUVW" in text                  # conteudo apos o NUL preservado
+    assert len(secrets.scan(text)) >= 1

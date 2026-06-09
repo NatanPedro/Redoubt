@@ -157,6 +157,64 @@ travar→destravar (preserva conteúdo) — todos OK após as mudanças.
 
 ---
 
+## 6. Pentest v0.6 (Localizar/Substituir, Preferências, regressão geral)
+
+**Data:** 2026-06-09 · **Versão testada:** v0.6.0 → corrigida em **v0.6.1**
+**Método:** workflow de 4 frentes (Find/Replace · Preferências/config · regressão da
+segurança · robustez/crash) → ~20 ataques gerados, os de impacto **reproduzidos na
+máquina** (headless `offscreen` + watchdog para detectar travamentos). Foco na
+**superfície nova** desde o último pentest + regressão de tudo que já existia.
+
+### Placar
+
+| | Qtd | Resultado |
+|---|---|---|
+| 🔴 CRÍTICO | 1 | **CORRIGIDO** (loop infinito no `Substituir tudo`) |
+| 🟠 ALTO | 1 | **CORRIGIDO** (redação do clipboard furada com 2+ abas) |
+| 🟡 MÉDIO | 3 | **CORRIGIDOS** (UTF-16 mojibake · NUL trunca · undo do `lock`) |
+| 🔵 BAIXO / endurecimento | 1+ | clamp da config aplicado; demais documentados |
+| 🟢 Resistiram (regressão) | muitos | cofre, scrypt-bomb, read-only, :goto, ReDoS, apply_prefs |
+
+### Corrigidos
+- 🔴 **`replace_all` com regex de match-vazio (`a*`, `^`, `\b`) → loop infinito**
+  que congelava a GUI e crescia o documento até OOM. Confirmado por watchdog (o
+  processo não retornava). **Corrigido:** detecção de match de largura zero (avança
+  o cursor) + teto `_REPLACE_CAP`. Engine de regex do Scintilla é **não-backtracking**,
+  então o ReDoS clássico `(a+)+$` **não** trava — o risco real era só o match-vazio.
+- 🟠 **Redação do clipboard contornável com múltiplas abas:** `_sanitize_clipboard`
+  decidia pela **aba focada**, não pela dona da cópia — copiar de uma aba redigida
+  com outra (sem redação) em foco vazava o segredo inteiro. **Corrigido:** mascara
+  com os segredos de **todas** as abas em redação.
+- 🟡 **UTF-16/UTF-32 → "LIMPO" falso:** a cadeia `utf-8→cp1252→latin-1` nunca falha,
+  então arquivos UTF-16 viravam mojibake e o segredo sumia. **Corrigido:** `read_text`
+  detecta os BOMs UTF-16/UTF-32 (UTF-32 **antes** do UTF-16) e decodifica certo.
+- 🟡 **NUL embutido → conteúdo truncado:** `SCI_SETTEXT` para no `\x00`, escondendo
+  tudo (e qualquer credencial) depois dele com selo "LIMPO". **Corrigido:** `read_text`
+  troca `\x00` por `␀` (símbolo visível) — nada é truncado e a Sentinela varre o todo.
+- 🟡 **`lock()` não esvaziava o undo:** `Ctrl+Z` reconstruía o texto-claro anterior
+  ao travamento. **Corrigido:** `lock()`/`unlock()` chamam `SCI_EMPTYUNDOBUFFER`.
+- 🔵 **Config sem clamp:** `tab_width=-5`/`auto_lock_min=-10` gravados direto no
+  registro escapavam para o editor/timer. **Corrigido:** `config.get()` clampa os
+  inteiros para faixas sãs.
+
+### Resistiram (regressão confirmada)
+Cofre selar/lock/unlock (preserva byte-a-byte, esquece a senha), AES-GCM rejeita
+senha errada/adulteração, **scrypt-bomb** barrada (valida KDF), **read-only** bloqueia
+Find/Replace no cofre travado, `apply_prefs` **preserva** indicadores/redação/mapa de
+exposição (não some segredo ao trocar preferência), `auto_lock_min=0` desativa sem
+quebrar, `:goto` clampado, 60+ abas estável, surrogate solitário sem crash, linha
+gigante → selo "NÃO VERIFICADO" (sem DoS).
+
+### Limitações honestas (confirmadas, não são bugs)
+- Token com **8+ caracteres idênticos seguidos** é tratado como placeholder
+  (`_REPEAT_RE`): veta corretamente `AKIAXXXX…`/`${...}`; não detectar um token real
+  *degenerado* com essa forma é estatisticamente desprezível — trade-off pró-precisão.
+- Cópia parcial de segredo com **< 6 caracteres** não é mascarada (piso de projeto).
+- `replace_all` em documento gigante roda síncrono (sem barra de progresso/cancelar);
+  o `_REPLACE_CAP` limita o runaway, mas a operação ainda bloqueia a thread enquanto roda.
+
+---
+
 *Reproduzir: o agente `redoubt-tester` (em `.claude/agents/`) refaz estas baterias.
 Testes do scanner rodam isolados (`from notepy import secrets`); GUI com
 `QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8`.*

@@ -20,12 +20,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_NAME, APP_TAGLINE, APP_VERSION, theme, vault
+from . import APP_NAME, APP_TAGLINE, APP_VERSION, config, theme, vault
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 from .findbar import FindBar
+from .preferences import PreferencesDialog
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
-AUTO_LOCK_MS = 5 * 60 * 1000      # trava cofres apos 5 min de inatividade
 
 
 class CommandBar(QLineEdit):
@@ -92,12 +92,11 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_statusbar()
 
-        # Auto-lock: trava cofres apos inatividade (reiniciado a cada atividade).
+        # Auto-lock: trava cofres apos inatividade (intervalo vem das preferencias).
         self._idle_timer = QTimer(self)
         self._idle_timer.setSingleShot(True)
-        self._idle_timer.setInterval(AUTO_LOCK_MS)
         self._idle_timer.timeout.connect(self._auto_lock_vaults)
-        self._idle_timer.start()
+        self._apply_autolock()
 
         # Redacao do clipboard na CAMADA do clipboard: pega TODOS os caminhos de
         # copia (inclusive os nativos do Scintilla — SCI_COPY/COPYRANGE/retangular/
@@ -110,20 +109,28 @@ class MainWindow(QMainWindow):
     def _sanitize_clipboard(self) -> None:
         if self._clip_guard:
             return
-        editor = self.current_editor()
-        if editor is None or not editor.is_redacted():
+        # Reune os segredos de TODAS as abas em redacao — nao so a focada. Senao
+        # uma copia feita numa aba redigida VAZA se outra aba (sem redacao) estiver
+        # em foco no instante do dataChanged (bug do pentest: a aba dona da copia
+        # nao e necessariamente a current_editor()).
+        snippets: list[str] = []
+        for i in range(self.tabs.count()):
+            ed = self.tabs.widget(i)
+            if isinstance(ed, CodeEditor) and ed.is_redacted():
+                snippets.extend(m.snippet for m in ed.secret_matches() if m.snippet)
+        if not snippets:
             return
         cb = QApplication.clipboard()
         txt = cb.text()
         if not txt:
             return
         new = txt
-        for m in editor.secret_matches():          # mascara segredos INTEIROS presentes
-            if m.snippet and m.snippet in new:
-                new = new.replace(m.snippet, "●" * len(m.snippet))
+        for snip in snippets:                       # mascara segredos INTEIROS presentes
+            if snip in new:
+                new = new.replace(snip, "●" * len(snip))
         if new == txt:                              # nada inteiro? checa copia PARCIAL
             stripped = txt.strip()
-            if len(stripped) >= 6 and any(stripped in m.snippet for m in editor.secret_matches() if m.snippet):
+            if len(stripped) >= 6 and any(stripped in snip for snip in snippets):
                 new = "●" * len(txt)
         if new != txt:
             self._clip_guard = True
@@ -131,7 +138,16 @@ class MainWindow(QMainWindow):
             self._clip_guard = False
 
     def _touch_idle(self) -> None:
-        self._idle_timer.start()      # reinicia a contagem de inatividade
+        if config.get("auto_lock_min") > 0:      # so reinicia se auto-lock ativo
+            self._idle_timer.start()
+
+    def _apply_autolock(self) -> None:
+        minutes = config.get("auto_lock_min")
+        if minutes > 0:
+            self._idle_timer.setInterval(minutes * 60 * 1000)
+            self._idle_timer.start()
+        else:
+            self._idle_timer.stop()
 
     # ================================================================== #
     # Interface
@@ -214,6 +230,10 @@ class MainWindow(QMainWindow):
                                 SP.SP_FileDialogDetailedView,
                                 QKeySequence("Ctrl+P"),
                                 lambda: self.cmd_bar.setFocus())
+        self.act_settings = make("&Preferencias…",
+                                 SP.SP_FileDialogInfoView,
+                                 QKeySequence("Ctrl+,"),
+                                 self.open_preferences)
 
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
@@ -242,6 +262,8 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         for act in (self.act_find, self.act_replace, self.act_find_next, self.act_find_prev):
             m_edit.addAction(act)
+        m_edit.addSeparator()
+        m_edit.addAction(self.act_settings)
 
         m_sec = bar.addMenu("&Seguranca")
         m_sec.addAction(self.act_redact)
@@ -613,6 +635,15 @@ class MainWindow(QMainWindow):
                 cb.clear()                                      # tira o segredo do clipboard
         except Exception:
             pass
+
+    def open_preferences(self) -> None:
+        dlg = PreferencesDialog(self)
+        if dlg.exec():
+            dlg.save()
+            self._apply_autolock()
+            for i in range(self.tabs.count()):
+                self.tabs.widget(i).apply_prefs()
+            self.statusBar().showMessage("Preferencias aplicadas.", 3000)
 
     # ================================================================== #
     # Acoes de arquivo

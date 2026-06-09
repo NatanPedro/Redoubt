@@ -151,6 +151,7 @@ em `dist\` (ignorado pelo git).
 | Localizar / Substituir | `Ctrl+F` / `Ctrl+H` |
 | Próxima / anterior ocorrência | `F3` / `Shift+F3` |
 | Barra de comando `:` | `Ctrl+P` |
+| Preferências | `Ctrl+,` |
 | **Modo Redação** (tarjar segredos) | `Ctrl+Shift+R` |
 | **Ir ao próximo segredo** | `F8` |
 | **Relatório de segredos** | `Ctrl+Shift+E` |
@@ -192,6 +193,9 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + hash + encoding
     ├── secrets.py           Sentinela de Segredos — scan(text) (testável sem Qt)
     ├── vault.py             Cofre .rdbt — AES-256-GCM + scrypt (testável sem Qt)
+    ├── findbar.py           Barra Localizar/Substituir (regex, F3)
+    ├── preferences.py       Diálogo de preferências (Ctrl+,)
+    ├── config.py            QSettings: auto-lock, fonte, tab (testável sem Qt)
     ├── lexers.py            Mapa extensão → lexer (~50 linguagens)
     └── theme.py             Paleta carbono, QSS e repintura dos lexers
 ```

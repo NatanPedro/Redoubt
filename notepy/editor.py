@@ -13,9 +13,10 @@ import hashlib
 from PyQt6.Qsci import QsciScintilla
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics
+from PyQt6.QtGui import QColor, QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
+from . import config
 from . import secrets as secrets_mod
 from . import theme
 from . import vault
@@ -49,14 +50,30 @@ def read_text(path: str) -> tuple[str, str]:
     """
     with open(path, "rb") as fh:
         raw = fh.read()
+
+    def _finish(text: str, enc: str) -> tuple[str, str]:
+        # O Scintilla usa SCI_SETTEXT (terminado em NUL): um \x00 embutido TRUNCA
+        # o conteudo no carregamento -> tudo apos o NUL some e o selo mostraria
+        # "LIMPO" para um arquivo que pode conter credencial depois do \x00.
+        # Trocamos por um simbolo visivel (␀) para nada ser truncado e a Sentinela
+        # varrer o arquivo inteiro. (Sinaliza binario; nao e p/ editar binario aqui.)
+        if "\x00" in text:
+            text = text.replace("\x00", "␀")
+        return text, enc
+
     if raw.startswith(b"\xef\xbb\xbf"):
-        return raw.decode("utf-8-sig"), "utf-8-sig"
+        return _finish(raw.decode("utf-8-sig"), "utf-8-sig")
+    # UTF-32 ANTES de UTF-16: o BOM UTF-32 LE (FF FE 00 00) comeca com o BOM UTF-16 LE.
+    if raw.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+        return _finish(raw.decode("utf-32"), "utf-32")
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return _finish(raw.decode("utf-16"), "utf-16")
     for enc in _ENCODINGS:
         try:
-            return raw.decode(enc), enc
+            return _finish(raw.decode(enc), enc)
         except UnicodeDecodeError:
             continue
-    return raw.decode("latin-1", errors="replace"), "latin-1"
+    return _finish(raw.decode("latin-1", errors="replace"), "latin-1")
 
 
 def detect_eol(text: str) -> "QsciScintilla.EolMode":
@@ -68,27 +85,6 @@ def detect_eol(text: str) -> "QsciScintilla.EolMode":
     if "\r" in text:
         return QsciScintilla.EolMode.EolMac
     return QsciScintilla.EolMode.EolWindows
-
-
-def _monospace_font(size: int = 11) -> QFont:
-    """Escolhe a primeira fonte monoespacada REALMENTE instalada.
-
-    'JetBrains Mono' raramente esta instalada e o Qt a substituia por uma fonte
-    PROPORCIONAL (Tahoma!), quebrando o alinhamento do codigo e das tarjas de
-    redacao. Aqui so escolhemos algo que exista de fato e seja fixed-pitch.
-    """
-    available = set(QFontDatabase.families())
-    for cand in ("JetBrains Mono", "Cascadia Mono", "Cascadia Code",
-                 "Consolas", "DejaVu Sans Mono", "Courier New"):
-        if cand in available:
-            font = QFont(cand, size)
-            font.setFixedPitch(True)
-            font.setStyleHint(QFont.StyleHint.Monospace)
-            return font
-    font = QFont("", size)            # ultimo recurso: deixa o Qt achar uma mono
-    font.setStyleHint(QFont.StyleHint.Monospace)
-    font.setFixedPitch(True)
-    return font
 
 
 class CodeEditor(QsciScintilla):
@@ -139,7 +135,7 @@ class CodeEditor(QsciScintilla):
     # Aparencia / comportamento
     # ------------------------------------------------------------------ #
     def _setup_appearance(self) -> None:
-        font = _monospace_font(11)
+        font = config.editor_font()
         self.setFont(font)
         self.setUtf8(True)
 
@@ -152,10 +148,11 @@ class CodeEditor(QsciScintilla):
         self.setFolding(QsciScintilla.FoldStyle.BoxedTreeFoldStyle)
         self.setCaretLineVisible(True)
 
+        tw = config.get("tab_width")
         self.setAutoIndent(True)
         self.setIndentationsUseTabs(False)
-        self.setIndentationWidth(4)
-        self.setTabWidth(4)
+        self.setIndentationWidth(tw)
+        self.setTabWidth(tw)
         self.setTabIndents(True)
         self.setBackspaceUnindents(True)
         self.setIndentationGuides(True)
@@ -202,6 +199,21 @@ class CodeEditor(QsciScintilla):
         theme.apply_editor_theme(self)       # setLexer reseta margens/caret
         self.setMarginsFont(self.font())
         self.language_name = lexer.language() if lexer is not None else "Texto"
+
+    def apply_prefs(self) -> None:
+        """Re-aplica fonte e largura de tab das preferencias (em tempo real)."""
+        font = config.editor_font()
+        self.setFont(font)
+        fm = QFontMetrics(font)
+        self.setMarginWidth(0, fm.horizontalAdvance("0000") + 10)
+        tw = config.get("tab_width")
+        self.setIndentationWidth(tw)
+        self.setTabWidth(tw)
+        lexer = self.lexer()
+        if lexer is not None:
+            lexer.setFont(font)
+        theme.apply_editor_theme(self)
+        self.setMarginsFont(font)
 
     # ------------------------------------------------------------------ #
     # Sentinela de Segredos
@@ -345,6 +357,9 @@ class CodeEditor(QsciScintilla):
         self.setReadOnly(False)
         self.setText("🔒 Cofre travado por inatividade.\n\n"
                      "Seguranca ▸ Destravar cofre (Ctrl+Shift+U) e informe a senha-mestra.")
+        # Esvazia o undo: sem isso o Ctrl+Z reconstroi o texto-claro anterior ao
+        # travamento (versoes que o usuario achava removidas ficavam recuperaveis).
+        self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)
         self.setReadOnly(True)
         self.setModified(False)
         return True
@@ -356,6 +371,7 @@ class CodeEditor(QsciScintilla):
         text = vault.decrypt(self._locked_blob, password)   # WrongPassword se a senha falhar
         self.setReadOnly(False)
         self.setText(text)
+        self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)   # nao deixa desfazer p/ o banner travado
         self.setModified(self._locked_was_modified)
         self._vault_password = password
         self._locked = False

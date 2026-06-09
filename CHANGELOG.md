@@ -17,9 +17,58 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 Ideias futuras (sem data):
-- Configuracoes (fonte, tamanho de tab, tempo de auto-lock).
 - Restaurar sessao (reabrir abas ao iniciar).
-- CI (GitHub Actions rodando o pytest a cada push).
+- Tema claro (e troca de tema nas preferencias).
+- Hook git local (pytest no pre-push).
+
+---
+
+## [0.6.1] - 2026-06-09 — Endurecimento (pentest v0.6)
+
+Pentest adversarial focado na superficie nova (Localizar/Substituir, Preferências/
+config) + regressão de toda a segurança. 8 achados; 5 corrigidos, 3 documentados
+como limitação. Suíte: **67 → 75 testes**.
+
+### Fixed (Segurança)
+- **CRÍTICA — `Substituir tudo` com regex de match-vazio (`a*`, `^`, `\b`) entrava
+  em loop infinito e congelava a GUI** (DoS auto-infligido, perda de trabalho não
+  salvo). `findbar.replace_all` agora detecta match de largura zero e avança, com
+  teto absoluto de iterações (`_REPLACE_CAP`) como cinto-e-suspensório.
+- **ALTA — Redação do clipboard furava com 2+ abas**: `_sanitize_clipboard` olhava
+  só a aba focada, não a aba dona da cópia. Agora mascara usando os segredos de
+  **todas** as abas em redação.
+- **MÉDIA — UTF-16/UTF-32 caíam em mojibake** (cp1252/latin-1 nunca falham), o
+  segredo ficava invisível e o selo mostrava "LIMPO" falso. `read_text` agora
+  detecta os BOMs UTF-16/UTF-32 e decodifica certo.
+- **MÉDIA — NUL embutido truncava o conteúdo** (`SCI_SETTEXT` para no `\x00`):
+  tudo após o NUL sumia e o selo mostrava "LIMPO". `read_text` neutraliza o NUL
+  (→ `␀`), então nada é truncado e a Sentinela varre o arquivo inteiro.
+- **MÉDIA — `lock()` não esvaziava o undo**: `Ctrl+Z` reconstruía o texto-claro
+  anterior ao travamento. `lock()`/`unlock()` agora chamam `SCI_EMPTYUNDOBUFFER`.
+
+### Hardened (defesa em profundidade)
+- `config.get()` agora **clampa** os inteiros (`tab_width`, `font_size`,
+  `auto_lock_min`) — registro adulterado/corrompido não injeta mais valores
+  absurdos que o spinbox da tela já impede.
+
+### Notas / limitações documentadas (sem mudança de código)
+- Engine de regex do QScintilla é não-backtracking → **sem ReDoS clássico**.
+- Token com 8+ caracteres idênticos seguidos é tratado como placeholder
+  (`_REPEAT_RE`): veta corretamente `AKIAXXXX…`/`${...}`; o custo (não pegar um
+  token real degenerado) é estatisticamente desprezível — trade-off a favor da precisão.
+- Cópia parcial de segredo com < 6 caracteres não é mascarada (piso de projeto).
+
+---
+
+## [0.6.0] - 2026-06-09 — Preferências
+
+### Added
+- **Diálogo de Preferências** (`Ctrl+,`) — persiste via **QSettings**:
+  - **Auto-lock do cofre** configurável (antes fixo em 5 min; `0` = desativado).
+  - **Fonte** (monoespacadas instaladas), **tamanho da fonte** e **largura do tab**.
+  - Aplicado em tempo real a todas as abas; novos editores ja nascem com a preferencia.
+  - Modulos novos: `notepy/config.py` (wrapper de QSettings, testavel sem Qt) e
+    `notepy/preferences.py` (o dialogo). +6 testes → **67 testes**.
 
 ---
 
