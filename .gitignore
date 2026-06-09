@@ -1,0 +1,74 @@
+# ============================================================
+# Redoubt — .gitignore   (projeto Python · PyQt6 / QScintilla)
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Ambientes virtuais ---
+# Neste projeto NAO usamos venv (a pasta vive no OneDrive; venv = inferno de sync).
+# Mas se alguem clonar pra fora do OneDrive e criar um, ignoramos.
+.venv/
+venv/
+env/
+ENV/
+
+# --- Node (build do .docx formal, normalmente em %TEMP%, mas defensivo) ---
+node_modules/
+
+# --- IDE / editores ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Sistema operacional (Windows / OneDrive / macOS) ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# --- Artefatos gerados ---
+# O .docx formal e versionado (e entregavel). PDFs gerados localmente, nao.
+*.pdf
+
+# ============================================================
+# SEGREDOS — higiene (combina com a identidade do Redoubt)
+# Nunca commitar credenciais/PII reais.
+# ============================================================
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+service-account*.json
+
+# Cofre / burn notes do proprio Redoubt (fase 3) — conteudo sensivel local.
+*.rdbt
+
+# ------------------------------------------------------------
+# NEGACOES — garantem que FONTE e DEMO entrem no git de propósito.
+# (notepy/secrets.py e o modulo da Sentinela — NAO e um arquivo de segredos!)
+# ------------------------------------------------------------
+docs/HISTORICO.md
+!notepy/secrets.py
+!exemplo_segredos.py
+!.env.example
+.claude/

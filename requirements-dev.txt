@@ -1,0 +1,4 @@
+# Ferramentas de desenvolvimento/build (NAO sao necessarias para rodar o app).
+pytest>=7             # suite de testes (pytest)
+pyinstaller>=6        # empacota o .exe (build.bat)
+pillow>=10            # gera o icone (tools/gen_icon.py)

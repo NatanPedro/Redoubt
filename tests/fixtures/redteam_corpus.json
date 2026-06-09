@@ -1,0 +1,482 @@
+[
+ {
+  "text": "TWILIO_ACCOUNT_SID=ACa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+  "shouldDetect": true,
+  "kindHint": "Twilio Account SID",
+  "note": "SID Twilio real (AC + 32 hex). VERIFICADO escapando: nao tem regex proprio e a entropia (~4.15) fica abaixo do limite 4.3, entao o net de alta entropia nao dispara. Falso-negativo confirmado."
+ },
+ {
+  "text": "twilio_auth = SKf0e1d2c3b4a5968778695a4b3c2d1e0f",
+  "shouldDetect": true,
+  "kindHint": "Twilio API Key SID (SK)",
+  "note": "Chave Twilio SK + 32 hex, 34 chars. Entropia ~4.15 < 4.3 -> escapa o net. A atribuicao nao tem aspas, entao o padrao 'Segredo em atribuicao' tambem nao pega. Duplo escape verificado."
+ },
+ {
+  "text": "STRIPE_SECRET=sk_test_4eC39HqLyjarjt",
+  "shouldDetect": true,
+  "kindHint": "Stripe secret key (test)",
+  "note": "Stripe usa prefixo sk_ (underscore), nao sk- (hifen), entao o padrao OpenAI nao casa. Token curto/entropia ~3.88 escapa o net. VERIFICADO nao detectado."
+ },
+ {
+  "text": "stripe.api_key = 'sk_live_51HCk2pLfAkLmNoPqRsTuVwXyZaBcDeFgHiJ'",
+  "shouldDetect": true,
+  "kindHint": "Stripe secret key (live)",
+  "note": "Chave Stripe LIVE entre aspas: vai cair em 'Segredo em atribuicao' por causa de api_key='...'. DEVE detectar — caso de controle pra confirmar que aspas + keyword ainda funciona, contraste com a versao sem aspas."
+ },
+ {
+  "text": "rk_live_51HCk2pLfAkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRs",
+  "shouldDetect": true,
+  "kindHint": "Stripe restricted key (rk_live)",
+  "note": "Chave restrita Stripe rk_live_, sem keyword reconhecida e sem aspas. Tem 52 chars, alfa+digito -> SO sera pego se a entropia bater >=4.3. Stressa exatamente o net de entropia como unica linha de defesa."
+ },
+ {
+  "text": "SENDGRID_KEY=SG.aBc1.dEf2",
+  "shouldDetect": true,
+  "kindHint": "SendGrid API key (truncada/curta)",
+  "note": "Formato SendGrid SG.<id>.<secret> mas curto. Sem regex proprio; chunk muito curto pra acionar o net (>=32). VERIFICADO escapando (entropia 0 nos tokens curtos)."
+ },
+ {
+  "text": "Authorization: Basic YWRtaW46c3VwZXJzZWNyZXQxMjM=",
+  "shouldDetect": true,
+  "kindHint": "HTTP Basic auth (user:senha em base64)",
+  "note": "Credencial user:senha em base64 no header. O bloco base64 tem 28 chars (<32) entao o net nao dispara mesmo com entropia 4.32. VERIFICADO nao detectado — vaza usuario e senha."
+ },
+ {
+  "text": "curl -H 'Authorization: Bearer eyJ0eXAiOiJKV1QifQ.eyJ1c2VyIjoiYWRtaW4ifQ'",
+  "shouldDetect": true,
+  "kindHint": "Bearer token JWT de 2 partes",
+  "note": "JWT 'unsecured' com apenas 2 segmentos (header.payload, sem assinatura). A regex JWT exige 3 partes separadas por ponto, entao um JWT de 2 partes escapa. Stressa a forma rigida do padrao JWT."
+ },
+ {
+  "text": "id_token=header.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl",
+  "shouldDetect": true,
+  "kindHint": "JWT com header alg:none (sem eyJ no inicio)",
+  "note": "JWT cujo primeiro segmento NAO comeca com eyJ (header customizado/ofuscado). A regex ancorada em \\beyJ nao casa. VERIFICADO nao detectado — JWT valido escapa so trocando o header."
+ },
+ {
+  "text": "AZURE_CLIENT_SECRET=Q~8aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0",
+  "shouldDetect": true,
+  "kindHint": "Azure AD client secret",
+  "note": "Client secret do Azure costuma ter ~ e poucos chars; sem aspas nao cai em atribuicao. Se tiver <32 chars ou entropia <4.3, escapa. Sem padrao Azure dedicado, fica refem do net generico."
+ },
+ {
+  "text": "\"private_key\": \"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0\\n-----END PRIVATE KEY-----\\n\"",
+  "shouldDetect": true,
+  "kindHint": "GCP service-account private_key (PEM inline em JSON)",
+  "note": "VERIFICADO detectado via padrao PEM (a string contem o literal -----BEGIN PRIVATE KEY-----, mesmo com \\n escapado). Caso de controle: confirma que PEM inline em JSON com newlines escapados AINDA dispara."
+ },
+ {
+  "text": "{\"private_key_id\": \"abc123def456abc123def456abc123def456abc1\", \"type\": \"service_account\"}",
+  "shouldDetect": true,
+  "kindHint": "GCP service-account private_key_id",
+  "note": "O private_key_id e um hex de 40 chars. O detector trata hex puro de 32/40/64 como hash md5/sha1/sha256 e EXCLUI explicitamente. VERIFICADO escapa — colisao deliberada com a regra anti-hash."
+ },
+ {
+  "text": "npm config set //registry.npmjs.org/:_authToken=npm_Ab12Cd34",
+  "shouldDetect": true,
+  "kindHint": "npm automation token (curto)",
+  "note": "Token npm com prefixo npm_ mas valor curto. Atribuicao com = mas SEM aspas -> nao cai em 'Segredo em atribuicao'. Curto demais (<32) pro net. Sem padrao npm dedicado. Escapa."
+ },
+ {
+  "text": "export DATABASE_PASSWORD=Pg!Sup3rS3cr3t2024",
+  "shouldDetect": true,
+  "kindHint": "senha em variavel de ambiente sem aspas",
+  "note": "Padrao .env classico: KEY=valor sem aspas. A regex 'Segredo em atribuicao' EXIGE aspas ['\\\"]. VERIFICADO escapa. Um dos vazamentos mais comuns em arquivos .env commitados."
+ },
+ {
+  "text": "password=Trocar123Agora",
+  "shouldDetect": true,
+  "kindHint": "senha em atribuicao sem aspas",
+  "note": "Limitacao conhecida explicita: senha sem aspas. Valor tem 15 chars (<32) entao o net nao salva. VERIFICADO nao detectado — a keyword 'password' esta la mas o formato sem aspas derrota a regex."
+ },
+ {
+  "text": "Meu CPF e 111.444.777-35 e moro em SP",
+  "shouldDetect": true,
+  "kindHint": "CPF valido mascarado (em prosa)",
+  "note": "CPF VALIDO com mascara dentro de frase. DEVE detectar (digitos verificadores batem). Caso de controle pra confirmar que CPF mascarado em texto livre ainda dispara apesar do contexto ao redor."
+ },
+ {
+  "text": "cpf do cliente: 11144477735",
+  "shouldDetect": true,
+  "kindHint": "CPF valido SEM mascara",
+  "note": "Mesmo CPF valido mas sem pontos/hifen. Limitacao conhecida: a regex CPF exige a mascara. VERIFICADO escapa — PII brasileira real vaza so removendo a formatacao."
+ },
+ {
+  "text": "ssh_key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc123XYZ user@host'",
+  "shouldDetect": false,
+  "kindHint": "benigno (chave SSH PUBLICA ed25519)",
+  "note": "ARMADILHA: ssh-ed25519 AAAA... e uma chave PUBLICA, nao sensivel. Uma ferramenta criteriosa NAO deve sinalizar. Porem cuidado: o blob base64 pode ter entropia >=4.3 e >=32 chars, gerando FALSO-POSITIVO. Testa o discernimento publico-vs-privado."
+ },
+ {
+  "text": "sha256 = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"",
+  "shouldDetect": false,
+  "kindHint": "benigno (hash SHA-256, 64 hex)",
+  "note": "Hash SHA-256 puro de 64 chars. O detector EXCLUI hex puro de 32/40/64 como hash. NAO deve detectar (e o comportamento correto). Caso de controle anti-falso-positivo — confirma a exclusao de hash."
+ },
+ {
+  "text": "uuid = '550e8400-e29b-41d4-a716-446655440000'",
+  "shouldDetect": false,
+  "kindHint": "benigno (UUID v4)",
+  "note": "ARMADILHA de falso-positivo: UUID tem 36 chars com letras+digitos. Esta numa atribuicao com aspas mas a keyword e 'uuid' (nao reconhecida). Entropia de UUID costuma ficar abaixo de 4.3, entao nao deve disparar — confirma que o detector nao tarja identificadores publicos."
+ },
+ {
+  "text": "AWS_ACCESS_KEY = \"AKIAXXXXXXXXXXXXXXXX\"",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Placeholder obvio so com X maiusculos. O regex \\bAKIA[0-9A-Z]{16}\\b casa X's e dispara 'Chave de acesso AWS' (verificado: FIRED). Detector nao distingue placeholder de chave real -> falso-positivo classico em docs/templates."
+ },
+ {
+  "text": "# Exemplo da doc oficial: use sua chave, ex.: AKIAIOSFODNN7EXAMPLE",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "A chave de exemplo canonica da AWS (literalmente contem 'EXAMPLE'). Casa o regex AWS e dispara (verificado: FIRED). Aparece em milhares de tutoriais; sinalizar gera barulho."
+ },
+ {
+  "text": "DATABASE_URL=redis://${REDIS_USER}:${REDIS_PASSWORD}@${REDIS_HOST}:6379/0",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Connection string TEMPLATE com placeholders ${...} nao substituidos. O regex de connection string aceita qualquer [^\\s'\"]+ em user/senha/host, entao ${REDIS_PASSWORD} conta como senha -> FIRED (verificado). Nenhuma credencial real presente."
+ },
+ {
+  "text": "csrf_token = \"a1b2c3d4-0000-1111-2222-333344445555\"",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Atribuicao com keyword 'token' + valor entre aspas >=6 chars -> dispara 'Segredo em atribuicao' (verificado: FIRED). Mas o valor e um UUID de CSRF/sessao, nao um segredo de credencial. O detector so olha a keyword, nao a natureza do valor."
+ },
+ {
+  "text": "The secret = \"hidden\" door was behind the bookshelf, she whispered.",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Prosa em ingles: 'secret =' seguido de palavra entre aspas >=6 chars dispara a regra de atribuicao (verificado: FIRED). Texto narrativo comum em markdown/comentarios -> falso-positivo."
+ },
+ {
+  "text": "next_page_token: \"abc123def456\"",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Token de PAGINACAO de API (cursor opaco, nao sensivel). Keyword 'token' + ':' + valor citado >=6 chars dispara a regra de atribuicao (verificado: FIRED). Cursors de paginacao sao publicos e descartaveis."
+ },
+ {
+  "text": "<img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg==\">",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Data URI de imagem PNG 1x1 inline. O blob base64 tem >=32 chars, alfa+digito e entropia >=4.3 -> dispara 'Possivel segredo (alta entropia)' (verificado: FIRED). Icones/imagens embutidas sao ruido enorme."
+ },
+ {
+  "text": "<link integrity=\"sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo\">",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Subresource Integrity (SRI) hash de CDN. O detector exenta hex puro 32/40/64, mas SRI e base64 (nao hex) -> o token base64 apos 'sha384-' tem entropia >=4.3 e FIRED (verificado). Hash publico de integridade, nao segredo."
+ },
+ {
+  "text": "RUN docker pull app@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Digest SHA-256 de imagem Docker (64 hex). Hex puro tem entropia maxima de 4.0 (<4.3) E esta na lista de excecao 32/40/64 -> NAO dispara (verificado: nao fired). Incluido como controle: o detector acerta aqui, mas e o tipo de string que parece segredo."
+ },
+ {
+  "text": "const sessionId = '550e8400-e29b-41d4-a716-446655440000';",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "UUID v4. Tem hifens e o regex de token de alta entropia aceita '-', mas o UUID (so hex+hifen) fica abaixo de 4.3 -> NAO dispara (verificado: nao fired). Controle: confirma que UUID puro nao gera ruido, util para fixar a fronteira."
+ },
+ {
+  "text": "Reverting to commit da39a3ee5e6b4b0d3255bfef95601890afd80709 to fix the regression",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Git commit SHA-1 (40 hex). Hex puro <4.3 de entropia e na excecao de 40 chars -> NAO dispara (verificado). Controle de fronteira: SHAs de git sao onipresentes em mensagens/changelogs."
+ },
+ {
+  "text": "background: linear-gradient(90deg, #FF5733AA 0%, #33C1FFBB 50%, #C70039FF 100%);",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Cores hex CSS com alfa (8 digitos cada). Cada token <32 chars e hex puro -> nao dispara. Controle: estilos CSS parecem hashes mas sao curtos demais; valida que o limite de 32 chars filtra cor."
+ },
+ {
+  "text": "encoded = atob('TG9yZW1JcHN1bURvbG9yU2l0QW1ldENvbnNlY3RldHVyMTIzNDU2Nzg5MA==')",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Base64 de texto Lorem ipsum ('LoremIpsumDolorSitAmetConsectetur123...'). Mistura alfa+digito, >=32 chars, entropia >=4.3 -> FIRED como alta entropia (verificado em variantes). Conteudo totalmente benigno codificado em base64 -> falso-positivo."
+ },
+ {
+  "text": "var t=function(a,b,c){return a.b1c2d3e4f5g6h7i8j9k0l1m2n3o4p5q6r7s8t9u0v1w2x3y4z5+c};",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "JS minificado: identificadores longos sem espacos com alfa+digito atingem >=32 chars e entropia >=4.3 -> FIRED (verificado). Codigo minificado/uglified e fonte massiva de falsos-positivos de entropia."
+ },
+ {
+  "text": "the SK_channel and BK_channel proteins; see also sk-2024-research-notes-draft",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Texto cientifico/slug. 'sk-2024-research-notes-draft' parece prefixo OpenAI, mas o regex sk- exige [A-Za-z0-9]{20,} continuo (hifens quebram) -> NAO dispara (verificado: nao fired). Controle de fronteira do padrao sk-."
+ },
+ {
+  "text": "-----BEGIN PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAKj34...\n-----END PUBLIC KEY-----",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Chave PUBLICA (nao sensivel). O regex PEM exige 'PRIVATE KEY' no header, entao 'PUBLIC KEY' NAO casa (verificado: nao fired). Controle: chaves publicas sao seguras de expor; confirma que o detector nao as marca."
+ },
+ {
+  "text": "api_key = \"your-api-key-here\"",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Placeholder de instrucao/scaffold. Keyword 'api_key' + valor citado de 16 chars dispara a regra de atribuicao (verificado: FIRED). Texto literal 'your-api-key-here' e claramente nao-segredo; ruido em READMEs e arquivos .env.example."
+ },
+ {
+  "text": "google_maps_key = AIzaSyDUMMY_KEY_FOR_DOCUMENTATION_EXAMPLE_0",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Placeholder com prefixo AIza mas corpo com 'DUMMY/EXAMPLE'. Mesmo que o regex AIza exija 35 chars exatos e este nao bata, o token longo dispara pela via de entropia (verificado: FIRED como alta entropia). Exemplo de doc -> falso-positivo."
+ },
+ {
+  "text": "invoice_id=ORD-2024-INV-0000182736-PAID-BRL-998877665544332211",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "ID de pedido/fatura legivel e nao-secreto. Tem >=32 chars, alfa+digito; dependendo dos simbolos a entropia pode cruzar 4.3 e disparar 'alta entropia'. IDs de negocio longos sao confundidos com tokens -> falso-positivo de entropia."
+ },
+ {
+  "text": "ETag: \"33a64df551425fcc55e4d42a148795d9f25f89d4\"",
+  "shouldDetect": false,
+  "kindHint": "benigno",
+  "note": "Cabecalho HTTP ETag (hash de conteudo, 40 hex). Hex puro <4.3 e na excecao de 40 -> NAO dispara (verificado para SHA-1). Controle: ETags parecem credenciais mas o detector os filtra corretamente; util para checar regressao na excecao de hash."
+ },
+ {
+  "text": "cpf_cliente = \"11144477735\"",
+  "shouldDetect": true,
+  "kindHint": "CPF valido sem mascara (so digitos)",
+  "note": "CPF valido (mesmos digitos do exemplo 111.444.777-35) mas SEM pontos/traco. O regex do detector exige mascara (\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}); 11 digitos crus nao batem. O fallback de entropia exige >=32 chars, entao 11 digitos passam batido. Blind spot classico: analista criterioso marca CPF valido independente de mascara."
+ },
+ {
+  "text": "Meu CPF e 529.982.247-25 para o cadastro.",
+  "shouldDetect": true,
+  "kindHint": "CPF valido com mascara",
+  "note": "CPF valido (digitos verificadores corretos) com mascara, em prosa. Caso positivo de controle: o detector DEVE pegar e _valid_cpf retorna true. Confirma que o caminho feliz funciona."
+ },
+ {
+  "text": "documento: 111.444.777-30",
+  "shouldDetect": false,
+  "kindHint": "CPF com formato valido mas digito verificador errado",
+  "note": "Formato perfeito de CPF mas DV invalido (correto seria -35). O regex casa, mas _valid_cpf rejeita. Testa se o detector confia so no formato (falso positivo) ou valida DV. Analista nao marca: nao e CPF real."
+ },
+ {
+  "text": "placeholder = \"111.111.111-11\"",
+  "shouldDetect": false,
+  "kindHint": "sequencia repetida (CPF invalido)",
+  "note": "Todos digitos iguais: _valid_cpf retorna false por len(set(d))==1. Sequencia comum de placeholder/teste, nunca um CPF real. Analista nao marca. Bom caso anti-falso-positivo."
+ },
+ {
+  "text": "default_cpf = \"000.000.000-00\"",
+  "shouldDetect": false,
+  "kindHint": "sequencia de zeros (CPF invalido)",
+  "note": "Zeros: passa pelo regex de mascara mas e rejeitado por len(set)==1. Note que matematicamente os DVs de 00000000000 'fecham' em 0, mas a guarda de digitos iguais barra. Placeholder, nao marcar."
+ },
+ {
+  "text": "cnpj = \"11222333000181\"",
+  "shouldDetect": true,
+  "kindHint": "CNPJ valido sem mascara (so digitos)",
+  "note": "CNPJ valido (mesmo do exemplo 11.222.333/0001-81) sem pontos/barra/traco. Regex exige mascara \\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}; 14 digitos crus escapam. Entropia tambem nao pega (so digitos -> _looks_secretish exige alpha+digito). Blind spot: analista marca CNPJ valido cru."
+ },
+ {
+  "text": "fornecedor: 04.252.011/0001-10",
+  "shouldDetect": true,
+  "kindHint": "CNPJ valido com mascara",
+  "note": "CNPJ valido com mascara completa. Positivo de controle: regex casa e _valid_cnpj retorna true. Garante que o caminho feliz de CNPJ esta coberto."
+ },
+ {
+  "text": "id_nota = \"11.222.333/0001-99\"",
+  "shouldDetect": false,
+  "kindHint": "CNPJ com formato valido mas DV errado",
+  "note": "Mascara perfeita de CNPJ mas DV incorreto (correto seria -81). Regex casa, _valid_cnpj rejeita. Testa validacao de DV de CNPJ; analista nao marca pois nao e documento real."
+ },
+ {
+  "text": "telefone = \"(11) 94455-6677\"",
+  "shouldDetect": false,
+  "kindHint": "telefone celular (parece numero mas nao e CPF)",
+  "note": "Numero brasileiro de celular com DDD. Tem 11 digitos como CPF mas formato/semantica diferentes; o regex de CPF (que exige mascara de pontos) nao casa, e corretamente nada dispara. Edge case de 'numero que parece documento'. Nao marcar."
+ },
+ {
+  "text": "valor_contrato = 1.234.567,89",
+  "shouldDetect": false,
+  "kindHint": "valor monetario com separador de milhar",
+  "note": "Numero financeiro pt-BR com pontos de milhar e virgula decimal. Visualmente proximo de CPF mascarado, mas o agrupamento (1.234.567,89) nao casa \\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}. Anti-falso-positivo: nao marcar."
+ },
+ {
+  "text": "vencimento = \"19.05.2024\"",
+  "shouldDetect": false,
+  "kindHint": "data com pontos (nao e CPF)",
+  "note": "Data dd.mm.aaaa usando pontos como separador. Poderia confundir um regex ingenuo de 'numeros com pontos', mas nao tem o shape de CPF nem DV. Analista nao marca. Estressa separadores ambiguos."
+ },
+ {
+  "text": "card = \"4111 1111 1111 1111\"",
+  "shouldDetect": true,
+  "kindHint": "cartao de credito Visa, Luhn valido (com espacos)",
+  "note": "Numero de cartao de teste classico, Luhn valido, agrupado em 4x4 com espacos. O detector NAO tem regex de cartao; entropia exige token contiguo >=32 chars [A-Za-z0-9...], mas espacos quebram em blocos de 4 -> nada dispara. Blind spot importante: analista marca cartao com Luhn valido."
+ },
+ {
+  "text": "cc = \"5555555555554444\"",
+  "shouldDetect": true,
+  "kindHint": "cartao Mastercard 16 digitos, Luhn valido (sem separador)",
+  "note": "PAN de teste Mastercard, 16 digitos contiguos, Luhn valido. Sem regex de cartao no detector; tem 16 chars (< limiar 32 da entropia) e e so digitos (_looks_secretish exige alpha+digito) -> escapa duplamente. Analista marca PAN valido."
+ },
+ {
+  "text": "numero = \"4111 1111 1111 1112\"",
+  "shouldDetect": false,
+  "kindHint": "16 digitos com formato de cartao mas Luhn INVALIDO",
+  "note": "Mesmo prefixo Visa de teste mas ultimo digito quebra o Luhn (deveria terminar em 1). Pela regra do lens (cartao so se Luhn valido), NAO marcar. Testa se a ferramenta/analista valida Luhn em vez de so contar 16 digitos."
+ },
+ {
+  "text": "chave_pix = \"123e4567-e89b-12d3-a456-426614174000\"",
+  "shouldDetect": false,
+  "kindHint": "chave PIX aleatoria (UUID v1-like)",
+  "note": "Chave PIX no formato UUID (36 chars com hifens). Tem alpha+digito e >=32 chars contiguos? Nao: os hifens estao DENTRO da classe [..._-], entao _TOKEN_RE casa o UUID inteiro (36 chars). Entropia de um UUID hex+hifen costuma ficar ABAIXO de 4.3 (poucos simbolos distintos), entao tende a NAO disparar. Identificador publico de conta, nao segredo critico: analista nao marca. Caso ambiguo que estressa o limiar de entropia."
+ },
+ {
+  "text": "rg = \"12.345.678-9\"",
+  "shouldDetect": false,
+  "kindHint": "RG (formato parecido com CPF, mas e RG)",
+  "note": "RG paulista mascarado (2-3-3-1 digitos). Numero de dois pontos + traco lembra CPF mas tem so 9 digitos e shape diferente; regex de CPF (3.3.3-2) nao casa. PII de menor sensibilidade e sem validacao de DV no detector. Nao marcar pelo escopo descrito; util para ver se ha falso positivo por 'pontos e traco'."
+ },
+ {
+  "text": "lista_cpfs = [52998224725, 11144477735]",
+  "shouldDetect": true,
+  "kindHint": "dois CPFs validos como inteiros (sem mascara, sem aspas)",
+  "note": "Dois CPFs validos crus dentro de uma lista Python, como literais inteiros. Sem mascara o regex falha; tem 11 digitos (< 32 entropia) e so digitos -> escapa tudo. Vazamento real de PII em codigo. Analista marca ambos. Reforça o blind spot de 'digitos crus' em contexto de codigo."
+ },
+ {
+  "text": "transacao 529.982.247-25 confirmada em 2024",
+  "shouldDetect": true,
+  "kindHint": "CPF valido mascarado colado a outros numeros",
+  "note": "CPF valido com mascara em meio a texto e seguido de ano. Os \\b ao redor do regex de CPF e o ' 2024' separado garantem que casa so o CPF. Testa fronteiras de palavra e ruido numerico adjacente sem quebrar a deteccao legitima."
+ },
+ {
+  "text": "sku = \"AKIA1234567890ABCDEF\"",
+  "shouldDetect": false,
+  "kindHint": "string que parece AWS mas e SKU de produto (benigno)",
+  "note": "Comeca com AKIA + 16 alfanumericos -> casa EXATAMENTE o regex de AWS (\\bAKIA[0-9A-Z]{16}\\b), mesmo sendo um SKU ficticio. O detector vai marcar (falso positivo inerente ao formato AWS). Pelo lens de PII isto nao e segredo; porem dado o detector atual, e indistinguivel de chave AWS. Marco shouldDetect=false (semantica real: nao e credencial) para destacar a limitacao: o formato AWS sozinho engana o detector."
+ },
+ {
+  "text": " refnum 11.222.333/0001-81 e cnpj_str=\"11222333000181\"",
+  "shouldDetect": true,
+  "kindHint": "CNPJ valido aparece mascarado E cru na mesma linha",
+  "note": "Mesma linha tem o CNPJ valido mascarado (detector pega) e o mesmo CNPJ cru (detector NAO pega por falta de mascara). Analista deve marcar ambos os locais. Otimo para expor que a cobertura depende da mascara: deteccao parcial na pratica."
+ },
+ {
+  "text": "# .env.production\nDJANGO_SECRET_KEY = 'django-insecure-9v3@k2#1q!zx7mn4&8wp0er5ty6ui'",
+  "shouldDetect": true,
+  "kindHint": "Django SECRET_KEY (segredo em atribuicao)",
+  "note": "FALHA REAL confirmada: o nome da var e SECRET_KEY, mas o regex de atribuicao exige a palavra-chave colada no '=' (secret\\s*[:=]). Como apos 'secret' vem '_KEY', nao casa. A entropia do valor e 5.10 (>=4.3), mas os caracteres @#!& quebram o run [A-Za-z0-9+/=_-] em pedacos curtos (<32), entao o fallback de entropia tambem nao dispara. Segredo real escapa."
+ },
+ {
+  "text": "// appsettings.json\n\"ConnectionStrings\": {\n  \"Default\": \"mysql://root:p%40ss@10.0.0.5:3306/app\"\n}",
+  "shouldDetect": true,
+  "kindHint": "Connection string (mysql)",
+  "note": "Connection string dentro de JSON de config .NET. Senha URL-encoded (p%40ss = p@ss). O regex de connection string casa user:pass@host normalmente; testa se aspas/virgula do JSON ao redor nao atrapalham (o [^\\s'\\\"]+ para no ')."
+ },
+ {
+  "text": "# kubeconfig\nusers:\n- name: admin\n  user:\n    token: eyJhbGciOiJSUzI1NiIsImtpZCI6IkF4N2IifQ.eyJpc3MiOiJrOHMiLCJzdWIiOiJhZG1pbiJ9.QWxhZGRpbjpvcGVuc2VzYW1lX3NpZ25hdHVyZQ",
+  "shouldDetect": true,
+  "kindHint": "Token JWT (service account k8s)",
+  "note": "JWT de service account em kubeconfig YAML, indentado. 3 partes base64url validas. Testa que indentacao/contexto YAML nao quebra o \\b inicial nem o casamento."
+ },
+ {
+  "text": "x-auth-token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+  "shouldDetect": true,
+  "kindHint": "JWT de 2 partes (header.payload sem assinatura)",
+  "note": "FALHA REAL confirmada: JWT 'unsecured'/alg=none tem so 2 partes (sem assinatura). O regex exige exatamente 3 segmentos separados por ponto, entao NAO dispara — mas continua sendo um token de sessao real e sensivel."
+ },
+ {
+  "text": "//registry.npmjs.org/:_authToken=npm_aBcD1234EfGh5678IjKl9012MnOp3456QrSt",
+  "shouldDetect": true,
+  "kindHint": "npm _authToken (alta entropia, pega por sorte)",
+  "note": "Token de .npmrc. Nao ha padrao dedicado para npm_*; e pego SO pelo fallback de entropia. Confirmado que casa, MAS o snippet marcado inclui o lixo '_authToken=npm_...' inteiro porque tudo e [A-Za-z0-9_-] continuo — marcacao imprecisa do span (inclui chave, nao so valor)."
+ },
+ {
+  "text": "# terraform/main.tf\nprovider \"aws\" {\n  access_key = \"AKIAIOSFODNN7EXAMPLE\"\n  secret_key = \"wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\"\n}",
+  "shouldDetect": true,
+  "kindHint": "Chave AWS + secret_key em .tf",
+  "note": "Bloco terraform real. AKIA... casa pelo padrao AWS E pelo regex de atribuicao (dupla marcacao). O secret_key tem 39 chars [A-Za-z0-9], deve cair no regex de atribuicao (access[_-]?key/secret). Testa multiplos matches sobrepostos na mesma regiao."
+ },
+ {
+  "text": "# docker-compose.yml\nenvironment:\n  POSTGRES_PASSWORD: supersecret123",
+  "shouldDetect": true,
+  "kindHint": "senha YAML sem aspas",
+  "note": "FALHA REAL confirmada (limitacao documentada): YAML usa valor sem aspas. O regex de atribuicao exige ['\\\"]...['\\\"]. 'supersecret123' tem entropia baixa (poucos chars unicos) e <32 chars, entao entropia tambem nao salva. Senha real escapa."
+ },
+ {
+  "text": "# application.properties\nspring.datasource.password=h3llo_pg_2024",
+  "shouldDetect": false,
+  "kindHint": "benigno (escapa por limitacao, nao e high-entropy)",
+  "note": "Embora seja uma senha real conceitualmente, com as REGRAS ATUAIS o detector NAO deve marcar: a chave 'spring.datasource.password' termina em 'password' colado em '=', mas o valor 'h3llo_pg_2024' esta SEM aspas (regex exige aspas) e tem entropia ~3.4 (<4.3) e <32 chars. Caso de borda que mostra silenciosamente um falso-negativo — marcado benigno para refletir o comportamento atual da ferramenta."
+ },
+ {
+  "text": "client_id = \"550e8400-e29b-41d4-a716-446655440000\"",
+  "shouldDetect": false,
+  "kindHint": "benigno (UUID, nao e segredo)",
+  "note": "UUID v4 em atribuicao com aspas. NAO deveria disparar como segredo de alto valor, mas... CUIDADO: a chave 'client_id' NAO esta na lista (id != key), entao o regex de atribuicao nao pega; entropia do UUID e 3.39 (<4.3) e os hifens nao a elevam. Resultado correto: nao detecta. Bom controle de falso-positivo."
+ },
+ {
+  "text": "GIT_COMMIT=da39a3ee5e6b4b0d3255bfef95601890afd80709",
+  "shouldDetect": false,
+  "kindHint": "benigno (hash SHA-1 de 40 hex)",
+  "note": "Hash de commit em var de ambiente. 40 chars hex puros -> excluido explicitamente por _looks_secretish (len in 32/40/64 e fullmatch hex). Verifica que a heuristica anti-hash funciona e nao gera ruido em CI/CD configs."
+ },
+ {
+  "text": "ETAG: \"a1b2c3d4e5f60718293a4b5c6d7e8f9012345670a1b2c3d4e\"",
+  "shouldDetect": false,
+  "kindHint": "benigno (hex de 50 chars, mas entropia baixa)",
+  "note": "Hex de 50 chars (nao 32/40/64, entao NAO e excluido como hash) com letra+digito. Parece que deveria cair no fallback de entropia, MAS a entropia medida e 3.96 (<4.3) porque so usa 0-9a-f. Confirmado: nao detecta. Mostra que hex longo fora dos tamanhos de hash ainda escapa por entropia."
+ },
+ {
+  "text": "# clientes.csv exportado\nnome;cpf;cnpj\nMaria Silva;11144477735;11222333000181",
+  "shouldDetect": false,
+  "kindHint": "benigno pelas regras (CPF/CNPJ sem mascara)",
+  "note": "FALHA REAL / limitacao documentada: CPF 11144477735 e CNPJ 11222333000181 sao VALIDOS (digitos verificadores batem), mas estao SEM mascara (sem pontos/barra). O regex exige formato \\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}. Como dados de export real raramente tem mascara, PII vaza. Marcado benigno = comportamento atual da ferramenta (falso-negativo)."
+ },
+ {
+  "text": "cliente_cpf = \"111.444.777-35\"  # mascarado",
+  "shouldDetect": true,
+  "kindHint": "CPF mascarado e valido",
+  "note": "CPF com mascara e digitos verificadores corretos (111.444.777-35 e um CPF de teste valido). Deve disparar. Contrasta diretamente com o caso CSV sem mascara para evidenciar a fragilidade da regra de mascara."
+ },
+ {
+  "text": "empresa_cnpj = \"11.222.333/0001-99\"",
+  "shouldDetect": false,
+  "kindHint": "benigno (CNPJ mascarado mas checksum INVALIDO)",
+  "note": "CNPJ com mascara correta porem digitos verificadores ERRADOS (deveria terminar em 81, nao 99). _valid_cnpj rejeita. Bom: evita falso-positivo de numeros que so parecem CNPJ. Confirma que a validacao de checksum esta ativa."
+ },
+ {
+  "text": "<password>00000000000</password>",
+  "shouldDetect": false,
+  "kindHint": "benigno (CPF de digitos repetidos, rejeitado)",
+  "note": "Sequencia 00000000000 dentro de tag XML. Nem casa CPF (sem mascara e len(set)==1 rejeitado), nem atribuicao (sem aspas, tag XML). Placeholder comum em config de exemplo. Nao deve marcar — verifica que repeticoes nao geram ruido."
+ },
+ {
+  "text": "AUTHORIZATION = \"Basic YWRtaW46c3VwZXJzZWNyZXRwYXNzd29yZA==\"",
+  "shouldDetect": true,
+  "kindHint": "credencial Basic Auth base64 (alta entropia)",
+  "note": "Header Basic Auth: base64 de admin:supersecretpassword. A chave 'AUTHORIZATION' nao esta na lista de keywords, entao o regex de atribuicao NAO pega. Mas o valor base64 tem >=32 chars, letra+digito e entropia >=4.3, entao o fallback de entropia deve disparar. Testa o caminho de entropia em credencial real ofuscada por base64."
+ },
+ {
+  "text": "redis_url=redis://:@cache.local:6379/0",
+  "shouldDetect": false,
+  "kindHint": "benigno (connection string sem credenciais)",
+  "note": "Connection string redis sem usuario nem senha (':@' vazio). O regex exige [^\\s'\\\"]+:[^\\s'\\\"]+@ — precisa de pelo menos 1 char antes e depois do ':'. Aqui user e pass sao vazios, entao NAO casa. Correto: URL sem segredo nao deve marcar. Borda do regex de connection string."
+ },
+ {
+  "text": "PRIVATE_KEY=\"-----BEGIN EC PRIVATE KEY-----\\nMHcCAQEEI...\\n-----END EC PRIVATE KEY-----\"",
+  "shouldDetect": true,
+  "kindHint": "Chave privada PEM (EC) inline com \\n escapado",
+  "note": "Chave PEM colocada numa unica linha de .env com '\\n' literais (forma comum em CI secrets). O padrao PEM casa a linha '-----BEGIN EC PRIVATE KEY-----' independente do resto. Testa variante EC e contexto de uma-linha. Tambem a chave PRIVATE_KEY com aspas+valor longo pode acionar... 'key' esta na lista? api_key/access_key sim, mas 'PRIVATE_KEY' termina em key sem prefixo api/access — nao casa atribuicao; o match vem do padrao PEM."
+ },
+ {
+  "text": "slackHook = \"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX\"",
+  "shouldDetect": false,
+  "kindHint": "benigno pelas regras (webhook Slack, nao token xox)",
+  "note": "Webhook URL do Slack — sensivel na vida real, mas NAO casa nenhum padrao: nao e xox[baprs]-, e a parte final 'XXXX...' nao tem digito (so X) entao falha _looks_secretish (precisa alpha E digito). Marcado benigno = comportamento atual; evidencia que webhooks Slack escapam do detector."
+ },
+ {
+  "text": "export OPENAI_API_KEY=sk-proj-aB3dEfGh1jKlMn0pQrStUvWx",
+  "shouldDetect": true,
+  "kindHint": "Chave OpenAI (sk-) em export de shell",
+  "note": "Confirmado que dispara, MAS atencao: por causa do '_' e do prefixo, o token de entropia pode marcar 'OPENAI_API_KEY=sk-...' inteiro em vez de so a chave. O padrao 'sk-[A-Za-z0-9]{20,}' tem \\b antes de sk; 'sk-proj-...' tem hifen que corta o {20,} alfanumerico em 'sk-proj' (4 chars) — entao o padrao OpenAI dedicado pode NAO casar e cair so no fallback de entropia. Testa o novo formato sk-proj- da OpenAI vs o regex antigo."
+ }
+]
