@@ -261,6 +261,9 @@ class MainWindow(QMainWindow):
                                  QKeySequence("Ctrl+,"),
                                  self.open_preferences)
 
+        self.act_protect_repo = make("&Proteger repositorio git (hook anti-segredo)…",
+                                     SP.SP_DialogApplyButton, None, self.protect_repo)
+
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
     def _create_menus(self) -> None:
@@ -301,6 +304,8 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_lock_now)
         m_sec.addAction(self.act_unlock)
         m_sec.addAction(self.act_new_burn)
+        m_sec.addSeparator()
+        m_sec.addAction(self.act_protect_repo)
 
         m_help = bar.addMenu("A&juda")
         m_help.addAction(self.act_about)
@@ -679,9 +684,45 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             dlg.save()
             self._apply_autolock()
+            self.apply_theme()                  # tema (re-tematiza app + editores + lexers)
             for i in range(self.tabs.count()):
                 self.tabs.widget(i).apply_prefs()
             self.statusBar().showMessage("Preferencias aplicadas.", 3000)
+
+    def apply_theme(self) -> None:
+        """Aplica o tema das preferencias ao app, a todas as abas e aos lexers (ao vivo)."""
+        theme.set_theme(config.get("theme"))
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_app(app)
+        for i in range(self.tabs.count()):
+            ed = self.tabs.widget(i)
+            theme.apply_editor_theme(ed)
+            lx = ed.lexer()
+            if lx is not None:
+                theme.retheme_lexer(lx)
+        self.gate_label.setStyleSheet(f"color:{theme.AMBER}; font-weight:600;")
+        self._update_status()                   # re-aplica a cor do selo
+
+    def protect_repo(self) -> None:
+        """Instala o hook pre-commit anti-segredo num repositorio git escolhido."""
+        from . import scan_cli
+        repo = QFileDialog.getExistingDirectory(self, "Selecione o repositorio git a proteger")
+        if not repo:
+            return
+        if not os.path.exists(os.path.join(repo, ".git")):
+            QMessageBox.warning(self, APP_NAME,
+                                "Isso nao parece um repositorio git (.git nao encontrado).")
+            return
+        try:
+            path = scan_cli.install_hook(repo)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel instalar o hook:\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_NAME,
+            "Hook anti-segredo instalado! A partir de agora, commits com credencial "
+            f"neste repo serao BLOQUEADOS.\n\n{path}\n\nBypass pontual: git commit --no-verify")
 
     # ================================================================== #
     # Acoes de arquivo

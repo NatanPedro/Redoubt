@@ -12,7 +12,7 @@ import sys
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from notepy import APP_NAME, theme
+from notepy import APP_NAME, config, theme
 from notepy.mainwindow import MainWindow
 
 
@@ -40,7 +40,8 @@ def main() -> int:
     if not icon.isNull():
         app.setWindowIcon(icon)
 
-    theme.apply_app(app)          # estilo Fusion + paleta carbono + QSS
+    theme.set_theme(config.get("theme"))   # tema salvo nas preferencias
+    theme.apply_app(app)          # estilo Fusion + paleta + QSS
 
     window = MainWindow()
     if not icon.isNull():

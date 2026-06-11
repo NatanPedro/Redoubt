@@ -17,6 +17,7 @@ DEFAULTS = {
     "font_size": 11,
     "tab_width": 4,
     "restore_session": True,  # reabrir os arquivos que estavam abertos ao iniciar
+    "theme": "dark",          # 'dark' (carbono) | 'light' (claro)
 }
 
 # Preferencia de fontes monoespacadas (a 1a instalada vence).

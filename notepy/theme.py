@@ -6,6 +6,11 @@
 Concentra a paleta, a folha de estilo (QSS) do chrome e as funcoes que pintam
 o editor e os lexers do QScintilla — para o app NAO herdar as cores default do
 Scintilla (que sao a cara do Notepad++).
+
+Dois temas: 'dark' (carbono, padrao) e 'light' (claro), com a MESMA semantica de
+cor. `set_theme(nome)` troca a paleta ativa em tempo de execucao reescrevendo as
+constantes de modulo (BG, AMBER, ...) — por isso o resto do app deve ler
+`theme.AMBER` (acesso por atributo), nunca `from theme import AMBER`.
 """
 
 from __future__ import annotations
@@ -15,27 +20,35 @@ from string import Template
 from PyQt6.QtGui import QColor, QPalette
 
 # --------------------------------------------------------------------------- #
-# Paleta
+# Paletas (a cor e SEMANTICA, identica entre os temas)
 # --------------------------------------------------------------------------- #
-BG = "#0E1116"          # fundo carbono (quase preto, leve verde)
-PANEL = "#161B22"       # paineis / chrome
-BORDER = "#21262D"      # bordas / divisores
-TEXT = "#C9D1D9"        # texto base
-DIM = "#5B6673"         # texto apagado / numeros de linha
-AMBER = "#E8A33D"       # ATENCAO / cor da marca
-GREEN = "#3FB950"       # SELADO / LIMPO / seguro
-RED = "#F85149"         # EXPOSTO / segredo
-CYAN = "#6BD0FF"        # numeros / literais
-VIOLET = "#9B5DE5"      # tipos / classes
-TERRACOTA = "#C45A3B"   # preprocessador / diretiva
-CARET_LN = "#11161D"    # fundo da linha atual
-SELECTION = "#1F2D3D"   # selecao
+_PALETTES = {
+    "dark": {
+        "BG": "#0E1116", "PANEL": "#161B22", "BORDER": "#21262D",
+        "TEXT": "#C9D1D9", "DIM": "#5B6673", "AMBER": "#E8A33D",
+        "GREEN": "#3FB950", "RED": "#F85149", "CYAN": "#6BD0FF",
+        "VIOLET": "#9B5DE5", "TERRACOTA": "#C45A3B",
+        "CARET_LN": "#11161D", "SELECTION": "#1F2D3D",
+    },
+    "light": {
+        "BG": "#FFFFFF", "PANEL": "#F0F2F5", "BORDER": "#D0D7DE",
+        "TEXT": "#1F2328", "DIM": "#6E7781", "AMBER": "#BF6A00",
+        "GREEN": "#1A7F37", "RED": "#CF222E", "CYAN": "#0550AE",
+        "VIOLET": "#8250DF", "TERRACOTA": "#A04100",
+        "CARET_LN": "#F2F4F8", "SELECTION": "#CCE5FF",
+    },
+}
+
+# Constantes de modulo (inicializadas mais abaixo por _apply_palette).
+BG = PANEL = BORDER = TEXT = DIM = AMBER = GREEN = RED = ""
+CYAN = VIOLET = TERRACOTA = CARET_LN = SELECTION = ""
+_ACTIVE = "dark"
 
 
 # --------------------------------------------------------------------------- #
 # QSS do chrome (Template: trata { } como literal, so substitui $VAR)
 # --------------------------------------------------------------------------- #
-QSS = Template("""
+_QSS_TEMPLATE = Template("""
 QMainWindow, QWidget { background: $BG; color: $TEXT; }
 
 QMenuBar { background: $PANEL; color: $TEXT; border-bottom: 1px solid $BORDER; }
@@ -94,9 +107,32 @@ QPushButton { background: $BORDER; color: $TEXT; border: 1px solid $BORDER;
               border-radius: 6px; padding: 6px 14px; }
 QPushButton:hover { border: 1px solid $AMBER; color: $AMBER; }
 QPushButton:default { background: $AMBER; color: $BG; font-weight: 600; }
-""").substitute(
-    BG=BG, PANEL=PANEL, BORDER=BORDER, TEXT=TEXT, DIM=DIM, AMBER=AMBER,
-)
+""")
+
+# QSS ativo (reconstruido por _apply_palette conforme o tema).
+QSS = ""
+
+
+def _apply_palette(name: str) -> None:
+    """Reescreve as constantes de modulo e o QSS para o tema `name`."""
+    pal = _PALETTES.get(name, _PALETTES["dark"])
+    g = globals()
+    g.update(pal)
+    g["_ACTIVE"] = name if name in _PALETTES else "dark"
+    g["QSS"] = _QSS_TEMPLATE.substitute(
+        BG=BG, PANEL=PANEL, BORDER=BORDER, TEXT=TEXT, DIM=DIM, AMBER=AMBER)
+
+
+def set_theme(name: str) -> None:
+    """Troca o tema ativo ('dark' | 'light'). Use antes de apply_app/apply_editor_theme."""
+    _apply_palette(name if name in _PALETTES else "dark")
+
+
+def current_theme() -> str:
+    return _ACTIVE
+
+
+_apply_palette("dark")     # inicializa as constantes no import
 
 
 def apply_app(app) -> None:

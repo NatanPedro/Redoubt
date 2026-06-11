@@ -93,3 +93,9 @@ def test_session_roundtrip(temp_settings):
 def test_session_vazia(temp_settings):
     paths, active = config.load_session()               # sem nada salvo
     assert paths == [] and active == 0
+
+
+def test_theme_default_e_roundtrip(temp_settings):
+    assert config.get("theme") == "dark"
+    config.set_("theme", "light")
+    assert config.get("theme") == "light"

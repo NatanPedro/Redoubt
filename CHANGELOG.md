@@ -22,6 +22,41 @@ Ideias futuras (sem data):
 
 ---
 
+## [0.9.0] - 2026-06-10 — Tema claro + acabamento
+
+### Added
+- **Tema claro + troca de tema.** `notepy/theme.py` virou multi-paleta (`dark`
+  carbono / `light` claro) com **a mesma semântica de cor** (âmbar=marca,
+  verde=limpo, vermelho=exposto). `set_theme()` reescreve a paleta ativa e o QSS
+  em runtime; seletor em **Preferências** aplica **ao vivo** (re-tematiza app +
+  todas as abas + lexers). Preferência `theme` (padrão `dark`).
+- **Hook anti-segredo na GUI** — menu **Segurança ▸ Proteger repositório git
+  (hook anti-segredo)…**: escolhe a pasta do repo e instala o `pre-commit` num
+  clique (reusa `scan_cli.install_hook`). +6 testes → **99 testes**.
+
+---
+
+## [0.8.0] - 2026-06-10 — Hook git anti-segredo (Sentinela fora do editor)
+
+### Added
+- **`notepy/scan_cli.py` — CLI da Sentinela + hook `pre-commit`.** Leva a detecção
+  de segredos para **fora do editor**, blindando o `git`:
+  - `python -m notepy.scan_cli [arquivos…]` varre arquivos; `--staged` varre o que
+    está no *stage* (via `git show :arquivo` — exatamente o que vai ser commitado).
+  - `--install-hook [repo]` instala um `pre-commit` que **bloqueia o commit** se houver
+    credencial no stage (sai com código ≠ 0). `--uninstall-hook` remove (e restaura
+    backup de hook pré-existente — não clobbra hook alheio).
+  - **Bypass** pontual: `git commit --no-verify`. **Whitelist** por linha: comentário
+    com `redoubt:allow` na mesma linha ignora aquele achado.
+  - **Segurança do próprio relatório:** a saída **nunca imprime o segredo** — só
+    `arquivo:linha:coluna`, o tipo e uma prévia mascarada (`●●●…`), pra não vazar
+    via logs de terminal/CI.
+  - Reusa `notepy/secrets.py` (Python puro, sem Qt) — roda leve no hook. Pula binários
+    (NUL) e arquivos > 2 MB. +8 testes → **93 testes**. Validado num repo git real
+    (bloqueia segredo, `--no-verify` passa, arquivo limpo passa, `redoubt:allow` passa).
+
+---
+
 ## [0.7.0] - 2026-06-09 — Restaurar sessão
 
 ### Added

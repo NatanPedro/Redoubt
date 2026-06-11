@@ -284,3 +284,32 @@ def test_selar_oculto_vira_cofre(win, tmp_path):
     win._inbox += [("pw1234", True), ("pw1234", True)]
     win._gate_seal()
     assert ed.is_vault and not ed.is_gated()
+
+
+# --------------------------------------------------------------------------- #
+# Tema (claro/escuro) e hook na GUI
+# --------------------------------------------------------------------------- #
+def test_apply_theme_troca_ao_vivo(win, tmp_path, monkeypatch):
+    from notepy import config, theme
+    _temp_settings(monkeypatch, tmp_path)
+    try:
+        config.set_("theme", "light")
+        win.apply_theme()
+        assert theme.current_theme() == "light"
+        config.set_("theme", "dark")
+        win.apply_theme()
+        assert theme.current_theme() == "dark"
+    finally:
+        theme.set_theme("dark")
+
+
+def test_protect_repo_instala_hook_via_gui(win, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QFileDialog
+    from notepy import scan_cli
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        staticmethod(lambda *a, **k: str(tmp_path)))
+    monkeypatch.setattr(scan_cli, "_hooks_dir", lambda repo: str(hooks))
+    win.protect_repo()
+    assert (hooks / "pre-commit").exists()

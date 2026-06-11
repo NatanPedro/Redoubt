@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialogButtonBox,
     QDialog,
     QFontComboBox,
@@ -47,6 +48,13 @@ class PreferencesDialog(QDialog):
             "travados (sem pedir senha). Notas de queima e abas sem titulo nunca sao salvas.")
         self.cb_restore.setChecked(config.get("restore_session"))
 
+        self.cb_theme = QComboBox()
+        self.cb_theme.addItem("Escuro (carbono)", "dark")
+        self.cb_theme.addItem("Claro", "light")
+        idx = self.cb_theme.findData(config.get("theme"))
+        self.cb_theme.setCurrentIndex(idx if idx >= 0 else 0)
+
+        form.addRow("Tema:", self.cb_theme)
         form.addRow("Auto-lock do cofre:", self.sp_lock)
         form.addRow("Fonte:", self.cb_font)
         form.addRow("Tamanho da fonte:", self.sp_size)
@@ -66,3 +74,4 @@ class PreferencesDialog(QDialog):
         config.set_("font_size", self.sp_size.value())
         config.set_("tab_width", self.sp_tab.value())
         config.set_("restore_session", self.cb_restore.isChecked())
+        config.set_("theme", self.cb_theme.currentData())
