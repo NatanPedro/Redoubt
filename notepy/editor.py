@@ -333,12 +333,14 @@ class CodeEditor(QsciScintilla):
     # ------------------------------------------------------------------ #
     # Cadeia de custodia
     # ------------------------------------------------------------------ #
+    def custody_text(self) -> str:
+        """Conteudo REAL para custodia/assinatura. Quando OCULTO, devolve o texto
+        em RAM (_gated_text), nao o banner exibido."""
+        return self._gated_text if (self._gated and self._gated_text is not None) else self.text()
+
     def content_hash(self) -> str:
         # surrogatepass: nunca crashar a custodia por causa de surrogate solitario.
-        # Quando OCULTO, o buffer mostra o banner — a custodia deve refletir o
-        # conteudo REAL do arquivo (em _gated_text), nao o banner.
-        src = self._gated_text if (self._gated and self._gated_text is not None) else self.text()
-        return hashlib.sha256(src.encode("utf-8", "surrogatepass")).hexdigest()
+        return hashlib.sha256(self.custody_text().encode("utf-8", "surrogatepass")).hexdigest()
 
     def mark_saved(self) -> None:
         self._saved_hash = self.content_hash()

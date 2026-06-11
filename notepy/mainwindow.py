@@ -22,7 +22,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_NAME, APP_TAGLINE, APP_VERSION, config, secrets as secrets_mod, theme, vault
+from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody,
+               secrets as secrets_mod, theme, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -264,6 +265,10 @@ class MainWindow(QMainWindow):
                                  QKeySequence("Ctrl+,"),
                                  self.open_preferences)
 
+        self.act_sign = make("&Assinar e exportar (.sig)…",
+                             SP.SP_DialogYesButton,
+                             QKeySequence("Ctrl+Shift+G"),
+                             self.sign_and_export)
         self.act_protect_repo = make("&Proteger repositorio git (hook anti-segredo)…",
                                      SP.SP_DialogApplyButton, None, self.protect_repo)
 
@@ -302,6 +307,7 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_next_secret)
         m_sec.addAction(self.act_scan_report)
         m_sec.addAction(self.act_verify)
+        m_sec.addAction(self.act_sign)
         m_sec.addSeparator()
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_lock_now)
@@ -616,6 +622,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "Nota de queima: vive so na RAM, NAO vai pro disco e e apagada ao fechar.", 6000)
 
+    def _audit(self, event: str, editor: CodeEditor, content_hash: str = "") -> None:
+        """Registra um evento na trilha de auditoria (best-effort: nunca quebra o app)."""
+        try:
+            label = editor.path or editor.display_name or "(sem titulo)"
+            custody.log_event(event, detail=label, content_hash=content_hash)
+        except Exception:
+            pass
+
     def verify_custody(self) -> None:
         editor = self.current_editor()
         if editor is None:
@@ -630,12 +644,61 @@ class MainWindow(QMainWindow):
             status = "⚠ ALTERADO desde o ultimo salvamento (o hash difere da linha de base)."
         else:
             status = "✓ INTEGRO: confere com a linha de base do ultimo salvamento."
+
+        # Assinatura .sig (se exportada): tamper-evidence COM chave contra o conteudo atual.
+        sig_line = ""
+        sig_path = (editor.path + ".sig") if editor.path else None
+        if sig_path and os.path.exists(sig_path):
+            try:
+                sig = open(sig_path, encoding="utf-8").read().strip()
+                confere = custody.verify(editor.custody_text(), sig)
+                sig_line = (f"Assinatura ({os.path.basename(sig_path)}): "
+                            + ("✓ CONFERE — nao mudou desde que voce assinou.\n\n"
+                               if confere else
+                               "⚠ NAO CONFERE — conteudo mudou, ou .sig de outro arquivo/chave.\n\n"))
+            except OSError:
+                sig_line = ""
+
+        ok_chain, idx = custody.verify_chain()
+        n = len(custody.read_audit())
+        trilha = "✓ CADEIA INTEGRA" if ok_chain else f"⚠ CADEIA QUEBRADA na entrada {idx}"
         base = f"Linha de base (ultimo salvamento):\n{editor.saved_hash}\n\n" if editor.saved_hash else ""
         QMessageBox.information(
             self, f"{APP_NAME} — Cadeia de custodia",
-            f"SHA-256 do conteudo atual:\n{full}\n\n{base}{status}\n\n"
-            "Para tamper-evidence com chave, use o Cofre (.rdbt): o AES-GCM detecta "
-            "qualquer alteracao do arquivo automaticamente.")
+            f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
+            f"Identidade (fingerprint da chave publica): {custody.fingerprint()}\n"
+            f"Trilha de auditoria: {n} evento(s) — {trilha}\n\n"
+            "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
+            "chave publica verifica que o arquivo nao mudou.")
+
+    def sign_and_export(self) -> None:
+        """Assina o conteudo (Ed25519) e grava a assinatura destacada .sig + a chave publica."""
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_burn or editor.is_locked():
+            QMessageBox.information(self, APP_NAME, "Nota de queima / cofre travado nao pode ser assinado.")
+            return
+        if not editor.path:
+            QMessageBox.information(self, APP_NAME, "Salve o arquivo antes de assinar.")
+            return
+        try:
+            sig_path = editor.path + ".sig"
+            with open(sig_path, "w", encoding="utf-8") as fh:
+                fh.write(custody.sign(editor.custody_text()) + "\n")
+            pub_path = os.path.join(custody._data_dir(), "redoubt-pubkey.txt")
+            with open(pub_path, "w", encoding="utf-8") as fh:
+                fh.write(custody.public_key_b64() + "\n")
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel assinar:\n{exc}")
+            return
+        self._audit("assinou", editor, editor.content_hash())
+        QMessageBox.information(
+            self, f"{APP_NAME} — Assinatura exportada",
+            f"Assinatura Ed25519 gravada em:\n{sig_path}\n\n"
+            f"Chave publica (para quem for verificar):\n{pub_path}\n"
+            f"Fingerprint: {custody.fingerprint()}\n\n"
+            "Verificar custodia (Ctrl+Shift+H) confere o .sig contra o conteudo atual.")
 
     # ================================================================== #
     # Barra de comando ':'
@@ -700,6 +763,7 @@ class MainWindow(QMainWindow):
                 cb.clear()                                      # tira o segredo do clipboard
         except Exception:
             pass
+        self._audit("queimou", editor)             # registra o evento (sem conteudo)
 
     def open_preferences(self) -> None:
         dlg = PreferencesDialog(self)
@@ -812,6 +876,7 @@ class MainWindow(QMainWindow):
 
         self._add_tab(editor)
         self._maybe_close_initial_empty()
+        self._audit("abriu", editor, editor.saved_hash or "")
         self.statusBar().showMessage(f"Aberto: {path}", 3000)
 
     def _open_vault(self, path: str) -> None:
@@ -842,6 +907,7 @@ class MainWindow(QMainWindow):
         editor.setCursorPosition(0, 0)
         self._add_tab(editor)
         self._maybe_close_initial_empty()
+        self._audit("abriu cofre", editor, editor.saved_hash or "")
         self.statusBar().showMessage(f"Cofre aberto: {path}", 3000)
 
     def save_file(self, editor: CodeEditor | None = None) -> bool:
@@ -896,6 +962,7 @@ class MainWindow(QMainWindow):
         editor.mark_saved()
         self._refresh_tab(editor)
         self._update_status()
+        self._audit("selou cofre", editor, editor.saved_hash or "")
         self.statusBar().showMessage(
             f"Cofre selado: {path}  ·  custodia {editor.saved_hash[:8]}", 4000)
         return True
@@ -933,6 +1000,7 @@ class MainWindow(QMainWindow):
             editor.apply_lexer_for_path(path)
         self._refresh_tab(editor)
         self._update_status()
+        self._audit("salvou", editor, editor.saved_hash or "")
         self.statusBar().showMessage(f"Salvo: {path}  ·  custodia {editor.saved_hash[:8]}", 4000)
         return True
 

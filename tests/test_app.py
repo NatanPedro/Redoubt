@@ -369,6 +369,39 @@ def test_write_bloqueia_aba_oculta(win, tmp_path):
     assert not out.exists()
 
 
+def _temp_identity(tmp_path, monkeypatch):
+    from notepy import custody
+    d = tmp_path / "identidade"
+    d.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(d))
+    return custody
+
+
+def test_custodia_assina_e_verifica(win, tmp_path, monkeypatch):
+    custody = _temp_identity(tmp_path, monkeypatch)
+    ed = win.current_editor()
+    ed.setText("documento de estado")
+    f = tmp_path / "doc.txt"
+    assert win._write(ed, str(f))                       # salva (+ evento "salvou")
+    win.sign_and_export()
+    sig_file = tmp_path / "doc.txt.sig"
+    assert sig_file.exists()
+    sig = sig_file.read_text(encoding="utf-8").strip()
+    assert custody.verify(ed.custody_text(), sig)        # confere
+    assert not custody.verify("documento ALTERADO", sig)  # adulteracao detectada
+
+
+def test_custodia_trilha_encadeada_registra_eventos(win, tmp_path, monkeypatch):
+    custody = _temp_identity(tmp_path, monkeypatch)
+    ed = win.current_editor(); ed.setText("x")
+    win._write(ed, str(tmp_path / "a.txt"))             # "salvou"
+    win._wipe_editor(ed)                                # "queimou"
+    eventos = [e["event"] for e in custody.read_audit()]
+    assert "salvou" in eventos and "queimou" in eventos
+    ok, idx = custody.verify_chain()
+    assert ok and idx == -1                             # cadeia integra
+
+
 def test_protect_repo_instala_hook_via_gui(win, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QFileDialog
     from notepy import scan_cli

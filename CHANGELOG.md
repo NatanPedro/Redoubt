@@ -22,6 +22,29 @@ Ideias futuras (sem data):
 
 ---
 
+## [0.11.0] - 2026-06-10 — Custódia assinada + trilha de auditoria
+
+### Added
+- **`notepy/custody.py`** — eleva a custódia de um SHA-256 nu (que qualquer um
+  recalcula) para **prova de verdade**:
+  - **Identidade Ed25519 por instalação** (par de chaves; a privada fica num arquivo
+    local sem senha em `%APPDATA%\Redoubt\Redoubt\identity.ed25519`).
+  - **Assinar/verificar** conteúdo; a chave **pública** é exportável → qualquer um
+    verifica que o arquivo não mudou desde que você assinou.
+  - **Trilha de auditoria encadeada** (hash-chain append-only) dos eventos —
+    `abrir`/`salvar`/`selar`/`queimar`/`assinar`: adulterar um evento passado
+    **quebra a cadeia** de forma detectável.
+- **Verificar custódia** (`Ctrl+Shift+H`) agora mostra, além do SHA-256: o status da
+  **assinatura `.sig`** (✓ confere / ⚠ mudou), o **fingerprint** da chave pública e a
+  **integridade da cadeia** de auditoria.
+- **Assinar e exportar** (`Ctrl+Shift+G`) — grava `<arquivo>.sig` (assinatura destacada)
+  + a chave pública, prontos para verificação por terceiros.
+- Honestidade: a chave privada é local e sem senha (escolha de uso) — prova "veio desta
+  instalação e não mudou", desde que a chave não vaze. Tudo local, sem rede. Guia:
+  `docs/CUSTODY.md`. +11 testes → **141 testes**.
+
+---
+
 ## [0.10.1] - 2026-06-10 — Endurecimento (pentest v0.7–v0.10)
 
 Pentest adversarial de 4 frentes (sessão, conteúdo oculto, hook git, tema+Sentinela).
