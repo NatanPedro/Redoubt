@@ -24,6 +24,17 @@ def test_tema_desconhecido_cai_no_dark():
         theme.set_theme("dark")
 
 
+def test_set_theme_tipo_invalido_nao_crasha():
+    # REGRESSAO (pentest): 'theme' envenenado no QSettings (list/dict) levava
+    # 'name in _PALETTES' a TypeError (unhashable) e derrubava apply_theme/startup.
+    try:
+        for bad in (["x"], {"k": 1}, None, 123):
+            theme.set_theme(bad)
+            assert theme.current_theme() == "dark"
+    finally:
+        theme.set_theme("dark")
+
+
 def test_semantica_de_cor_preservada_nos_dois_temas():
     # AMBER/GREEN/RED existem e diferem entre si nos dois temas (semantica mantida).
     for t in ("dark", "light"):

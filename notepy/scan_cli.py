@@ -52,15 +52,57 @@ class Finding:
 # --------------------------------------------------------------------------- #
 # Varredura
 # --------------------------------------------------------------------------- #
+def _mostly_text(s: str) -> bool:
+    """Heuristica binario/texto: True se >=85% dos chars sao imprimiveis/whitespace."""
+    if not s:
+        return False
+    ok = sum(1 for c in s if c in "\t\n\r" or " " <= c <= "~" or c >= "\xa0")
+    return ok / len(s) >= 0.85
+
+
 def _decode(raw: bytes) -> str | None:
-    """Decodifica bytes; devolve None se parecer binario (NUL embutido)."""
-    if b"\x00" in raw:
+    """Decodifica bytes para varredura; devolve None so se for binario DE VERDADE.
+
+    Espelha editor.read_text: trata BOM UTF-16/UTF-32 e tenta wide-encodings +
+    limpeza de NUL ANTES de desistir. Sem isso, um arquivo UTF-16/UTF-32 (cheio de
+    NUL) — com ou sem BOM — ou um texto com 1 NUL injetado eram tratados como binario
+    e PULADOS, deixando um segredo passar pelo hook (bypass). Binario de verdade
+    (denso de bytes nao-texto) continua pulado para nao inundar commits com imagens.
+    """
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig", "replace")
+    # UTF-32 ANTES de UTF-16 (o BOM UTF-32 LE comeca com o BOM UTF-16 LE).
+    if raw.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+        return raw.decode("utf-32", "replace")
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", "replace")
+    if b"\x00" not in raw:
+        for enc in _ENCODINGS:
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
         return None
+    # Ha NUL e nenhum BOM. A DENSIDADE de NUL distingue os casos: UTF-16/32 (ASCII)
+    # tem ~50%/75% de NUL, ~alternados; texto com NUL injetado tem poucos NUL.
+    if raw.count(0) / len(raw) >= 0.20:
+        # provavelmente wide-encoded sem BOM: tenta utf-16/32
+        for enc in ("utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"):
+            try:
+                dec = raw.decode(enc)
+            except (UnicodeDecodeError, ValueError):
+                continue
+            if _mostly_text(dec):
+                return dec.replace("\x00", "")
+        return None                      # denso de NUL mas nao e wide plausivel: binario
+    # poucos NUL -> texto com NUL injetado: remove os NUL e varre o restante.
+    clean = raw.replace(b"\x00", b"")
     for enc in _ENCODINGS:
         try:
-            return raw.decode(enc)
+            dec = clean.decode(enc)
         except UnicodeDecodeError:
             continue
+        return dec if _mostly_text(dec) else None
     return None
 
 
@@ -124,6 +166,15 @@ def staged_blob(path: str) -> bytes:
     return _git(["show", f":{path}"])
 
 
+def _in_git_repo() -> bool:
+    try:
+        out = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+                             capture_output=True).stdout
+        return out.strip() == b"true"
+    except (OSError, FileNotFoundError):
+        return False
+
+
 def scan_staged() -> list[Finding]:
     out: list[Finding] = []
     for path in staged_files():
@@ -133,6 +184,12 @@ def scan_staged() -> list[Finding]:
             continue
         text = _decode(raw)
         if text is None:
+            continue
+        if len(text) > _SCAN_LIMIT:
+            # nao varremos arquivo enorme (custo), mas NAO ficamos em silencio:
+            # avisamos que ele NAO foi verificado (poderia esconder um segredo).
+            print(f"  Redoubt: aviso — '{path}' grande demais ({len(text)} chars), "
+                  "NAO verificado. Confira manualmente se contem segredo.")
             continue
         out.extend(scan_text(text, path))
     return out
@@ -216,6 +273,13 @@ def _report(findings: list[Finding]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Saida robusta: o relatorio usa ● … —; num console legado (cp1252, comum no
+    # git-bash) um print desses estouraria UnicodeEncodeError no meio do hook.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--install-hook" in argv:
         i = argv.index("--install-hook")
@@ -233,9 +297,18 @@ def main(argv: list[str] | None = None) -> int:
     if "--staged" in argv:
         try:
             findings = scan_staged()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            print("Redoubt: nao foi possivel ler o stage do git (fora de um repo?).")
-            return 0                       # nao trava commit por falha de ambiente
+        except FileNotFoundError:
+            print("Redoubt: git nao encontrado no PATH — nada a verificar.")
+            return 0                       # sem git: nao ha o que varrer
+        except subprocess.CalledProcessError:
+            # DENTRO de um repo mas o git falhou -> fail-CLOSED: nao libera o commit
+            # as cegas (uma ferramenta de seguranca nao deve falhar-aberto).
+            if _in_git_repo():
+                print("Redoubt: falha ao ler o stage do git — commit BLOQUEADO por "
+                      "precaucao. Use 'git commit --no-verify' se for intencional.")
+                return 1
+            print("Redoubt: fora de um repositorio git (nada a verificar).")
+            return 0
     else:
         paths = [a for a in argv if not a.startswith("-")]
         if not paths:

@@ -58,6 +58,10 @@ def get(key: str):
         if lo is not None:
             ival = max(lo, min(hi, ival))
         return ival
+    if isinstance(d, str):
+        # coage para str: o registro pode devolver lista/numero (REG_MULTI_SZ,
+        # valor corrompido) e quem consome (ex.: theme.set_theme) espera string.
+        return str(val) if val is not None else d
     return val if val is not None else d
 
 

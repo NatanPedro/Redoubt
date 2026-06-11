@@ -27,6 +27,9 @@ from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
 _RESTORE_SCAN_LIMIT = 2_000_000
+# Teto de arquivos reabertos por sessao (defesa: "session/paths" vive no registro e
+# pode ser adulterado — sem teto, N caminhos poderiam travar/inundar a inicializacao).
+_MAX_RESTORE = 50
 from .findbar import FindBar
 from .preferences import PreferencesDialog
 
@@ -497,17 +500,16 @@ class MainWindow(QMainWindow):
         lines.append("\nCtrl+Shift+R tarja todos para compartilhar a tela com seguranca.")
         QMessageBox.warning(self, f"{APP_NAME} — Relatorio de segredos", "\n".join(lines))
 
-    def seal_current(self) -> None:
-        """Sela a aba atual como cofre: define a senha-mestra; grava cifrada ao salvar."""
-        editor = self.current_editor()
-        if editor is None:
-            return
+    def _ask_seal_password(self, editor: CodeEditor) -> str | None:
+        """Avisa + pede/confirma a senha-mestra. Devolve a senha, ou None se
+        cancelado/invalido. NAO muda o estado do editor (pode rodar com a aba ainda
+        OCULTA, sem revelar nada)."""
         if editor.is_vault:
             QMessageBox.information(self, APP_NAME, "Esta aba ja e um cofre.")
-            return
+            return None
         if editor.is_burn:
             QMessageBox.information(self, APP_NAME, "Uma nota de queima e efemera e nao pode virar cofre.")
-            return
+            return None
         SB = QMessageBox.StandardButton
         if QMessageBox.warning(
             self, f"{APP_NAME} — Selar cofre",
@@ -516,29 +518,43 @@ class MainWindow(QMainWindow):
             "esquece-la, o conteudo fica IRRECUPERAVEL — nao ha recuperacao nem backdoor.\n\n"
             "Continuar?",
             SB.Ok | SB.Cancel, SB.Cancel) != SB.Ok:
-            return
+            return None
         pw1, ok = QInputDialog.getText(self, "Selar cofre", "Defina a senha-mestra:",
                                        QLineEdit.EchoMode.Password)
         if not ok:
-            return
+            return None
         if len(pw1) < 4:
             QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
-            return
+            return None
         pw2, ok = QInputDialog.getText(self, "Selar cofre", "Confirme a senha-mestra:",
                                        QLineEdit.EchoMode.Password)
         if not ok:
-            return
+            return None
         if pw1 != pw2:
             QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
-            return
+            return None
+        return pw1
+
+    def _apply_seal(self, editor: CodeEditor, pw: str) -> None:
         editor.is_vault = True
-        editor._vault_password = pw1
+        editor._vault_password = pw
         editor.path = None             # forca salvar como novo .rdbt (nao clobbra o original)
         editor._rescan_secrets()       # limpa indicadores de "exposto"
         editor.setModified(True)
         self._refresh_tab(editor)
         self._update_status()
         self.statusBar().showMessage("Aba selada. Salve (Ctrl+S) para gravar o cofre .rdbt.", 6000)
+
+    def seal_current(self) -> bool:
+        """Sela a aba atual como cofre. Retorna True se selou, False se cancelou."""
+        editor = self.current_editor()
+        if editor is None:
+            return False
+        pw = self._ask_seal_password(editor)
+        if pw is None:
+            return False
+        self._apply_seal(editor, pw)
+        return True
 
     def lock_current(self) -> None:
         editor = self.current_editor()
@@ -568,6 +584,12 @@ class MainWindow(QMainWindow):
             editor.unlock(pw)
         except vault.WrongPassword:
             QMessageBox.critical(self, APP_NAME, "Senha incorreta.")
+            return
+        except vault.VaultError as exc:
+            # cofre adulterado/truncado/versao ou KDF invalidos (ex.: blob corrompido
+            # no disco ou caminho de sessao envenenado) -> NAO deixa a excecao escapar
+            # do slot Qt e derrubar o app.
+            QMessageBox.critical(self, APP_NAME, f"Cofre invalido ou adulterado:\n{exc}")
             return
         self._refresh_tab(editor)
         self._update_status()
@@ -882,6 +904,11 @@ class MainWindow(QMainWindow):
         if editor.is_burn:
             QMessageBox.information(self, APP_NAME, "Nota de queima e efemera — nao vai pro disco.")
             return False
+        if editor.is_gated():
+            # chokepoint: sem isto, gravar uma aba OCULTA poria o BANNER por cima do
+            # arquivo original (perda de dados). Protege qualquer caller de _write.
+            QMessageBox.information(self, APP_NAME, "Revele o conteudo (barra acima) antes de salvar.")
+            return False
         if editor.is_locked():
             QMessageBox.information(self, APP_NAME, "Destrave o cofre (Ctrl+Shift+U) antes de salvar.")
             return False
@@ -1001,7 +1028,12 @@ class MainWindow(QMainWindow):
             return 0
         paths, active = config.load_session()
         opened = 0
-        for p in paths:
+        for p in paths[:_MAX_RESTORE]:              # teto: lista vem do registro
+            # Ignora UNC/remoto no auto-restore: um caminho \\host\... adulterado no
+            # registro travaria a inicializacao (timeout SMB, antes do show) e poderia
+            # induzir autenticacao NTLM contra um host arbitrario.
+            if p.startswith("\\\\") or p.startswith("//"):
+                continue
             if not os.path.isfile(p):
                 continue
             already = any(self.tabs.widget(i).path and
@@ -1031,18 +1063,22 @@ class MainWindow(QMainWindow):
             text, encoding = read_text(path)
         except OSError:
             return
+        too_big = len(text) > _RESTORE_SCAN_LIMIT
         try:
-            hits = len(secrets_mod.scan(text)) if len(text) <= _RESTORE_SCAN_LIMIT else 0
+            hits = 0 if too_big else len(secrets_mod.scan(text))
         except Exception:
             hits = 0
-        if hits > 0:                                # tem credencial -> abre OCULTO
+        # FAIL-SAFE: arquivo grande demais p/ varrer NAO abre em claro (poderia jogar
+        # credencial na tela ao restaurar) — oculta por precaucao. So abre normal o
+        # que foi varrido e esta limpo.
+        if too_big or hits > 0:
             editor = self._new_editor()
             editor.path = path
             editor.encoding = encoding
             editor.apply_lexer_for_path(path)
-            editor.gate(text, hits)
+            editor.gate(text, hits)                 # hits==0 + too_big -> "nao verificado"
             self._add_tab(editor)
-        else:                                       # arquivo limpo -> abre normal
+        else:                                       # varrido e limpo -> abre normal
             self.open_path(path)
 
     def reveal_current(self) -> None:
@@ -1060,15 +1096,22 @@ class MainWindow(QMainWindow):
         self._update_window_title()
 
     def _gate_seal(self) -> None:
-        """Botao 'Selar como cofre': revela (precisa do texto real) e sela em .rdbt."""
+        """Botao 'Selar como cofre' da aba OCULTA: pede a senha ANTES de revelar.
+        Se o usuario cancelar, a aba PERMANECE oculta (nao expoe o conteudo)."""
         editor = self.current_editor()
         if editor is None:
             return
-        if editor.is_gated():
-            editor.reveal()
-            editor.apply_lexer_for_path(editor.path or "")
+        if not editor.is_gated():
+            self.seal_current()
+            return
+        pw = self._ask_seal_password(editor)        # pergunta com a aba ainda OCULTA
+        if pw is None:
+            return                                  # cancelou -> segue oculto, nada exposto
+        editor.reveal()                             # so agora materializa o texto real
+        editor.apply_lexer_for_path(editor.path or "")
+        self._apply_seal(editor, pw)
         self._update_gate_bar()
-        self.seal_current()
+        self._update_status()
 
     def _restore_vault_locked(self, path: str) -> None:
         try:

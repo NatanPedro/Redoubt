@@ -22,6 +22,48 @@ Ideias futuras (sem data):
 
 ---
 
+## [0.10.1] - 2026-06-10 — Endurecimento (pentest v0.7–v0.10)
+
+Pentest adversarial de 4 frentes (sessão, conteúdo oculto, hook git, tema+Sentinela).
+~20 achados; corrigidos os de impacto. Suíte: **118 → 130 testes**.
+
+### Fixed (Segurança)
+- **🔴 Bypass do hook por encoding/NUL** — arquivo **UTF-16/UTF-32** (com ou sem BOM)
+  ou texto com **`\x00` injetado** era tratado como binário e **pulado**, deixando um
+  segredo passar pelo commit (o editor detectava, o hook não). `scan_cli._decode`
+  agora trata BOMs e usa heurística de densidade de NUL para decodificar wide/limpar
+  NUL. Confirmado em repo git real.
+- **🟠 Crash ao destravar cofre adulterado** — `unlock_current` só pegava
+  `WrongPassword`; um `.rdbt` truncado/corrompido (via registro/sessão) lançava
+  `VaultError` que escapava do slot Qt e derrubava o app. Agora captura `VaultError`.
+- **🟠 Conteúdo oculto exposto ao "Selar" e cancelar** — `_gate_seal` revelava o texto
+  ANTES de pedir a senha; cancelar deixava o segredo na tela. Agora pede a senha com a
+  aba ainda **oculta** e só revela se confirmar.
+- **🟠 Restauração de arquivo grande abria em claro** (fail-open) — arquivo > 2 MB era
+  aberto visível ao restaurar. Agora **oculta por precaução** (fail-safe).
+- **🟠 Tema envenenado derrubava o app** — valor não-string em `theme` (registro
+  corrompido) causava `TypeError` em `apply_theme`/startup. `config.get` coage para str
+  e `theme.set_theme` valida o tipo.
+- **🟡 Custódia do oculto** — `content_hash` agora usa o conteúdo real (não o banner).
+- **🟡 Falso-positivo `hvs.`** bloqueava commits legítimos (`obj.metodo_snake_case`);
+  padrão endurecido (exige dígito/comprimento). Telegram agora exige prefixo real `AA`.
+- **🟡 Relatório do hook crashava em console cp1252** (●/…/—); saída forçada a UTF-8.
+- **🟡 Guarda `is_gated` movida para o chokepoint `_write`** (defesa em profundidade).
+
+### Hardened
+- Hook **fail-closed** quando o git falha **dentro** de um repo (não libera commit às cegas).
+- Restauração de sessão: **teto de 50 arquivos** + **ignora caminhos UNC/remotos**
+  (defesa contra registro adulterado: trava de SMB / captura de hash NTLM).
+- Hook **avisa** (em vez de pular em silêncio) quando um arquivo staged é grande demais.
+
+### Notas (resistiram / limitações documentadas)
+- Resistiram: copiar de aba oculta não vaza; `apply_theme` sobre oculto/cofre/burn não
+  expõe nem quebra; saída do hook nunca mostra o segredo; regex novos sem ReDoS.
+- Limitações: arquivo > 2 MB no hook é avisado mas não varrido; varredura da restauração
+  é síncrona (~1 s/arquivo grande); assinar a lista de sessão (HMAC) fica como futuro.
+
+---
+
 ## [0.10.0] - 2026-06-10 — Sentinela expandida
 
 ### Added

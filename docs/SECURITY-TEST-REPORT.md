@@ -215,6 +215,58 @@ gigante → selo "NÃO VERIFICADO" (sem DoS).
 
 ---
 
+## 7. Pentest v0.7–v0.10 (sessão, conteúdo oculto, hook git, tema + Sentinela)
+
+**Data:** 2026-06-10 · **Versão testada:** v0.10.0 → corrigida em **v0.10.1**
+**Método:** workflow de 4 frentes (sessão · conteúdo oculto · hook git · tema+Sentinela)
+→ ~20 ataques, os de impacto **reproduzidos em repo git real / headless offscreen**.
+
+### Placar
+
+| | Qtd | Resultado |
+|---|---|---|
+| 🔴 CRÍTICO/encoding-bypass | 1 | **CORRIGIDO** (UTF-16/UTF-32/NUL passavam pelo hook) |
+| 🟠 ALTO | 5 | **CORRIGIDOS** (crash unlock, exposição no selar-cancelar, fail-open grande, tema envenenado, guarda `_write`) |
+| 🟡 MÉDIO | 4 | **CORRIGIDOS** (custódia do oculto, FP `hvs.`, crash cp1252, Telegram) |
+| 🟢 Resistiram | vários | copiar do oculto, apply_theme sobre oculto/cofre, saída mascarada, sem ReDoS |
+
+### Corrigidos
+- 🔴 **Bypass do hook por encoding/NUL:** `scan_cli._decode` tratava qualquer `\x00`
+  como binário → arquivo **UTF-16/UTF-32** (com/sem BOM) ou com **NUL injetado** era
+  pulado e o segredo entrava no commit (o editor pegava, o hook não — incoerência).
+  **Corrigido:** BOMs + heurística de densidade de NUL (decodifica wide / limpa NUL).
+- 🟠 **Crash ao destravar cofre adulterado:** `unlock_current` só pegava `WrongPassword`;
+  `.rdbt` truncado/corrompido (via sessão/registro) lançava `VaultError` que escapava do
+  slot Qt e **derrubava o app**. **Corrigido:** captura `VaultError`.
+- 🟠 **Exposição ao "Selar como cofre" + cancelar:** `_gate_seal` revelava o texto antes
+  de pedir senha; cancelar deixava o segredo na tela. **Corrigido:** pede a senha com a
+  aba ainda **oculta**, só revela se confirmar.
+- 🟠 **Restauração de arquivo > 2 MB abria em claro** (fail-open). **Corrigido:** oculta
+  por precaução (fail-safe).
+- 🟠 **Tema envenenado (valor não-string no registro) derrubava o app** (`TypeError`
+  unhashable em `apply_theme`/startup). **Corrigido:** `config.get` coage str +
+  `theme.set_theme` valida o tipo.
+- 🟡 **Custódia do oculto:** `content_hash` usava o banner. **Corrigido:** usa o real.
+- 🟡 **Falso-positivo `hvs.`** bloqueava commit de código legítimo. **Corrigido:** padrão
+  endurecido (dígito/comprimento). Telegram exige prefixo real `AA`.
+- 🟡 **Relatório do hook crashava em console cp1252** (●/…/—). **Corrigido:** saída UTF-8.
+- 🟠 **Guarda `is_gated` movida para o chokepoint `_write`** (defesa em profundidade:
+  nenhum caller futuro grava o banner por cima do arquivo original).
+
+### Endurecimento adicional
+Hook **fail-closed** quando o git falha dentro de um repo; restauração com **teto de 50
+arquivos** + **ignora UNC/remoto** (anti SMB-hang / captura NTLM via registro); hook
+**avisa** quando pula arquivo grande (em vez de silêncio).
+
+### Resistiram / limitações honestas
+Copiar de aba oculta não vaza (undo zerado, texto só em RAM); `apply_theme` sobre
+oculto/cofre/burn não expõe nem crasha; a saída do hook **nunca** imprime o segredo
+(mascarada); regex novos **sem ReDoS** (lineares). Limitações documentadas: arquivo
+> 2 MB no hook é avisado mas não varrido; varredura da restauração é síncrona; assinar
+a lista de sessão (HMAC contra adulteração do registro) fica como trabalho futuro.
+
+---
+
 *Reproduzir: o agente `redoubt-tester` (em `.claude/agents/`) refaz estas baterias.
 Testes do scanner rodam isolados (`from notepy import secrets`); GUI com
 `QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8`.*

@@ -115,7 +115,11 @@ QSS = ""
 
 def _apply_palette(name: str) -> None:
     """Reescreve as constantes de modulo e o QSS para o tema `name`."""
-    pal = _PALETTES.get(name, _PALETTES["dark"])
+    # guarda contra tipo nao-hashavel (list/dict vindos de um QSettings adulterado):
+    # 'name in _PALETTES' / _PALETTES.get(name) levantariam TypeError.
+    if not (isinstance(name, str) and name in _PALETTES):
+        name = "dark"
+    pal = _PALETTES[name]
     g = globals()
     g.update(pal)
     g["_ACTIVE"] = name if name in _PALETTES else "dark"
@@ -125,7 +129,7 @@ def _apply_palette(name: str) -> None:
 
 def set_theme(name: str) -> None:
     """Troca o tema ativo ('dark' | 'light'). Use antes de apply_app/apply_editor_theme."""
-    _apply_palette(name if name in _PALETTES else "dark")
+    _apply_palette(name)        # _apply_palette ja sanitiza tipo/valor invalido
 
 
 def current_theme() -> str:

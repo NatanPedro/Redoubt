@@ -303,6 +303,72 @@ def test_apply_theme_troca_ao_vivo(win, tmp_path, monkeypatch):
         theme.set_theme("dark")
 
 
+def test_restaura_cofre_adulterado_nao_crasha(win, tmp_path, monkeypatch):
+    # REGRESSAO (pentest): blob .rdbt truncado/adulterado restaurado -> unlock so
+    # capturava WrongPassword; VaultError escapava do slot Qt e derrubava o app.
+    from notepy import config
+    _temp_settings(monkeypatch, tmp_path)
+    bad = tmp_path / "trunc.rdbt"
+    bad.write_bytes(b"RDBT1" + bytes([1, 15, 8, 1]) + b"\x00\x00\x00")   # MAGIC ok, resto invalido
+    config.save_session([str(bad)], 0)
+    win.restore_session()
+    vtab = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_vault)
+    assert vtab.is_locked()
+    win.tabs.setCurrentWidget(vtab)
+    win._inbox.append(("qualquer", True))
+    win.unlock_current()                       # NAO pode levantar (VaultError tratado)
+    assert vtab.is_locked()                    # segue travado, app vivo
+
+
+def test_restaura_arquivo_grande_fica_oculto(win, tmp_path, monkeypatch):
+    # REGRESSAO (pentest): arquivo > limite era aberto EM CLARO (fail-open). Agora
+    # oculta por precaucao (fail-safe) — nao joga conteudo na tela ao restaurar.
+    from notepy import config
+    _temp_settings(monkeypatch, tmp_path)
+    big = tmp_path / "big.txt"
+    big.write_text("x" * 2_000_001 + "\nAWS = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    config.save_session([str(big)], 0)
+    win.restore_session()
+    ed = next(w for i in range(win.tabs.count())
+              if (w := win.tabs.widget(i)).path == os.path.abspath(str(big)))
+    assert ed.is_gated()
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in ed.text()
+
+
+def test_gate_seal_cancelar_mantem_oculto(win, tmp_path):
+    # REGRESSAO (pentest): _gate_seal revelava ANTES de pedir senha -> cancelar
+    # deixava o segredo exposto. Agora pede senha com a aba ainda oculta.
+    f = tmp_path / "c.txt"
+    f.write_text("k = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    win.tabs.setCurrentWidget(ed)
+    win._inbox.append(("", False))             # cancela o dialogo de senha
+    win._gate_seal()
+    assert ed.is_gated()                       # permanece OCULTO
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in ed.text()
+
+
+def test_content_hash_oculto_usa_conteudo_real(win, tmp_path):
+    import hashlib
+    f = tmp_path / "c.txt"
+    f.write_text("k = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    esperado = hashlib.sha256(ed._gated_text.encode("utf-8", "surrogatepass")).hexdigest()
+    assert ed.content_hash() == esperado       # custodia reflete o conteudo real, nao o banner
+
+
+def test_write_bloqueia_aba_oculta(win, tmp_path):
+    f = tmp_path / "c.txt"
+    f.write_text("k = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    out = tmp_path / "out.txt"
+    assert win._write(ed, str(out)) is False   # chokepoint bloqueia (defesa em profundidade)
+    assert not out.exists()
+
+
 def test_protect_repo_instala_hook_via_gui(win, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QFileDialog
     from notepy import scan_cli

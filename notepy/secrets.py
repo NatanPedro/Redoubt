@@ -52,14 +52,18 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("Token npm", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
     ("Chave Google API", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
     ("Segredo OAuth do Google", re.compile(r"\bGOCSPX-[0-9A-Za-z_-]{28}\b")),
-    ("Token do Telegram", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
+    # token real do Telegram: a parte apos ':' SEMPRE comeca com "AA" (base64) —
+    # exigir isso elimina colisao com "epoch:hash" / "id:ref" genericos.
+    ("Token do Telegram", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b")),
     ("Chave de conta Azure Storage", re.compile(r"(?i)\bAccountKey=[A-Za-z0-9+/]{86}==")),
     ("Token Shopify", re.compile(r"\bshp(?:at|ss|pa|ca)_[0-9a-fA-F]{32}\b")),
     ("Token DigitalOcean", re.compile(r"\bdop_v1_[0-9a-f]{64}\b")),
     ("Token Square", re.compile(r"\bsq0(?:atp|csp)-[0-9A-Za-z_-]{22,}\b")),
     ("Token PyPI", re.compile(r"\bpypi-AgEI[A-Za-z0-9_-]{50,}")),
     ("Chave Postman", re.compile(r"\bPMAK-[0-9a-fA-F]{24}-[0-9a-fA-F]{34}\b")),
-    ("Token HashiCorp Vault", re.compile(r"\bhvs\.[A-Za-z0-9_-]{24,}")),
+    # token Vault e base64url longo de ALTA entropia; o lookahead exige ao menos
+    # 1 digito p/ nao casar identificador snake_case benigno (ex.: hvs.algum_metodo).
+    ("Token HashiCorp Vault", re.compile(r"\bhvs\.(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{30,}")),
     ("Token Doppler", re.compile(r"\bdp\.(?:pt|st|ct|sa|scim|audit)\.[A-Za-z0-9]{40,}\b")),
     ("Credencial Basic Auth", re.compile(r"(?i)\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}")),
     ("Token Bearer", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*")),

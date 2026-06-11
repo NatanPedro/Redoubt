@@ -52,6 +52,41 @@ def test_scan_staged_le_o_stage(monkeypatch):
     assert len(findings) == 1 and findings[0].path == "a.txt"
 
 
+def test_decode_utf16_nao_e_bypass_do_hook(monkeypatch):
+    # REGRESSAO (pentest v0.7-v0.10): UTF-16 e cheio de NUL; o _decode antigo
+    # tratava como binario e PULAVA -> um segredo num arquivo UTF-16 passava pelo
+    # hook (o editor pegava, o hook nao). Agora o BOM UTF-16/32 e decodificado.
+    raw16 = (f"senha = {SEC}").encode("utf-16")
+    text = scan_cli._decode(raw16)
+    assert text is not None and SEC in text
+
+    def fake_git(args):
+        if args[:2] == ["diff", "--cached"]:
+            return b"creds.txt\x00"
+        if args == ["show", ":creds.txt"]:
+            return raw16
+        return b""
+    monkeypatch.setattr(scan_cli, "_git", fake_git)
+    assert len(scan_cli.scan_staged()) == 1          # agora o hook PEGA
+
+
+def test_decode_binario_sem_bom_continua_pulado():
+    # binario de verdade (sem BOM de texto, com NUL) segue pulado: nao gera ruido
+    assert scan_cli._decode(b"\x89PNG\r\n\x00\x01\x02\x03dados\x07\x08\x0b\x0c") is None
+
+
+def test_decode_utf16_sem_bom_nao_e_bypass():
+    # REGRESSAO: UTF-16-LE SEM BOM tambem e cheio de NUL — nao pode ser pulado.
+    text = scan_cli._decode((f"k = {SEC}").encode("utf-16-le"))
+    assert text is not None and SEC in text
+
+
+def test_decode_nul_injetado_nao_e_bypass():
+    # REGRESSAO: 1 NUL injetado num texto nao pode desligar a varredura do arquivo.
+    text = scan_cli._decode((f"k = {SEC}\n").encode() + b"\x00")
+    assert text is not None and SEC in text
+
+
 def test_install_uninstall_hook(tmp_path, monkeypatch):
     hooks = tmp_path / "hooks"
     monkeypatch.setattr(scan_cli, "_hooks_dir", lambda repo: str(hooks))

@@ -99,3 +99,9 @@ def test_theme_default_e_roundtrip(temp_settings):
     assert config.get("theme") == "dark"
     config.set_("theme", "light")
     assert config.get("theme") == "light"
+
+
+def test_theme_valor_corrompido_coage_para_str(temp_settings):
+    # REGRESSAO (pentest): valor nao-string no registro nao pode quebrar quem consome.
+    temp_settings.setValue("theme", ["x", "y"])
+    assert isinstance(config.get("theme"), str)        # coage, nao crasha

@@ -34,14 +34,14 @@ DETECT = [
     ('t = github_pat_' + ('aB3' * 28)[:82], "Token fine-grained do GitHub"),
     ('GL = glpat-aB3dEfGh1jKlMn0pQrSt', "Token do GitLab"),
     ('GOOGLE = GOCSPX-abcdefghijklmnopqrstuvwxyz12', "Segredo OAuth do Google"),
-    ('bot 123456789:ABCdef0123456789ghijklmnopqrstuvwxy', "Token do Telegram"),
+    ('bot 123456789:AABCdef0123456789ghijklmnopqrstuvwx', "Token do Telegram"),
     ('AccountKey=' + ('AbC9d2' * 15)[:86] + '==', "Chave de conta Azure Storage"),
     ('SHOP = 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', "Token Shopify"),
     ('DO = dop_v1_' + '0123456789abcdef' * 4, "Token DigitalOcean"),
     ('SQ = sq0atp-aB3dEfGh1jKlMn0pQrStUv', "Token Square"),
     ('PYPI = pypi-AgEI' + ('aB3dEf' * 10), "Token PyPI"),
     ('PM = PMAK-a1b2c3d4e5f6a7b8c9d0e1f2-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7', "Chave Postman"),
-    ('VAULT = hvs.aB3dEfGh1jKlMn0pQrStUvWx', "Token HashiCorp Vault"),
+    ('VAULT = hvs.aB3dEfGh1jKlMn0pQrStUvWx012345', "Token HashiCorp Vault"),
     ('DP = dp.pt.aB3dEfGh1jKlMn0pQrStUvWxYz0123456789abcd', "Token Doppler"),
 ]
 
@@ -71,6 +71,7 @@ NO_DETECT = [
     'x = GOCSPX-curto',                      # GOCSPX- mas tamanho errado
     'pkg = pypi-test-build-123',             # pypi- mas nao macaroon 'AgEI...'
     'cfg = AccountKey=abc',                  # AccountKey= mas nao base64(86)==
+    'result = hvs.interpolate_missing_timestamps(data)',   # 'hvs.' + metodo snake_case (FP corrigido)
 ]
 
 
