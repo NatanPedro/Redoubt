@@ -75,3 +75,21 @@ def test_clamp_valores_fora_do_range(temp_settings):
 def test_valor_nao_inteiro_cai_no_default(temp_settings):
     config.set_("tab_width", "abc")
     assert config.get("tab_width") == 4         # default, sem crash
+
+
+def test_restore_session_bool(temp_settings):
+    assert config.get("restore_session") is True       # default
+    config.set_("restore_session", False)
+    assert config.get("restore_session") is False      # bool sobrevive ao .ini ("false")
+
+
+def test_session_roundtrip(temp_settings):
+    config.save_session(["/a/b.txt", "/c/d.rdbt"], 1)
+    paths, active = config.load_session()
+    assert paths == ["/a/b.txt", "/c/d.rdbt"]
+    assert active == 1
+
+
+def test_session_vazia(temp_settings):
+    paths, active = config.load_session()               # sem nada salvo
+    assert paths == [] and active == 0

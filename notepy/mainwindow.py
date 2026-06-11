@@ -9,19 +9,24 @@ from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStyle,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from . import APP_NAME, APP_TAGLINE, APP_VERSION, config, theme, vault
+from . import APP_NAME, APP_TAGLINE, APP_VERSION, config, secrets as secrets_mod, theme, vault
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
+
+# Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
+_RESTORE_SCAN_LIMIT = 2_000_000
 from .findbar import FindBar
 from .preferences import PreferencesDialog
 
@@ -78,11 +83,32 @@ class MainWindow(QMainWindow):
         # Barra de Localizar/Substituir (Ctrl+F / Ctrl+H), oculta por padrao.
         self.find_bar = FindBar(self.current_editor)
 
+        # Barra de "conteudo oculto" (arquivo restaurado com credencial): so aparece
+        # quando a aba atual esta gated. Oferece Revelar / Selar como cofre.
+        self.gate_bar = QWidget()
+        gb = QHBoxLayout(self.gate_bar)
+        gb.setContentsMargins(8, 4, 8, 4)
+        gb.setSpacing(8)
+        self.gate_label = QLabel("")
+        self.gate_label.setStyleSheet(f"color:{theme.AMBER}; font-weight:600;")
+        btn_reveal = QPushButton("Revelar")
+        btn_reveal.setToolTip("Mostra o conteudo (continua em texto puro no disco)")
+        btn_reveal.clicked.connect(self.reveal_current)
+        btn_seal = QPushButton("Selar como cofre")
+        btn_seal.setToolTip("Cifra de verdade (.rdbt, AES-256-GCM, pede senha-mestra)")
+        btn_seal.clicked.connect(self._gate_seal)
+        gb.addWidget(self.gate_label)
+        gb.addStretch(1)
+        gb.addWidget(btn_reveal)
+        gb.addWidget(btn_seal)
+        self.gate_bar.hide()
+
         container = QWidget()
         lay = QVBoxLayout(container)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.find_bar)
+        lay.addWidget(self.gate_bar)
         lay.addWidget(self.tabs)
         lay.addWidget(self.cmd_bar)
         self.setCentralWidget(container)
@@ -366,6 +392,8 @@ class MainWindow(QMainWindow):
         n = len(editor.secret_matches())
         if editor.is_burn:
             text, color = "🔥 BURN (so RAM)", theme.RED
+        elif editor.is_gated():
+            text, color = f"🛡️ OCULTO · {editor.gated_count()}", theme.AMBER
         elif editor.is_vault and editor.is_locked():
             text, color = "🔒 TRAVADO", theme.AMBER
         elif editor.is_vault:
@@ -402,8 +430,18 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, _index: int) -> None:
         editor = self.current_editor()
         self.act_redact.setChecked(editor.is_redacted() if editor else False)
+        self._update_gate_bar()
         self._update_status()
         self._update_window_title()
+
+    def _update_gate_bar(self) -> None:
+        editor = self.current_editor()
+        if editor is not None and editor.is_gated():
+            self.gate_label.setText(
+                f"🛡️ Conteudo oculto — {editor.gated_count()} credencial(is) detectada(s).")
+            self.gate_bar.show()
+        else:
+            self.gate_bar.hide()
 
     def _on_secrets_changed(self, editor: CodeEditor, count: int) -> None:
         prev = getattr(editor, "_last_secret_count", 0)
@@ -750,6 +788,9 @@ class MainWindow(QMainWindow):
         if editor.is_burn:
             QMessageBox.information(self, APP_NAME, "Nota de queima e efemera — nao vai pro disco.")
             return False
+        if editor.is_gated():
+            QMessageBox.information(self, APP_NAME, "Revele o conteudo (barra acima) antes de salvar.")
+            return False
         if editor.is_locked():
             QMessageBox.information(self, APP_NAME, "Destrave o cofre (Ctrl+Shift+U) antes de salvar.")
             return False
@@ -763,6 +804,9 @@ class MainWindow(QMainWindow):
             return False
         if editor.is_burn:
             QMessageBox.information(self, APP_NAME, "Nota de queima e efemera — nao vai pro disco.")
+            return False
+        if editor.is_gated():
+            QMessageBox.information(self, APP_NAME, "Revele o conteudo (barra acima) antes de salvar.")
             return False
         if editor.is_vault:
             start = editor.path or f"{editor.display_name or 'cofre'}.rdbt"
@@ -888,11 +932,116 @@ class MainWindow(QMainWindow):
             if not self._maybe_save(self.tabs.widget(i)):
                 event.ignore()
                 return
+        self._save_session()                      # so caminhos (antes de apagar burns)
         for i in range(self.tabs.count()):        # apaga notas de queima ao sair
             ed = self.tabs.widget(i)
             if ed.is_burn:
                 self._wipe_editor(ed)
         event.accept()
+
+    # ================================================================== #
+    # Sessao: lembra QUAIS arquivos estavam abertos (nunca o conteudo)
+    # ================================================================== #
+    def _save_session(self) -> None:
+        paths: list[str] = []
+        for i in range(self.tabs.count()):
+            ed = self.tabs.widget(i)
+            if ed.is_burn:          # nota de queima: efemera, NUNCA persistir
+                continue
+            if ed.path:             # so arquivos com caminho real (exclui "sem titulo")
+                paths.append(ed.path)
+        config.save_session(paths, self.tabs.currentIndex())
+
+    def restore_session(self) -> int:
+        """Reabre os arquivos da ultima sessao. Cofres reaparecem TRAVADOS (sem
+        pedir senha). Arquivos sumidos sao ignorados em silencio. Retorna a qtd
+        reaberta."""
+        if not config.get("restore_session"):
+            return 0
+        paths, active = config.load_session()
+        opened = 0
+        for p in paths:
+            if not os.path.isfile(p):
+                continue
+            already = any(self.tabs.widget(i).path and
+                          os.path.normcase(self.tabs.widget(i).path) == os.path.normcase(p)
+                          for i in range(self.tabs.count()))
+            if already:
+                continue
+            try:
+                self._restore_one(p)
+                opened += 1
+            except Exception:
+                continue                            # um arquivo problematico nao derruba o resto
+        if opened:
+            self._maybe_close_initial_empty()
+            if 0 <= active < self.tabs.count():
+                self.tabs.setCurrentIndex(active)
+            self._update_gate_bar()
+        return opened
+
+    def _restore_one(self, path: str) -> None:
+        """Reabre 1 arquivo na restauracao. Cofre -> travado. Arquivo em claro COM
+        credencial -> OCULTO (gated). Arquivo limpo -> abre normal."""
+        if vault.is_vault_file(path):
+            self._restore_vault_locked(path)
+            return
+        try:
+            text, encoding = read_text(path)
+        except OSError:
+            return
+        try:
+            hits = len(secrets_mod.scan(text)) if len(text) <= _RESTORE_SCAN_LIMIT else 0
+        except Exception:
+            hits = 0
+        if hits > 0:                                # tem credencial -> abre OCULTO
+            editor = self._new_editor()
+            editor.path = path
+            editor.encoding = encoding
+            editor.apply_lexer_for_path(path)
+            editor.gate(text, hits)
+            self._add_tab(editor)
+        else:                                       # arquivo limpo -> abre normal
+            self.open_path(path)
+
+    def reveal_current(self) -> None:
+        """Revela o conteudo de uma aba OCULTA (privacidade, sem senha)."""
+        editor = self.current_editor()
+        if editor is None or not editor.is_gated():
+            return
+        editor.reveal()
+        editor.apply_lexer_for_path(editor.path or "")
+        editor.setModified(False)
+        editor.mark_saved()                         # baseline de custodia = conteudo do arquivo
+        editor._rescan_secrets()                    # agora marca/tarja os segredos normalmente
+        self._update_gate_bar()
+        self._update_status()
+        self._update_window_title()
+
+    def _gate_seal(self) -> None:
+        """Botao 'Selar como cofre': revela (precisa do texto real) e sela em .rdbt."""
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_gated():
+            editor.reveal()
+            editor.apply_lexer_for_path(editor.path or "")
+        self._update_gate_bar()
+        self.seal_current()
+
+    def _restore_vault_locked(self, path: str) -> None:
+        try:
+            with open(path, "rb") as fh:
+                blob = fh.read()
+        except OSError:
+            return
+        if not vault.looks_like_vault(blob):
+            return
+        editor = self._new_editor()
+        editor.path = path
+        editor.encoding = "utf-8"
+        editor.restore_locked(blob)
+        self._add_tab(editor)
 
     # ================================================================== #
     # Arrastar e soltar

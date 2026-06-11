@@ -17,9 +17,33 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 Ideias futuras (sem data):
-- Restaurar sessao (reabrir abas ao iniciar).
 - Tema claro (e troca de tema nas preferencias).
 - Hook git local (pytest no pre-push).
+
+---
+
+## [0.7.0] - 2026-06-09 — Restaurar sessão
+
+### Added
+- **Restaurar sessão ao abrir** — o Redoubt reabre os arquivos que estavam abertos.
+  Desenhado com a postura de segurança do produto:
+  - Persiste **apenas os CAMINHOS** dos arquivos — **nunca o conteúdo**.
+  - **Notas de queima** e **abas sem título** (buffers em RAM, possivelmente com
+    segredo) **jamais** são salvas — nada de texto sensível vai para o registro.
+  - **Cofres** reaparecem **TRAVADOS, sem pedir senha** (zero-knowledge): só o
+    caminho é lembrado; o `.rdbt` no disco já é cifrado; destrava com `Ctrl+Shift+U`.
+  - Liga/desliga em **Preferências** (`restore_session`, padrão ligado); argumentos
+    de linha de comando têm prioridade sobre a sessão.
+  - `notepy/config.py` ganhou `save_session`/`load_session` + suporte a preferência
+    booleana; `editor.restore_locked()` reabre cofre lacrado.
+- **Conteúdo oculto na restauração (privacidade, híbrido):** ao restaurar um arquivo
+  **em claro** onde a Sentinela detecta credencial, o Redoubt abre com o conteúdo
+  **OCULTO** (selo `🛡️ OCULTO`) + uma barra com **Revelar** e **Selar como cofre** —
+  evita jogar segredo na tela num restore (anti screen-share). Arquivo limpo abre
+  normal. Honestidade: ocultar **não cifra** (o texto fica só em RAM, nunca exibido,
+  e o arquivo segue em claro no disco); a proteção real é o botão **Selar como cofre**
+  (vira `.rdbt`). Salvar fica **bloqueado** enquanto oculto (não sobrescreve o original
+  com o banner). +10 testes → **85 testes**.
 
 ---
 

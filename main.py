@@ -47,12 +47,15 @@ def main() -> int:
         window.setWindowIcon(icon)
 
     # Abre os arquivos passados na linha de comando (e via "Abrir com…").
+    # Argumentos de CLI tem prioridade; sem eles, restaura a ultima sessao.
     opened_any = False
     for arg in sys.argv[1:]:
         window.open_path(arg)
         opened_any = True
     if opened_any:
         window._maybe_close_initial_empty()
+    else:
+        window.restore_session()
 
     window.show()
     return app.exec()

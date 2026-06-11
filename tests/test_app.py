@@ -175,3 +175,112 @@ def test_read_text_nul_nao_trunca(tmp_path):
     assert "\x00" not in text                              # NUL neutralizado (vira ␀)
     assert "AKIA3FK7XQ2MNP8RTUVW" in text                  # conteudo apos o NUL preservado
     assert len(secrets.scan(text)) >= 1
+
+
+# --------------------------------------------------------------------------- #
+# Restaurar sessao (so caminhos; nunca conteudo)
+# --------------------------------------------------------------------------- #
+def _temp_settings(monkeypatch, tmp_path):
+    from PyQt6.QtCore import QSettings
+    from notepy import config
+    s = QSettings(str(tmp_path / "prefs.ini"), QSettings.Format.IniFormat)
+    monkeypatch.setattr(config, "_s", lambda: s)
+    return s
+
+
+def test_sessao_salva_so_caminhos_sem_conteudo(win, tmp_path, monkeypatch):
+    from notepy import config
+    s = _temp_settings(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"
+    f.write_text("oi AKIA3FK7XQ2MNP8RTUVW", encoding="utf-8")
+    win.open_path(str(f))
+    win.new_burn(); win.current_editor().setText("BURN-SECRETO-9988")   # nao pode persistir
+    win._save_session()
+    paths, _ = config.load_session()
+    assert any(p.endswith("a.txt") for p in paths)          # arquivo real entra
+    assert all("BURN" not in p for p in paths)              # burn fora
+    # e o armazenamento (registro/.ini) NAO contem conteudo nenhum:
+    s.sync()
+    raw = open(s.fileName(), encoding="utf-8", errors="replace").read()
+    assert "BURN-SECRETO-9988" not in raw
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in raw
+
+
+def test_restaura_arquivo_e_cofre_travado(win, tmp_path, monkeypatch):
+    from notepy import config, vault
+    _temp_settings(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("conteudo", encoding="utf-8")
+    v = tmp_path / "c.rdbt"; v.write_bytes(vault.encrypt("segredo guardado", "pw1234"))
+    config.save_session([str(f), str(v)], 0)
+    win.restore_session()
+    nomes = [win.tabs.widget(i).path for i in range(win.tabs.count())]
+    assert any(n and n.endswith("a.txt") for n in nomes)
+    vtab = next(w for i in range(win.tabs.count())
+                if (w := win.tabs.widget(i)).is_vault)
+    assert vtab.is_locked() and vtab._vault_password is None    # zero-knowledge: sem senha
+    assert vtab.unlock("pw1234") and "segredo guardado" in vtab.text()
+
+
+def test_restore_desligado_nao_reabre(win, tmp_path, monkeypatch):
+    from notepy import config
+    _temp_settings(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("x", encoding="utf-8")
+    config.save_session([str(f)], 0)
+    config.set_("restore_session", False)
+    assert win.restore_session() == 0
+
+
+# --------------------------------------------------------------------------- #
+# Conteudo OCULTO (gated): arquivo restaurado com credencial
+# --------------------------------------------------------------------------- #
+def test_restaura_credencial_fica_oculto_e_limpo_abre(win, tmp_path):
+    f = tmp_path / "cred.txt"
+    f.write_text("api_key = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    g = tmp_path / "plain.txt"
+    g.write_text("apenas texto comum sem nada\n", encoding="utf-8")
+    win._restore_one(str(f))
+    win._restore_one(str(g))
+    cred = next(w for i in range(win.tabs.count())
+                if (w := win.tabs.widget(i)).path == os.path.abspath(str(f)))
+    plain = next(w for i in range(win.tabs.count())
+                 if (w := win.tabs.widget(i)).path == os.path.abspath(str(g)))
+    assert cred.is_gated() and cred.gated_count() >= 1
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in cred.text()              # oculto na tela
+    assert "AKIA3FK7XQ2MNP8RTUVW" in (cred._gated_text or "")      # real so em RAM
+    assert not plain.is_gated() and "texto comum" in plain.text()  # limpo abre normal
+
+
+def test_revelar_mostra_e_varre(win, tmp_path):
+    f = tmp_path / "c.txt"
+    f.write_text("k = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    win.tabs.setCurrentWidget(ed)
+    win._update_gate_bar()
+    assert not win.gate_bar.isHidden()                  # barra aparece quando oculto
+    win.reveal_current()
+    assert not ed.is_gated()
+    assert "AKIA3FK7XQ2MNP8RTUVW" in ed.text()          # conteudo revelado
+    assert len(ed.secret_matches()) >= 1               # Sentinela passa a marcar
+    assert win.gate_bar.isHidden()                      # barra some apos revelar
+
+
+def test_oculto_bloqueia_salvar_e_preserva_original(win, tmp_path):
+    f = tmp_path / "c.txt"
+    original = "k = AKIA3FK7XQ2MNP8RTUVW\n"
+    f.write_text(original, encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    assert win.save_file(ed) is False                   # salvar bloqueado enquanto oculto
+    assert f.read_text(encoding="utf-8") == original     # original NAO foi sobrescrito
+
+
+def test_selar_oculto_vira_cofre(win, tmp_path):
+    f = tmp_path / "c.txt"
+    f.write_text("k = AKIA3FK7XQ2MNP8RTUVW\n", encoding="utf-8")
+    win._restore_one(str(f))
+    ed = next(w for i in range(win.tabs.count()) if (w := win.tabs.widget(i)).is_gated())
+    win.tabs.setCurrentWidget(ed)
+    win._inbox += [("pw1234", True), ("pw1234", True)]
+    win._gate_seal()
+    assert ed.is_vault and not ed.is_gated()

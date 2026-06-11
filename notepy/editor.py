@@ -119,6 +119,13 @@ class CodeEditor(QsciScintilla):
         # Burn note: aba efemera que so vive na RAM e se autodestroi.
         self.is_burn: bool = False
 
+        # "Oculto" (gated): arquivo EM CLARO que contem credencial, restaurado com
+        # o conteudo escondido ate o usuario revelar. PRIVACIDADE (anti screen-share),
+        # NAO cifragem — o texto real fica so em RAM (_gated_text), nunca exibido.
+        self._gated: bool = False
+        self._gated_text: str | None = None
+        self._gated_count: int = 0
+
         self._setup_appearance()
         self._setup_indicators()
         theme.apply_editor_theme(self)
@@ -229,7 +236,7 @@ class CodeEditor(QsciScintilla):
             self._scan_timer.start()
 
     def _rescan_secrets(self) -> None:
-        if self.is_vault:
+        if self.is_vault or self._gated:
             # Cofre: o conteudo ja e protegido por cifragem; nao faz sentido
             # marca-lo como "exposto". Limpa qualquer indicador remanescente.
             if self._secret_matches:
@@ -363,6 +370,65 @@ class CodeEditor(QsciScintilla):
         self.setReadOnly(True)
         self.setModified(False)
         return True
+
+    # ------------------------------------------------------------------ #
+    # "Oculto" (gated): arquivo em claro com credencial, escondido ate revelar
+    # ------------------------------------------------------------------ #
+    def is_gated(self) -> bool:
+        return self._gated
+
+    def gated_count(self) -> int:
+        return self._gated_count
+
+    def gate(self, text: str, count: int) -> None:
+        """Esconde o conteudo (em claro) de um arquivo com credenciais ate o
+        usuario revelar. NAO cifra: e privacidade (nao joga segredo na tela ao
+        restaurar). O texto real fica so em RAM e nunca e exibido."""
+        self._gated = True
+        self._gated_text = text
+        self._gated_count = count
+        self.setReadOnly(False)
+        self.setText(
+            f"🛡️ Este arquivo contem {count} credencial(is) detectada(s).\n\n"
+            "O conteudo esta OCULTO (privacidade). Use a barra acima:\n"
+            "  • Revelar — mostra o conteudo (continua em texto puro no disco)\n"
+            "  • Selar como cofre — cifra de verdade (.rdbt, pede senha-mestra)")
+        self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)
+        self.setReadOnly(True)
+        self.setModified(False)
+
+    def reveal(self) -> str | None:
+        """Revela o conteudo oculto e devolve o texto (o chamador re-varre/lexa)."""
+        if not self._gated or self._gated_text is None:
+            return None
+        text = self._gated_text
+        self.setReadOnly(False)
+        self.setText(text)
+        self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)
+        self.setModified(False)
+        self._gated = False
+        self._gated_text = None
+        self._gated_count = 0
+        return text
+
+    def restore_locked(self, blob: bytes) -> None:
+        """Restaura um cofre de sessao em estado TRAVADO, SEM senha (zero-knowledge).
+
+        Reaproveita o `_locked_blob` (os bytes .rdbt cifrados do disco) — o
+        `unlock(senha)` decifra normalmente quando o usuario quiser. Nenhuma senha
+        e pedida nem guardada ao restaurar.
+        """
+        self.is_vault = True
+        self._locked = True
+        self._locked_blob = blob
+        self._vault_password = None
+        self._locked_was_modified = False
+        self.setReadOnly(False)
+        self.setText("🔒 Cofre (sessao restaurada).\n\n"
+                     "Seguranca ▸ Destravar cofre (Ctrl+Shift+U) e informe a senha-mestra.")
+        self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)
+        self.setReadOnly(True)
+        self.setModified(False)
 
     def unlock(self, password: str) -> bool:
         """Destrava: decifra o blob em memoria e restaura o conteudo. Pode levantar WrongPassword."""

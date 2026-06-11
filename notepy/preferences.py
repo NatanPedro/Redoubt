@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialogButtonBox,
     QDialog,
     QFontComboBox,
@@ -40,10 +41,17 @@ class PreferencesDialog(QDialog):
         self.sp_tab.setRange(1, 8)
         self.sp_tab.setValue(config.get("tab_width"))
 
+        self.cb_restore = QCheckBox("Reabrir os arquivos ao iniciar")
+        self.cb_restore.setToolTip(
+            "Lembra apenas os CAMINHOS abertos — nunca o conteudo. Cofres reaparecem "
+            "travados (sem pedir senha). Notas de queima e abas sem titulo nunca sao salvas.")
+        self.cb_restore.setChecked(config.get("restore_session"))
+
         form.addRow("Auto-lock do cofre:", self.sp_lock)
         form.addRow("Fonte:", self.cb_font)
         form.addRow("Tamanho da fonte:", self.sp_size)
         form.addRow("Largura do tab:", self.sp_tab)
+        form.addRow("Restaurar sessao:", self.cb_restore)
 
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -57,3 +65,4 @@ class PreferencesDialog(QDialog):
         config.set_("font_family", self.cb_font.currentFont().family())
         config.set_("font_size", self.sp_size.value())
         config.set_("tab_width", self.sp_tab.value())
+        config.set_("restore_session", self.cb_restore.isChecked())

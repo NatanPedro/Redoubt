@@ -16,6 +16,7 @@ DEFAULTS = {
     "font_family": "",      # "" = automatico (1a monoespacada instalada)
     "font_size": 11,
     "tab_width": 4,
+    "restore_session": True,  # reabrir os arquivos que estavam abertos ao iniciar
 }
 
 # Preferencia de fontes monoespacadas (a 1a instalada vence).
@@ -41,6 +42,12 @@ def _s() -> QSettings:
 def get(key: str):
     d = DEFAULTS[key]
     val = _s().value(key, d)
+    # bool ANTES de int (em Python bool e subclasse de int). O QSettings .ini
+    # devolve "true"/"false" como string; o registro pode devolver 0/1 ou bool.
+    if isinstance(d, bool):
+        if isinstance(val, bool):
+            return val
+        return str(val).strip().lower() in ("true", "1", "yes", "on")
     if isinstance(d, int):
         try:
             ival = int(val)
@@ -76,3 +83,32 @@ def editor_font() -> QFont:
     font.setFixedPitch(True)
     font.setStyleHint(QFont.StyleHint.Monospace)
     return font
+
+
+# --------------------------------------------------------------------------- #
+# Sessao: APENAS os caminhos dos arquivos abertos — NUNCA o conteudo.
+# Notas de queima e buffers sem titulo nao tem caminho/sao efemeros e por isso
+# JAMAIS entram aqui (nada de texto possivelmente secreto vai para o registro).
+# Cofres guardam so o caminho (o .rdbt no disco ja e cifrado; a senha nunca e
+# persistida — zero-knowledge).
+# --------------------------------------------------------------------------- #
+def save_session(paths: list[str], active: int = 0) -> None:
+    s = _s()
+    s.setValue("session/paths", list(paths))
+    s.setValue("session/active", int(active))
+
+
+def load_session() -> tuple[list[str], int]:
+    s = _s()
+    raw = s.value("session/paths", [])
+    if raw is None:
+        paths: list[str] = []
+    elif isinstance(raw, str):
+        paths = [raw] if raw else []     # QSettings devolve str se a lista tinha 1 item
+    else:
+        paths = [str(p) for p in raw]
+    try:
+        active = int(s.value("session/active", 0))
+    except (ValueError, TypeError):
+        active = 0
+    return paths, active
