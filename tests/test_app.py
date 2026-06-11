@@ -24,13 +24,42 @@ def test_selar_grava_cifrado_e_reabre(win, tmp_path):
     vp = str(tmp_path / "c.rdbt")
     assert win._write(ed, vp)
     raw = open(vp, "rb").read()
-    assert raw[:5] == b"RDBT1" and b"senha: y" not in raw
+    assert raw[:5] == b"RDBT2" and b"senha: y" not in raw   # envelope RDBT2
 
     # reabre com a senha certa
     win._inbox.append(("pw1234", True))
     win._open_vault(vp)
     assert "senha: y" in win.current_editor().text()
     assert win.current_editor().is_vault
+
+
+def test_cofre_adiciona_senha_e_abre_com_ela(win, tmp_path):
+    # Cofre++: 2a senha independente abre o MESMO cofre, e sobrevive ao salvar.
+    ed = win.current_editor(); ed.setText("conteudo do cofre")
+    win._inbox += [("senha-A", True), ("senha-A", True)]    # selar
+    assert win.seal_current()
+    win._inbox += [("senha-B", True), ("senha-B", True)]    # adicionar 2a senha
+    win.add_vault_password()
+    vp = str(tmp_path / "c.rdbt")
+    assert win._write(ed, vp)
+    win._inbox.append(("senha-B", True))                    # reabre com a 2a senha
+    win._open_vault(vp)
+    assert "conteudo do cofre" in win.current_editor().text()
+
+
+def test_cofre_keyfile_adiciona_e_destrava(win, tmp_path, monkeypatch):
+    # Cofre++: arquivo-chave adicionado destrava o cofre (sem senha).
+    from PyQt6.QtWidgets import QFileDialog
+    kf = tmp_path / "chave.key"; kf.write_bytes(b"material-de-arquivo-chave-1234567890")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(kf), "")))
+    ed = win.current_editor(); ed.setText("guardado a sete chaves")
+    win._inbox += [("senhaX", True), ("senhaX", True)]
+    assert win.seal_current()
+    win.add_vault_keyfile()                                  # adiciona slot de arquivo-chave
+    assert win._write(ed, str(tmp_path / "c.rdbt"))
+    assert ed.lock()
+    win.unlock_with_keyfile()                                # destrava SO com o arquivo-chave
+    assert not ed.is_locked() and "guardado a sete chaves" in ed.text()
 
 
 def test_reabrir_com_senha_errada_nao_abre(win, tmp_path):
@@ -49,7 +78,7 @@ def test_lock_unlock_preserva_conteudo(win):
     win._inbox += [("master12", True), ("master12", True)]
     win.seal_current()
     assert ed.lock()
-    assert ed.is_locked() and ed._vault_password is None
+    assert ed.is_locked() and ed._vault_key is None  # zero-knowledge: esqueceu a chave
     assert "AKIA3FK7XQ2MNP8RTUVW" not in ed.text()   # escondido
     assert ed.unlock("master12")
     assert not ed.is_locked() and ed.text() == SECRET_FILE   # restaurado byte a byte

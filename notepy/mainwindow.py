@@ -248,6 +248,12 @@ class MainWindow(QMainWindow):
                                SP.SP_DialogYesButton,
                                QKeySequence("Ctrl+Shift+U"),
                                self.unlock_current)
+        self.act_unlock_keyfile = make("Destravar com arquivo-&chave…",
+                                       SP.SP_DialogYesButton, None, self.unlock_with_keyfile)
+        self.act_add_pw = make("Cofre: adicionar &senha…",
+                               SP.SP_DriveHDIcon, None, self.add_vault_password)
+        self.act_add_keyfile = make("Cofre: adicionar arquivo-cha&ve…",
+                                    SP.SP_DriveHDIcon, None, self.add_vault_keyfile)
         self.act_new_burn = make("Nova nota de &queima",
                                  SP.SP_TrashIcon,
                                  QKeySequence("Ctrl+Shift+B"),
@@ -312,6 +318,9 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_lock_now)
         m_sec.addAction(self.act_unlock)
+        m_sec.addAction(self.act_unlock_keyfile)
+        m_sec.addAction(self.act_add_pw)
+        m_sec.addAction(self.act_add_keyfile)
         m_sec.addAction(self.act_new_burn)
         m_sec.addSeparator()
         m_sec.addAction(self.act_protect_repo)
@@ -543,7 +552,9 @@ class MainWindow(QMainWindow):
 
     def _apply_seal(self, editor: CodeEditor, pw: str) -> None:
         editor.is_vault = True
-        editor._vault_password = pw
+        editor._vault_key = vault.generate_key()                       # chave-de-conteudo
+        editor._vault_slots = vault.add_unlocker(editor._vault_key, [], password=pw)
+        editor._vault_password = None
         editor.path = None             # forca salvar como novo .rdbt (nao clobbra o original)
         editor._rescan_secrets()       # limpa indicadores de "exposto"
         editor.setModified(True)
@@ -569,8 +580,8 @@ class MainWindow(QMainWindow):
             return
         if editor.is_locked():
             return
-        if not editor._vault_password:
-            QMessageBox.information(self, APP_NAME, "Salve o cofre (Ctrl+S) antes de travar.")
+        if editor._vault_key is None and not editor._vault_password:
+            QMessageBox.information(self, APP_NAME, "Sele o cofre (Ctrl+Shift+L) antes de travar.")
             return
         if editor.lock():
             self._refresh_tab(editor)
@@ -605,12 +616,90 @@ class MainWindow(QMainWindow):
         locked = 0
         for i in range(self.tabs.count()):
             ed = self.tabs.widget(i)
-            if ed.is_vault and not ed.is_locked() and ed._vault_password and ed.lock():
+            if ed.is_vault and not ed.is_locked() and ed._vault_key is not None and ed.lock():
                 locked += 1
                 self._refresh_tab(ed)
         if locked:
             self._update_status()
             self.statusBar().showMessage(f"{locked} cofre(s) travado(s) por inatividade.", 5000)
+
+    # --- Cofre++: multiplos destravadores (senhas / arquivos-chave) ---------- #
+    def _unlocked_vault(self) -> CodeEditor | None:
+        ed = self.current_editor()
+        if ed is None or not ed.is_vault or ed.is_locked() or ed._vault_key is None:
+            QMessageBox.information(
+                self, APP_NAME, "Abra ou sele um cofre (destravado) antes de gerenciar credenciais.")
+            return None
+        return ed
+
+    def add_vault_password(self) -> None:
+        ed = self._unlocked_vault()
+        if ed is None:
+            return
+        pw1, ok = QInputDialog.getText(self, "Adicionar senha", "Nova senha-mestra:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or not pw1:
+            return
+        if len(pw1) < 4:
+            QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
+            return
+        pw2, ok = QInputDialog.getText(self, "Adicionar senha", "Confirme:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or pw1 != pw2:
+            QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
+            return
+        ed._vault_slots = vault.add_unlocker(ed._vault_key, ed._vault_slots, password=pw1)
+        ed.setModified(True)
+        QMessageBox.information(self, APP_NAME,
+                                "Senha adicionada. Salve (Ctrl+S) para gravar o cofre com a nova credencial.")
+
+    def add_vault_keyfile(self) -> None:
+        ed = self._unlocked_vault()
+        if ed is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Escolher arquivo-chave")
+        if not path:
+            return
+        try:
+            with open(path, "rb") as fh:
+                kf = fh.read()
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o arquivo-chave:\n{exc}")
+            return
+        if not kf:
+            QMessageBox.warning(self, APP_NAME, "Arquivo-chave vazio.")
+            return
+        ed._vault_slots = vault.add_unlocker(ed._vault_key, ed._vault_slots, keyfile=kf)
+        ed.setModified(True)
+        QMessageBox.information(
+            self, APP_NAME, "Arquivo-chave adicionado. Salve (Ctrl+S) para gravar.\n"
+            "Guarde o arquivo-chave em local seguro — ele destrava este cofre.")
+
+    def unlock_with_keyfile(self) -> None:
+        editor = self.current_editor()
+        if editor is None or not (editor.is_vault and editor.is_locked()):
+            self.statusBar().showMessage("Nenhum cofre travado nesta aba.", 3000)
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Destravar com arquivo-chave")
+        if not path:
+            return
+        try:
+            with open(path, "rb") as fh:
+                kf = fh.read()
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o arquivo-chave:\n{exc}")
+            return
+        try:
+            editor.unlock(keyfile=kf)
+        except vault.WrongPassword:
+            QMessageBox.critical(self, APP_NAME, "Arquivo-chave nao confere com este cofre.")
+            return
+        except vault.VaultError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Cofre invalido ou adulterado:\n{exc}")
+            return
+        self._refresh_tab(editor)
+        self._update_status()
+        self.statusBar().showMessage("Cofre destravado com arquivo-chave.", 3000)
 
     def new_burn(self) -> None:
         self._untitled_counter += 1
@@ -888,7 +977,7 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "rb") as fh:
                 blob = fh.read()
-            text = vault.decrypt(blob, pw)
+            opened = vault.open_vault(blob, password=pw)
         except vault.WrongPassword:
             QMessageBox.critical(self, APP_NAME, "Senha incorreta ou cofre adulterado.")
             return
@@ -900,8 +989,9 @@ class MainWindow(QMainWindow):
         editor.path = path
         editor.encoding = "utf-8"
         editor.is_vault = True
-        editor._vault_password = pw
-        editor.setText(text)
+        editor._vault_key = opened.key             # preserva os slots p/ re-selar
+        editor._vault_slots = opened.slots
+        editor.setText(opened.text)
         editor.setModified(False)
         editor.mark_saved()
         editor.setCursorPosition(0, 0)
@@ -951,7 +1041,10 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".rdbt"):
             path += ".rdbt"
         try:
-            blob = vault.encrypt(editor.text(), editor._vault_password or "")
+            if editor._vault_key is not None:
+                blob = vault.reseal(editor.text(), editor._vault_key, editor._vault_slots)
+            else:
+                blob = vault.encrypt(editor.text(), editor._vault_password or "")
             with open(path, "wb") as fh:
                 fh.write(blob)
         except (OSError, vault.VaultError) as exc:

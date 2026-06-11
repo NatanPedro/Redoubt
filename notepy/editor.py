@@ -109,9 +109,11 @@ class CodeEditor(QsciScintilla):
         self._saved_hash: str | None = None
         self._scan_skipped: bool = False   # True se o arquivo e grande demais p/ varrer
 
-        # Estado de cofre (.rdbt cifrado).
+        # Estado de cofre (.rdbt cifrado — envelope RDBT2 com key-slots).
         self.is_vault: bool = False
-        self._vault_password: str | None = None   # cacheada na sessao (zero-knowledge)
+        self._vault_password: str | None = None   # legado/compat (senha unica)
+        self._vault_key: bytes | None = None       # chave-de-conteudo (CK) enquanto destravado
+        self._vault_slots: list[bytes] = []        # destravadores (senhas/keyfiles) crus
         self._locked: bool = False                 # travado por inatividade
         self._locked_blob: bytes | None = None     # conteudo cifrado em memoria enquanto travado
         self._locked_was_modified: bool = False
@@ -356,15 +358,24 @@ class CodeEditor(QsciScintilla):
         return self._locked
 
     def lock(self) -> bool:
-        """Trava o cofre: cifra o conteudo em memoria, esconde o texto e ESQUECE a senha."""
-        if not self.is_vault or self._locked or not self._vault_password:
+        """Trava o cofre: re-cifra em memoria PRESERVANDO os destravadores, esconde o
+        texto e ESQUECE a chave (zero-knowledge)."""
+        if not self.is_vault or self._locked:
+            return False
+        if self._vault_key is None and not self._vault_password:
             return False
         try:
-            self._locked_blob = vault.encrypt(self.text(), self._vault_password)
+            if self._vault_key is not None:
+                # preserva TODOS os slots (varias senhas/keyfiles) ao re-selar
+                self._locked_blob = vault.reseal(self.text(), self._vault_key, self._vault_slots)
+            else:
+                self._locked_blob = vault.encrypt(self.text(), self._vault_password)
         except Exception:
             return False
         self._locked_was_modified = self.isModified()
-        self._vault_password = None         # esquece a senha ate destravar (zero-knowledge)
+        self._vault_password = None         # esquece tudo ate destravar (zero-knowledge)
+        self._vault_key = None
+        self._vault_slots = []
         self._locked = True
         self.setReadOnly(False)
         self.setText("🔒 Cofre travado por inatividade.\n\n"
@@ -435,6 +446,8 @@ class CodeEditor(QsciScintilla):
         self._locked = True
         self._locked_blob = blob
         self._vault_password = None
+        self._vault_key = None
+        self._vault_slots = []
         self._locked_was_modified = False
         self.setReadOnly(False)
         self.setText("🔒 Cofre (sessao restaurada).\n\n"
@@ -443,16 +456,19 @@ class CodeEditor(QsciScintilla):
         self.setReadOnly(True)
         self.setModified(False)
 
-    def unlock(self, password: str) -> bool:
-        """Destrava: decifra o blob em memoria e restaura o conteudo. Pode levantar WrongPassword."""
+    def unlock(self, password: str | None = None, keyfile: bytes | None = None) -> bool:
+        """Destrava com senha OU arquivo-chave; restaura conteudo + a chave/slots em
+        memoria (p/ re-selar preservando destravadores). Pode levantar WrongPassword."""
         if not self._locked or self._locked_blob is None:
             return False
-        text = vault.decrypt(self._locked_blob, password)   # WrongPassword se a senha falhar
+        opened = vault.open_vault(self._locked_blob, password=password, keyfile=keyfile)
         self.setReadOnly(False)
-        self.setText(text)
+        self.setText(opened.text)
         self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)   # nao deixa desfazer p/ o banner travado
         self.setModified(self._locked_was_modified)
-        self._vault_password = password
+        self._vault_key = opened.key
+        self._vault_slots = opened.slots
+        self._vault_password = None
         self._locked = False
         self._locked_blob = None
         return True

@@ -22,6 +22,29 @@ Ideias futuras (sem data):
 
 ---
 
+## [0.12.0] - 2026-06-10 — Cofre++ (envelope / múltiplos destravadores)
+
+### Added
+- **Cofre com múltiplos destravadores** — o `.rdbt` virou formato **envelope RDBT2**
+  (estilo LUKS/age): uma **chave-de-conteúdo (CK)** aleatória cifra o texto, e cada
+  destravador (senha **ou** arquivo-chave) é um **slot** que embrulha a CK. Logo:
+  - **Múltiplas senhas independentes** abrem o mesmo cofre.
+  - **Arquivo-chave** (key-file) como destravador — algo que você *tem*, além de algo
+    que você *sabe*.
+  - **Re-selar preserva todos os slots** (CK em memória); o conteúdo é re-cifrado sem
+    re-derivar as credenciais.
+- **GUI (menu Segurança):** *Adicionar senha…*, *Adicionar arquivo-chave…*, *Destravar
+  com arquivo-chave…*.
+- **Retrocompatível:** lê `.rdbt` antigo (RDBT1, senha única) e o **migra para RDBT2**
+  ao re-salvar.
+- **Defesas:** parâmetros de KDF validados por slot (anti scrypt-bomb); AAD liga o
+  conteúdo a todos os slots (anti slot-strip); até 16 slots. `notepy/vault.py` reescrito
+  (`new_vault`/`open_vault`/`reseal`/`add_unlocker`/`slot_kinds`; `encrypt`/`decrypt`
+  mantidos por compat). +11 testes (envelope: multi-senha, keyfile, reseal preserva,
+  migração RDBT1, strip de slot) → **152 testes**.
+
+---
+
 ## [0.11.0] - 2026-06-10 — Custódia assinada + trilha de auditoria
 
 ### Added
