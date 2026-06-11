@@ -28,7 +28,7 @@ def main() -> int:
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Redoubt.Redoubt")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Redoubt.Editor")
         except Exception:
             pass
 

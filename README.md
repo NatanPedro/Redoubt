@@ -10,7 +10,8 @@
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.11.0-41CD52?logo=qt&logoColor=white)](https://pypi.org/project/PyQt6/)
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
-[![Status](https://img.shields.io/badge/status-v0.2.0%20%C2%B7%20alfa-3FB950)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-v1.0.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
+[![Testes](https://img.shields.io/badge/testes-176%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -29,13 +30,11 @@ Mas o Redoubt nasceu com uma identidade que o separa de qualquer outro editor: *
 Vazamento de segredo quase nunca é ataque sofisticado — é descuido cotidiano. Um `.env` aberto numa demo. Um log colado no Slack. Uma chave AWS num *screenshot* de tutorial. O Redoubt parte do princípio de que **o momento mais perigoso de um segredo é quando ele está na sua tela**, e dá ao operador três defesas locais:
 
 1. **Ver** o segredo destacado no instante em que ele aparece.
-2. **Tarjar** o segredo na tela antes de compartilhar (Modo Redação).
-3. **Provar** que o arquivo não foi adulterado, via cadeia de custódia (hash SHA-256).
+2. **Tarjar** o segredo — na tela **e no clipboard** — antes de compartilhar (Modo Redação).
+3. **Cifrar** o conteúdo em repouso, com múltiplas senhas ou arquivo-chave (Cofre++).
+4. **Provar** que o arquivo não foi adulterado, com custódia **assinada** (Ed25519) + trilha de auditoria — e blindar seu `git` contra *commit* de segredo.
 
 Tudo isso **roda 100% localmente. Sem rede. Sem telemetria. Sem nuvem.**
-
-> 📸 *Placeholder de screenshot — HUD carbono + âmbar com o selo de estado e a cadeia de custódia na barra de status.*
-> `docs/screenshot.png`
 
 ---
 
@@ -59,13 +58,26 @@ O **filtro de placeholder** descarta automaticamente material de exemplo (`examp
 
 ### 🔒 Modo Redação
 
-`Ctrl+Shift+R` cobre **todos** os segredos detectados com uma tarja preta sólida — ideal para compartilhar a tela em call sem expor credenciais.
+`Ctrl+Shift+R` cobre **todos** os segredos detectados com tarja preta **e mascara o clipboard** — copiar um segredo entrega `●●●` no lugar do texto real. Ideal pra compartilhar a tela ou colar trechos em call sem vazar credencial.
 
-> ⚠️ A redação é **visual**: tarja a tela, mas o conteúdo real continua no documento (copiar ainda traz o segredo). Veja as [limitações honestas](#segurança).
+> ⚠️ A tarja na tela é **visual** (o conteúdo real continua no documento); a proteção em repouso é o **Cofre**. Veja as [limitações honestas](#segurança).
 
-### 🧾 Cadeia de custódia
+### 🗝️ Cofre++ — cifragem em repouso
 
-A barra de status mostra o **hash SHA-256** do conteúdo (8 primeiros dígitos hex). Ele é recalculado ao abrir e ao salvar, e exibe **"alterado"** enquanto houver edição não salva — permitindo flagrar adulteração externa de relance.
+`Ctrl+Shift+L` sela a aba como um cofre **`.rdbt`** cifrado com **AES-256-GCM** (chave derivada por **scrypt**), *zero-knowledge* (a senha nunca é gravada). Formato **envelope** (estilo LUKS/age): **múltiplas senhas independentes** e/ou um **arquivo-chave** abrem o mesmo cofre. Auto-lock por inatividade, travar/destravar, e o conteúdo **nunca toca o disco em claro**.
+
+### 🔏 Custódia assinada + trilha de auditoria
+
+Cada arquivo é tratado como **evidência**. Além do hash SHA-256, o Redoubt assina o conteúdo com uma **identidade Ed25519** local: `Ctrl+Shift+G` exporta a assinatura `.sig` + a chave pública, e **qualquer um com a chave pública verifica** que o arquivo não mudou desde que você assinou. Uma **trilha de auditoria encadeada** (hash-chain) registra abrir/salvar/selar/queimar/assinar — adulterar um evento passado **quebra a cadeia**. `Ctrl+Shift+H` mostra hash + assinatura + integridade da cadeia.
+
+### 🛡️ Hook git anti-segredo
+
+A Sentinela sai do editor e blinda o seu `git`: **Segurança ▸ Proteger repositório** instala um `pre-commit` que **bloqueia o commit** se houver credencial no *stage* (`python -m notepy.scan_cli --staged`). O relatório **nunca** imprime o segredo (só `arquivo:linha` + tipo mascarado). Bypass pontual: `git commit --no-verify`; *whitelist* por linha: `redoubt:allow`.
+
+### 🔥 Burn Note + restaurar sessão
+
+- **Burn Note** (`Ctrl+Shift+B`) — aba efêmera que vive **só na RAM**, nunca vai pro disco e é apagada ao fechar (com o *undo* zerado).
+- **Restaurar sessão** — reabre os arquivos da última vez, guardando **só os caminhos, nunca o conteúdo**. Cofre reaparece **travado**; arquivo em claro com credencial reaparece **🛡️ OCULTO** (anti screen-share), com botões *Revelar* / *Selar*.
 
 ### 🚦 Selo de estado
 
@@ -74,17 +86,17 @@ Na barra de status, um selo semântico resume a situação do documento:
 - 🟢 **● LIMPO** — nenhum segredo detectado
 - 🔴 **▲ EXPOSTO · N** — N segredos visíveis
 - 🟠 **■ REDIGIDO · N** — N segredos tarjados
+- 🔒 **COFRE / TRAVADO** · 🛡️ **OCULTO** · 🔥 **BURN**
 
 As abas com segredo ganham um **▲** no título, e a janela carrega `[▲ EXPOSTO]` quando há exposição.
 
 ### ✍️ Editor de verdade
 
-- **~50 linguagens** com realce via lexers do QScintilla (Python, JS/TS, C/C++, C#, Java, Go via texto, SQL, YAML, HTML, CSS, Markdown, Bash, e muito mais).
-- Abas **fecháveis e arrastáveis**, *drag & drop* de arquivos para abrir.
-- Detecção automática de **encoding** (UTF-8, UTF-8 BOM, Windows-1252, Latin-1) e de quebra de linha (CRLF/LF/CR).
-- Numeração de linhas, *folding*, *auto-indent*, guias de indentação, casamento de chaves.
-- Tema **HUD carbono + âmbar** onde a cor é semântica: âmbar = atenção, verde = selado, vermelho = exposto.
-- Aviso ao fechar com alterações não salvas.
+- **~50 linguagens** com realce via lexers do QScintilla (Python, JS/TS, C/C++, C#, Java, SQL, YAML, HTML, CSS, Markdown, Bash, e muito mais).
+- **Localizar/Substituir** (`Ctrl+F` / `Ctrl+H`, com regex), **Busca em arquivos** (`Ctrl+Shift+F`, grep recursivo na pasta com resultados clicáveis), **Paleta de comandos** (`Ctrl+Shift+P`, busca fuzzy de qualquer comando) e **Diff** entre arquivos (`Ctrl+Shift+D`, estilo *git*).
+- **Tema claro e escuro** (alterna em Preferências, `Ctrl+,`), HUD carbono+âmbar onde a cor é semântica: âmbar = atenção, verde = selado, vermelho = exposto.
+- Abas fecháveis/arrastáveis, *drag & drop*, **encoding** (UTF-8/BOM/UTF-16/Windows-1252/Latin-1) e EOL (CRLF/LF/CR) automáticos, *folding*, *auto-indent*, guias de indentação, casamento de chaves.
+- Preferências persistentes (auto-lock, fonte, largura de tab, tema, restaurar sessão) e aviso ao fechar com alterações não salvas.
 
 ---
 
@@ -133,6 +145,20 @@ O `build.bat` empacota tudo num único `.exe` com o ícone próprio (gerado por
 `tools/gen_icon.py`). Os intermediários vão para `%TEMP%`; o executável final fica
 em `dist\` (ignorado pelo git).
 
+### Instalador Windows
+
+Para um **instalador de verdade** — instala em *Program Files*, cria atalhos, **associa
+`.rdbt`** ao Redoubt (duplo-clique abre o cofre) e registra um *uninstaller* — use o
+[Inno Setup](https://jrsoftware.org/isdl.php):
+
+```bash
+winget install JRSoftware.InnoSetup   # uma vez
+build-installer.bat                   # gera dist\Redoubt-Setup-<versao>.exe
+```
+
+O pacote é definido em [`installer/redoubt.iss`](installer/redoubt.iss). O
+`Redoubt-Setup-*.exe` final fica em `dist\` (ignorado pelo git).
+
 ---
 
 ## Atalhos de teclado
@@ -150,12 +176,16 @@ em `dist\` (ignorado pelo git).
 | Selecionar tudo | `Ctrl+A` |
 | Localizar / Substituir | `Ctrl+F` / `Ctrl+H` |
 | Próxima / anterior ocorrência | `F3` / `Shift+F3` |
+| **Buscar em arquivos** (grep na pasta) | `Ctrl+Shift+F` |
+| **Paleta de comandos** | `Ctrl+Shift+P` |
+| **Comparar arquivos** (diff) | `Ctrl+Shift+D` |
 | Barra de comando `:` | `Ctrl+P` |
-| Preferências | `Ctrl+,` |
+| Preferências (tema, fonte, auto-lock…) | `Ctrl+,` |
 | **Modo Redação** (tarjar segredos) | `Ctrl+Shift+R` |
 | **Ir ao próximo segredo** | `F8` |
 | **Relatório de segredos** | `Ctrl+Shift+E` |
-| **Verificar custódia** (hash) | `Ctrl+Shift+H` |
+| **Verificar custódia** (hash + assinatura) | `Ctrl+Shift+H` |
+| **Assinar e exportar** (`.sig`) | `Ctrl+Shift+G` |
 | **Selar como cofre** | `Ctrl+Shift+L` |
 | **Travar / Destravar cofre** | `Ctrl+Shift+K` / `Ctrl+Shift+U` |
 | **Nova nota de queima** (Burn) | `Ctrl+Shift+B` |
@@ -184,20 +214,27 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
 ├── docs/                    Documentação detalhada
 │   ├── ARCHITECTURE.md      Módulos, fluxo de dados e decisões (ADRs)
 │   ├── SECURITY.md          Sentinela, red-team, threat model, limitações
-│   ├── SECURITY-TEST-REPORT.md  Relatório dos pentests (Sentinela, Cofre, Fase 3)
+│   ├── SECURITY-TEST-REPORT.md  Relatório dos pentests adversariais (§1–§7)
+│   ├── CUSTODY.md           Custódia assinada (Ed25519) + trilha de auditoria
+│   ├── GIT-HOOK.md          Hook pre-commit anti-segredo (uso e bypass)
 │   ├── DEVELOPMENT.md       Setup, testes headless, como estender
 │   └── Redoubt-Documentacao-Tecnica.docx   Documento formal (Word)
 └── notepy/                  Pacote Python (nome histórico)
     ├── __init__.py          APP_NAME / APP_VERSION / APP_TAGLINE
-    ├── mainwindow.py        Janela: abas, menus, barra :, custódia, cofre, burn
+    ├── mainwindow.py        Janela: abas, menus, barra :, custódia, cofre, busca/paleta/diff
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + hash + encoding
     ├── secrets.py           Sentinela de Segredos — scan(text) (testável sem Qt)
-    ├── vault.py             Cofre .rdbt — AES-256-GCM + scrypt (testável sem Qt)
+    ├── vault.py             Cofre++ .rdbt — AES-256-GCM + scrypt, envelope/key-slots (sem Qt)
+    ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria (sem Qt)
+    ├── scan_cli.py          CLI da Sentinela + hook git pre-commit (sem Qt)
+    ├── searchfiles.py       Busca em arquivos / grep na pasta (sem Qt)
+    ├── palette.py           Busca fuzzy da paleta de comandos (sem Qt)
+    ├── difftool.py          Diff entre arquivos via difflib (sem Qt)
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
     ├── preferences.py       Diálogo de preferências (Ctrl+,)
-    ├── config.py            QSettings: auto-lock, fonte, tab (testável sem Qt)
+    ├── config.py            QSettings: auto-lock, fonte, tab, tema, sessão (sem Qt)
     ├── lexers.py            Mapa extensão → lexer (~50 linguagens)
-    └── theme.py             Paleta carbono, QSS e repintura dos lexers
+    └── theme.py             Paletas dark/light, QSS e repintura dos lexers
 ```
 
 > O pacote ainda se chama `notepy/` por razão histórica, mas o produto foi renomeado para **Redoubt** em `notepy/__init__.py` (`APP_NAME = "Redoubt"`). Para renomear o app, basta trocar `APP_NAME`.
@@ -208,10 +245,11 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
 
 O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto sobre o que **não** consegue fazer. As limitações abaixo são parte do contrato:
 
-- **(a) RAM:** o Python não garante zerar segredos da memória (strings imutáveis + *garbage collector*). O *burn note* planejado **reduz** o resíduo, não o elimina.
+- **(a) RAM:** o Python não garante zerar segredos da memória (strings imutáveis + *garbage collector*). A **Burn Note** e o *lock* do cofre **reduzem** o resíduo, não o eliminam.
 - **(b) Detecção é best-effort:** existem falsos-positivos (base64 de imagem, JS minificado, um SKU com formato idêntico a chave AWS) e falsos-negativos (formatos de provedor desconhecidos, segredos ofuscados).
-- **(c) Modo Redação é visual:** tarja a tela, mas o conteúdo real permanece no documento — copiar ainda traz o segredo.
-- **(d) Tudo é local:** nenhum dado sai da máquina. Sem rede, sem telemetria.
+- **(c) Tela × clipboard:** a tarja **na tela** é um indicador visual (o texto real continua no documento); mas, com a redação ligada, o **clipboard é de fato mascarado**. Confidencialidade em repouso é trabalho do **Cofre**.
+- **(d) Custódia assinada:** a chave privada Ed25519 fica **local e sem senha** — prova *"veio desta instalação e não mudou"*, desde que a chave não vaze.
+- **(e) Tudo é local:** nenhum dado sai da máquina. Sem rede, sem telemetria.
 
 📖 **Leia o modelo de ameaça completo, os números do *red-team* e as garantias em [`docs/SECURITY.md`](docs/SECURITY.md).**
 
@@ -222,7 +260,9 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 | Documento | Conteúdo |
 |-----------|----------|
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Modelo de ameaça, garantias, limitações e resultados do *red-team* do detector |
-| [`docs/SECURITY-TEST-REPORT.md`](docs/SECURITY-TEST-REPORT.md) | Relatório do pentest adversarial (59 ataques): bugs corrigidos, limitações confirmadas, garantias que resistiram |
+| [`docs/SECURITY-TEST-REPORT.md`](docs/SECURITY-TEST-REPORT.md) | Relatório dos pentests adversariais (§1–§7): bugs corrigidos, limitações confirmadas, garantias que resistiram |
+| [`docs/CUSTODY.md`](docs/CUSTODY.md) | Custódia assinada (Ed25519): assinar, verificar, trilha de auditoria |
+| [`docs/GIT-HOOK.md`](docs/GIT-HOOK.md) | Hook pre-commit anti-segredo: instalar, verificar, *bypass* |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Arquitetura, decisões de stack (PyQt6/QScintilla *vs.* Electron/Tauri/WPF) e fluxo de dados |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Como rodar testes *headless*, convenções e ambiente de desenvolvimento |
 | [`CHANGELOG.md`](CHANGELOG.md) | Histórico de versões |
@@ -232,14 +272,13 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 ---
 
-## Roadmap
+## Status
 
-A Fase 3 mira transformar o Redoubt de "editor que vê segredos" em "editor que os contém":
+A **Fase 3 foi 100% entregue** (Cofre cifrado, Burn Note, barra `:`, mapa de exposição) — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria, **hook git anti-segredo**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-- 🔐 **Cofre `.rdbt` cifrado** — arquivos AES-GCM, senha derivada por PBKDF2 (adiciona a dependência `cryptography`).
-- 🔥 **Burn Note** — aba efêmera que vive só na RAM e se autodestrói.
-- ⌨️ **Barra `:` onipresente** — comandos `:seal` / `:burn` / `:redact` / `:hash` substituindo o menu clássico.
-- 🗺️ **Mapa de exposição** — indicadores na margem mostrando onde os segredos estão no arquivo.
+**4 pentests adversariais** sobrevividos e **176 testes** automatizados sustentam o 1.0.
+
+> Ideias futuras (sem data): instalador Windows + associação de `.rdbt` no Explorer; hook `pre-push` rodando a suíte de testes.
 
 ---
 
@@ -251,7 +290,7 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para os termos com
 
 <div align="center">
 
-**Redoubt** · v0.2.0 · *Python · PyQt6 · QScintilla*
+**Redoubt** · v1.0.0 · *Python · PyQt6 · QScintilla*
 
 *Nada vaza sem você mandar.*
 

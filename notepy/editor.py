@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 
 from PyQt6.Qsci import QsciScintilla
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QTimer, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics
 from PyQt6.QtWidgets import QApplication
@@ -39,6 +39,11 @@ EXPOSURE_MARKER = 0    # marcador na margem (mapa de exposicao: onde ha segredo)
 
 # Acima disso, nao varre a cada tecla (evita travar em arquivos enormes).
 _SCAN_LIMIT = 2_000_000
+
+# Letras de Ctrl+Shift+<letra> que o app reserva como QAction de janela. O editor
+# NAO deve reivindica-las (nem no keymap, nem via ShortcutOverride), senao a acao
+# (Selar/Destravar/...) nunca dispara pelo teclado.
+_RESERVED_CTRLSHIFT = frozenset(ord(c) for c in "RESLKUBHGFPD")
 
 
 def read_text(path: str) -> tuple[str, str]:
@@ -130,6 +135,7 @@ class CodeEditor(QsciScintilla):
 
         self._setup_appearance()
         self._setup_indicators()
+        self._free_app_shortcuts()
         theme.apply_editor_theme(self)
         self.marginClicked.connect(self._on_margin_clicked)
 
@@ -195,6 +201,33 @@ class CodeEditor(QsciScintilla):
         self.setMarginWidth(1, 10)
         self.setMarginMarkerMask(1, 0b11111111)   # markers 0-7 aparecem nesta margem
         self.setMarginSensitivity(1, True)         # clicavel (pula pra linha)
+
+    def _free_app_shortcuts(self) -> None:
+        """Libera, no keymap interno do QScintilla, as combinacoes Ctrl+Shift+<letra>
+        que o Redoubt reserva para acoes da janela. Sem isto, com o editor focado o
+        Scintilla SEQUESTRA a tecla (ex.: Ctrl+Shift+L = apagar linha; Ctrl+Shift+U =
+        MAIUSCULAS) e a QAction (Selar / Destravar / ...) nunca dispara."""
+        SHIFT, CTRL = 1, 2
+        mod = (CTRL | SHIFT) << 16
+        # Todos os Ctrl+Shift+<letra> que viram QAction no app (selar/travar/destravar/
+        # redacao/relatorio/salvar-como/burn/custodia/assinar/busca/paleta/diff).
+        for ch in "RESLKUBHGFPD":
+            self.SendScintilla(QsciScintilla.SCI_CLEARCMDKEY, ord(ch) | mod)
+
+    def event(self, ev):
+        # Limpar o keymap (acima) impede o Scintilla de EXECUTAR a tecla, mas ele ainda
+        # a REIVINDICA via ShortcutOverride — e a QAction da janela nao dispara ("nao faz
+        # nada"). Aqui recusamos o override das teclas reservadas, deixando o atalho da
+        # janela (Selar/Destravar/...) disparar normalmente.
+        if ev.type() == QEvent.Type.ShortcutOverride:
+            m = ev.modifiers()
+            Mod = Qt.KeyboardModifier
+            if (m & Mod.ControlModifier and m & Mod.ShiftModifier
+                    and not (m & (Mod.AltModifier | Mod.MetaModifier))
+                    and ev.key() in _RESERVED_CTRLSHIFT):
+                ev.ignore()
+                return False
+        return super().event(ev)
 
     # ------------------------------------------------------------------ #
     # Linguagem / tema

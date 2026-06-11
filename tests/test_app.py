@@ -465,6 +465,23 @@ def test_paleta_filtra_e_executa(win):
     assert fired == [True]
 
 
+def test_editor_nao_reivindica_override_das_teclas_do_app(qapp):
+    # REGRESSAO: liberar o keymap nao bastava — o QScintilla ainda REIVINDICAVA a tecla
+    # via ShortcutOverride, e a QAction Selar/Destravar nunca disparava. O editor agora
+    # recusa o override das teclas reservadas (-> o atalho da janela dispara).
+    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtCore import QEvent, Qt
+    from notepy.editor import CodeEditor
+    ed = CodeEditor()
+    M = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+    ev = QKeyEvent(QEvent.Type.ShortcutOverride, Qt.Key.Key_L, M)   # Ctrl+Shift+L (selar)
+    ed.event(ev)
+    assert not ev.isAccepted()            # NAO reivindicou -> a QAction da janela dispara
+    ev2 = QKeyEvent(QEvent.Type.ShortcutOverride, Qt.Key.Key_U, M)  # Ctrl+Shift+U (destravar)
+    ed.event(ev2)
+    assert not ev2.isAccepted()
+
+
 def test_diff_dialog_compara_arquivos(win, tmp_path):
     from notepy.mainwindow import DiffDialog
     a = tmp_path / "a.txt"; a.write_text("linha1\nlinha2\nfim", encoding="utf-8")

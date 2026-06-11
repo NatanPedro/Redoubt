@@ -22,6 +22,34 @@ Ideias futuras (sem data):
 
 ---
 
+## [1.0.0] - 2026-06-10 — Primeiro release estável 🏁
+
+Marco: o Redoubt sai do 0.x. **Sem feature nova** — é o selo de estabilidade sobre tudo
+que foi construído e validado.
+
+- **Pilares:** Sentinela de Segredos (24+ padrões, recall/precisão validados por corpus
+  de *red-team*) · **Cofre++** (AES-256-GCM em envelope, múltiplas senhas + arquivo-chave) ·
+  **Custódia assinada Ed25519** + trilha de auditoria · **Hook git anti-segredo** · Modo
+  Redação (tela **e** clipboard) · Burn Note · Restaurar sessão com **conteúdo oculto** ·
+  Localizar/Substituir · Busca em arquivos · Paleta de comandos · Diff · Temas claro/escuro.
+- **Qualidade:** **4 pentests adversariais** (relatório §1–§7), **176 testes**
+  automatizados, verificação ponta-a-ponta de todos os subsistemas (39 checagens) +
+  hook validado em repositório git real.
+- **Docs:** README atualizado para refletir o produto completo; `.gitignore` passa a
+  ignorar `*.sig` (assinaturas de custódia).
+- **Distribuição:** **instalador Windows** (Inno Setup — `installer/redoubt.iss` +
+  `build-installer.bat`) que instala em *Program Files*, cria atalhos, **associa `.rdbt`**
+  (duplo-clique abre o cofre) e registra *uninstaller*. Gera `dist\Redoubt-Setup-1.0.0.exe`.
+
+### Fixed
+- **Atalhos sequestrados pelo QScintilla:** `Ctrl+Shift+L` (selar cofre), `Ctrl+Shift+U`
+  (destravar) e outros não disparavam pelo teclado — o *keymap* interno do editor os
+  consumia (apagar linha / MAIÚSCULAS), e a ação só funcionava pelo menu. O `CodeEditor`
+  agora **libera** (`SCI_CLEARCMDKEY`) todas as combinações `Ctrl+Shift+<letra>` que o
+  Redoubt usa como ação de janela.
+
+---
+
 ## [0.13.0] - 2026-06-10 — Produtividade (busca em arquivos, paleta, diff)
 
 ### Added

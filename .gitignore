@@ -62,6 +62,22 @@ service-account*.json
 
 # Cofre / burn notes do proprio Redoubt (fase 3) — conteudo sensivel local.
 *.rdbt
+# Assinaturas destacadas da custodia (.sig) — artefato local de quem assina.
+*.sig
+
+# --- Endurecimento defensivo (pre-publico): artefatos que o Redoubt pode
+#     gerar localmente, ou padroes que as regras acima ainda nao pegam.
+#     Nenhum existe no repo hoje; isto evita commit acidental no futuro. ---
+*.env
+identity*
+*.ed25519
+audit.log
+redoubt-pubkey.txt
+*.crt
+*.cer
+*.bundle
+*.bak
+*.orig
 
 # ------------------------------------------------------------
 # NEGACOES — garantem que FONTE e DEMO entrem no git de propósito.
