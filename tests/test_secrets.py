@@ -27,6 +27,22 @@ DETECT = [
     ('cpf_cliente = "52998224725"', "CPF (sem mascara)"),
     ('emp 11.222.333/0001-81 ok', "CNPJ"),
     ('cartao = "4111 1111 1111 1111"', "Cartao de credito"),
+    # --- provedores adicionados na expansao da Sentinela ---
+    ('cred = ASIA3FK7XQ2MNP8RTUVW', "Chave de acesso AWS"),                 # credencial temporaria
+    ('-----BEGIN PGP PRIVATE KEY BLOCK-----', "Chave privada PEM"),
+    ('-----BEGIN OPENSSH PRIVATE KEY-----', "Chave privada PEM"),
+    ('t = github_pat_' + ('aB3' * 28)[:82], "Token fine-grained do GitHub"),
+    ('GL = glpat-aB3dEfGh1jKlMn0pQrSt', "Token do GitLab"),
+    ('GOOGLE = GOCSPX-abcdefghijklmnopqrstuvwxyz12', "Segredo OAuth do Google"),
+    ('bot 123456789:ABCdef0123456789ghijklmnopqrstuvwxy', "Token do Telegram"),
+    ('AccountKey=' + ('AbC9d2' * 15)[:86] + '==', "Chave de conta Azure Storage"),
+    ('SHOP = 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', "Token Shopify"),
+    ('DO = dop_v1_' + '0123456789abcdef' * 4, "Token DigitalOcean"),
+    ('SQ = sq0atp-aB3dEfGh1jKlMn0pQrStUv', "Token Square"),
+    ('PYPI = pypi-AgEI' + ('aB3dEf' * 10), "Token PyPI"),
+    ('PM = PMAK-a1b2c3d4e5f6a7b8c9d0e1f2-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7', "Chave Postman"),
+    ('VAULT = hvs.aB3dEfGh1jKlMn0pQrStUvWx', "Token HashiCorp Vault"),
+    ('DP = dp.pt.aB3dEfGh1jKlMn0pQrStUvWxYz0123456789abcd', "Token Doppler"),
 ]
 
 
@@ -51,6 +67,10 @@ NO_DETECT = [
     'redis://${USER}:${PASS}@host:6379/0',   # template (${...})
     'k = "AKIAXXXXXXXXXXXXXXXX"',            # repeticao (8+ iguais)
     'numero = "4111 1111 1111 1112"',        # cartao Luhn INVALIDO
+    'repo = glpat-curtinha',                 # prefixo certo, curto demais (<20)
+    'x = GOCSPX-curto',                      # GOCSPX- mas tamanho errado
+    'pkg = pypi-test-build-123',             # pypi- mas nao macaroon 'AgEI...'
+    'cfg = AccountKey=abc',                  # AccountKey= mas nao base64(86)==
 ]
 
 

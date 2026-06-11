@@ -22,6 +22,22 @@ Ideias futuras (sem data):
 
 ---
 
+## [0.10.0] - 2026-06-10 — Sentinela expandida
+
+### Added
+- **12 novos padrões de provedor** (alta confiança, prefixo distintivo → baixíssimo
+  falso-positivo): GitHub fine-grained (`github_pat_`), GitLab (`glpat-`), segredo
+  OAuth do Google (`GOCSPX-`), Telegram bot, Azure Storage (`AccountKey=`), Shopify
+  (`shpat_`/`shpss_`/…), DigitalOcean (`dop_v1_`), Square (`sq0atp-`/`sq0csp-`), PyPI
+  (`pypi-AgEI…`), Postman (`PMAK-`), HashiCorp Vault (`hvs.`), Doppler (`dp.pt.`…).
+- **AWS** ampliado para credenciais temporárias (`ASIA…`), além de `AKIA…`.
+- **PEM** generalizado: cobre `PGP PRIVATE KEY BLOCK` e `ENCRYPTED PRIVATE KEY`.
+- Esses padrões reforçam de uma vez o **editor**, o **hook git** e o **conteúdo
+  oculto** (todos usam o mesmo `secrets.scan`). +19 testes (cobertura de cada tipo +
+  negativos de precisão) → **118 testes**; recall/precisão do corpus de red-team mantidos.
+
+---
+
 ## [0.9.0] - 2026-06-10 — Tema claro + acabamento
 
 ### Added
