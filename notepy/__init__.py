@@ -6,5 +6,5 @@ Para renomear o app, basta trocar APP_NAME.
 """
 
 APP_NAME = "Redoubt"
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.13.0"
 APP_TAGLINE = "Nada vaza sem voce mandar."

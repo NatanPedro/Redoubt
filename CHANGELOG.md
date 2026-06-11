@@ -17,8 +17,27 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 Ideias futuras (sem data):
-- Tema claro (e troca de tema nas preferencias).
 - Hook git local (pytest no pre-push).
+- Distribuição: instalador Windows + associação `.rdbt` no Explorer.
+
+---
+
+## [0.13.0] - 2026-06-10 — Produtividade (busca em arquivos, paleta, diff)
+
+### Added
+- **Busca em arquivos** (`Ctrl+Shift+F`) — grep recursivo numa pasta (texto ou regex,
+  case on/off) com painel de resultados agrupado por arquivo; duplo-clique abre o
+  arquivo na linha. Pula binários, arquivos > 2 MB e pastas pesadas (`.git`,
+  `node_modules`…); cap de resultados e proteção anti-ReDoS. Núcleo `notepy/searchfiles.py`.
+- **Paleta de comandos** (`Ctrl+Shift+P`) — estilo VS Code: busca **fuzzy** por nome
+  e executa qualquer comando (↑/↓ navega, Enter executa). Reúne as ações de menu **+
+  comandos extras** que só existiam como botão/preferência (Tema claro/escuro, Revelar
+  conteúdo oculto). Núcleo `notepy/palette.py` (`fuzzy_score`/`rank`).
+- **Comparar arquivos (diff)** (`Ctrl+Shift+D`) — unified diff estilo *git* com realce
+  verde/vermelho e resumo `+N / -N`; o arquivo A já vem com a aba atual. Núcleo
+  `notepy/difftool.py` (`difflib`).
+- Os três núcleos são **Python puro (sem Qt)**, testáveis isolados. +21 testes (8 busca
+  + 6 paleta + 6 diff + 1 GUI de cada) → **176 testes**.
 
 ---
 

@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+import html
 import os
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QStyle,
     QTabWidget,
+    QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody,
-               secrets as secrets_mod, theme, vault)
+from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
+               palette, searchfiles, secrets as secrets_mod, theme, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -61,6 +69,178 @@ FILE_FILTER = (
 )
 
 
+class SearchDialog(QDialog):
+    """Busca em arquivos (grep numa pasta) com resultados clicaveis."""
+
+    def __init__(self, on_open, start_dir: str = "", parent=None):
+        super().__init__(parent)
+        self._on_open = on_open
+        self.setWindowTitle("Buscar em arquivos — Redoubt")
+        self.resize(720, 480)
+        lay = QVBoxLayout(self)
+
+        row = QHBoxLayout()
+        self.q = QLineEdit(); self.q.setPlaceholderText("Texto ou expressao regular…")
+        self.cb_case = QCheckBox("Aa"); self.cb_case.setToolTip("Diferenciar maiusculas/minusculas")
+        self.cb_regex = QCheckBox(".*"); self.cb_regex.setToolTip("Expressao regular")
+        btn = QPushButton("Buscar")
+        row.addWidget(self.q, 1); row.addWidget(self.cb_case)
+        row.addWidget(self.cb_regex); row.addWidget(btn)
+        lay.addLayout(row)
+
+        row2 = QHBoxLayout()
+        self.folder = QLineEdit(start_dir); self.folder.setPlaceholderText("Pasta a varrer…")
+        browse = QPushButton("Pasta…")
+        row2.addWidget(QLabel("Em:")); row2.addWidget(self.folder, 1); row2.addWidget(browse)
+        lay.addLayout(row2)
+
+        self.tree = QTreeWidget(); self.tree.setHeaderHidden(True)
+        lay.addWidget(self.tree, 1)
+        self.status = QLabel(""); lay.addWidget(self.status)
+
+        btn.clicked.connect(self.run_search)
+        self.q.returnPressed.connect(self.run_search)
+        browse.clicked.connect(self._browse)
+        self.tree.itemActivated.connect(self._activate)
+
+    def _browse(self) -> None:
+        d = QFileDialog.getExistingDirectory(self, "Escolher pasta", self.folder.text())
+        if d:
+            self.folder.setText(d)
+
+    def run_search(self) -> int:
+        root, query = self.folder.text().strip(), self.q.text()
+        self.tree.clear()
+        if not (root and os.path.isdir(root) and query):
+            self.status.setText("Informe uma pasta valida e um texto.")
+            return 0
+        hits = searchfiles.search_in_dir(root, query,
+                                         regex=self.cb_regex.isChecked(), case=self.cb_case.isChecked())
+        by_file: dict[str, list] = {}
+        for h in hits:
+            by_file.setdefault(h.path, []).append(h)
+        for path, hs in by_file.items():
+            top = QTreeWidgetItem([f"{os.path.relpath(path, root)}  ({len(hs)})"])
+            for h in hs:
+                child = QTreeWidgetItem([f"  {h.line}: {h.text}"])
+                child.setData(0, Qt.ItemDataRole.UserRole, (h.path, h.line))
+                top.addChild(child)
+            self.tree.addTopLevelItem(top)
+        self.tree.expandAll()
+        self.status.setText(f"{len(hits)} resultado(s) em {len(by_file)} arquivo(s)"
+                            + ("  (limite atingido)" if len(hits) >= 2000 else ""))
+        return len(hits)
+
+    def _activate(self, item, _col=0) -> None:
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data:
+            self._on_open(*data)
+
+
+class CommandPalette(QDialog):
+    """Paleta de comandos (Ctrl+Shift+P): acha e executa qualquer comando por nome.
+
+    `commands` = lista de (label, atalho, callable) — cobre tanto QActions de menu
+    quanto comandos que so existem como botao/preferencia (tema, revelar oculto...)."""
+
+    def __init__(self, commands, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Paleta de comandos")
+        self.resize(560, 420)
+        self._items = list(commands)                 # (label, atalho, callable)
+        self._labels = [lbl for lbl, _sc, _fn in self._items]
+        lay = QVBoxLayout(self)
+        self.edit = QLineEdit(); self.edit.setPlaceholderText("Digite um comando…")
+        self.list = QListWidget()
+        lay.addWidget(self.edit)
+        lay.addWidget(self.list, 1)
+        self.edit.textChanged.connect(self._refilter)
+        self.edit.returnPressed.connect(self._run_current)
+        self.list.itemActivated.connect(lambda *_: self._run_current())
+        self.edit.installEventFilter(self)      # setas navegam a lista
+        self._refilter("")
+        self.edit.setFocus()
+
+    def eventFilter(self, obj, ev):
+        if obj is self.edit and ev.type() == QEvent.Type.KeyPress and self.list.count():
+            k = ev.key()
+            if k in (Qt.Key.Key_Down, Qt.Key.Key_Up):
+                row = self.list.currentRow() + (1 if k == Qt.Key.Key_Down else -1)
+                self.list.setCurrentRow(max(0, min(self.list.count() - 1, row)))
+                return True
+        return super().eventFilter(obj, ev)
+
+    def _refilter(self, text: str) -> None:
+        self.list.clear()
+        order = palette.rank(text, self._labels) if text else list(range(len(self._labels)))
+        for i in order:
+            lbl, sc, fn = self._items[i]
+            item = QListWidgetItem(f"{lbl}    {sc}" if sc else lbl)
+            item.setData(Qt.ItemDataRole.UserRole, fn)
+            self.list.addItem(item)
+        if self.list.count():
+            self.list.setCurrentRow(0)
+
+    def _run_current(self) -> None:
+        item = self.list.currentItem()
+        if item is None:
+            return
+        fn = item.data(Qt.ItemDataRole.UserRole)
+        self.accept()
+        if callable(fn):
+            fn()
+
+
+class DiffDialog(QDialog):
+    """Compara dois arquivos (unified diff, estilo git, com verde/vermelho)."""
+
+    def __init__(self, default_a: str = "", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Comparar arquivos — Redoubt")
+        self.resize(820, 560)
+        lay = QVBoxLayout(self)
+        self.a = QLineEdit(default_a); self.a.setPlaceholderText("Arquivo A (original)…")
+        self.b = QLineEdit(); self.b.setPlaceholderText("Arquivo B (modificado)…")
+        ba = QPushButton("A…"); bb = QPushButton("B…")
+        btn = QPushButton("Comparar")
+        r1 = QHBoxLayout(); r1.addWidget(QLabel("A:")); r1.addWidget(self.a, 1); r1.addWidget(ba)
+        r2 = QHBoxLayout(); r2.addWidget(QLabel("B:")); r2.addWidget(self.b, 1); r2.addWidget(bb)
+        r2.addWidget(btn)
+        lay.addLayout(r1); lay.addLayout(r2)
+        self.view = QTextEdit(); self.view.setReadOnly(True)
+        self.view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        lay.addWidget(self.view, 1)
+        self.status = QLabel(""); lay.addWidget(self.status)
+        ba.clicked.connect(lambda: self._pick(self.a))
+        bb.clicked.connect(lambda: self._pick(self.b))
+        btn.clicked.connect(self.compare)
+
+    def _pick(self, field: QLineEdit) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Escolher arquivo", field.text())
+        if path:
+            field.setText(path)
+
+    def compare(self) -> int:
+        ta = difftool.read_file(self.a.text().strip())
+        tb = difftool.read_file(self.b.text().strip())
+        if ta is None or tb is None:
+            self.view.clear()
+            self.status.setText("Nao foi possivel ler um dos arquivos (inexistente ou binario).")
+            return -1
+        diff = difftool.unified(ta, tb, os.path.basename(self.a.text()) or "A",
+                                os.path.basename(self.b.text()) or "B")
+        colors = {"add": theme.GREEN, "del": theme.RED, "hunk": theme.AMBER,
+                  "hdr": theme.DIM, "ctx": theme.TEXT}
+        rows = "\n".join(
+            f'<span style="color:{colors[k]}">{html.escape(ln) or "&nbsp;"}</span>'
+            for k, ln in diff)
+        self.view.setHtml(f'<pre style="font-family:Consolas,monospace;font-size:12px">{rows}</pre>')
+        adds, dels = difftool.stats(diff)
+        self.status.setText("Arquivos identicos." if not diff
+                            else f"+{adds} / -{dels} linha(s).")
+        return len(diff)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -69,6 +249,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         self._untitled_counter = 0
+        self._search_dialog: SearchDialog | None = None
 
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -220,6 +401,12 @@ class MainWindow(QMainWindow):
                                   QKeySequence("F3"), lambda: self.find_bar.find_next())
         self.act_find_prev = make("Localizar &anterior", SP.SP_ArrowUp,
                                   QKeySequence("Shift+F3"), lambda: self.find_bar.find_prev())
+        self.act_search_files = make("Buscar em &arquivos…", SP.SP_FileDialogContentsView,
+                                     QKeySequence("Ctrl+Shift+F"), self.search_in_files)
+        self.act_palette = make("&Paleta de comandos…", SP.SP_FileDialogDetailedView,
+                                QKeySequence("Ctrl+Shift+P"), self.command_palette)
+        self.act_diff = make("Comparar arquivos (&diff)…", SP.SP_FileDialogContentsView,
+                             QKeySequence("Ctrl+Shift+D"), self.diff_files)
 
         # Seguranca (a identidade do Redoubt)
         self.act_redact = make("Modo &Redacao (tarjar segredos)",
@@ -303,9 +490,12 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         m_edit.addAction(self.act_select_all)
         m_edit.addSeparator()
-        for act in (self.act_find, self.act_replace, self.act_find_next, self.act_find_prev):
+        for act in (self.act_find, self.act_replace, self.act_find_next, self.act_find_prev,
+                    self.act_search_files):
             m_edit.addAction(act)
         m_edit.addSeparator()
+        m_edit.addAction(self.act_palette)
+        m_edit.addAction(self.act_diff)
         m_edit.addAction(self.act_settings)
 
         m_sec = bar.addMenu("&Seguranca")
@@ -917,6 +1107,65 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Abrir arquivo(s)", start_dir, FILE_FILTER)
         for path in paths:
             self.open_path(path)
+
+    def search_in_files(self) -> None:
+        """Abre (ou traz pra frente) o dialogo de busca em arquivos (grep na pasta)."""
+        cur = self.current_editor()
+        start = os.path.dirname(cur.path) if (cur is not None and cur.path) else ""
+        if self._search_dialog is None:
+            self._search_dialog = SearchDialog(self._open_at_line, start, self)
+        elif start and not self._search_dialog.folder.text():
+            self._search_dialog.folder.setText(start)
+        self._search_dialog.show()
+        self._search_dialog.raise_()
+        self._search_dialog.activateWindow()
+        self._search_dialog.q.setFocus()
+
+    def _open_at_line(self, path: str, line: int) -> None:
+        """Callback do dialogo de busca: abre o arquivo e pula para a linha."""
+        self.open_path(path)
+        ed = self.current_editor()
+        if ed is not None:
+            ln = max(0, line - 1)
+            ed.setCursorPosition(ln, 0)
+            ed.ensureLineVisible(ln)
+            ed.setFocus()
+
+    def palette_commands(self) -> list[tuple]:
+        """Comandos da paleta = (label, atalho, callable). Reúne as QActions de menu
+        MAIS comandos que só existem como botão/preferência (tema, revelar oculto)."""
+        cmds, seen = [], set()
+        for a in self.findChildren(QAction):
+            lbl = a.text().replace("&", "").strip()
+            if not lbl or a is self.act_palette or lbl in seen:
+                continue
+            seen.add(lbl)
+            sc = a.shortcut().toString() if not a.shortcut().isEmpty() else ""
+            cmds.append((lbl, sc, a.trigger))
+        extras = [
+            ("Tema: claro", "", lambda: self._palette_set_theme("light")),
+            ("Tema: escuro", "", lambda: self._palette_set_theme("dark")),
+            ("Revelar conteudo oculto", "", self.reveal_current),
+        ]
+        for lbl, sc, fn in extras:
+            if lbl not in seen:
+                seen.add(lbl)
+                cmds.append((lbl, sc, fn))
+        cmds.sort(key=lambda c: c[0].lower())
+        return cmds
+
+    def _palette_set_theme(self, name: str) -> None:
+        config.set_("theme", name)
+        self.apply_theme()
+        self.statusBar().showMessage(f"Tema aplicado: {name}", 3000)
+
+    def command_palette(self) -> None:
+        CommandPalette(self.palette_commands(), self).exec()
+
+    def diff_files(self) -> None:
+        cur = self.current_editor()
+        default_a = cur.path if (cur is not None and cur.path) else ""
+        DiffDialog(default_a, self).exec()
 
     def open_path(self, path: str) -> None:
         path = os.path.abspath(path)

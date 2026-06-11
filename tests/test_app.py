@@ -431,6 +431,53 @@ def test_custodia_trilha_encadeada_registra_eventos(win, tmp_path, monkeypatch):
     assert ok and idx == -1                             # cadeia integra
 
 
+def test_busca_em_arquivos_dialogo_e_abre_no_resultado(win, tmp_path):
+    from notepy.mainwindow import SearchDialog
+    (tmp_path / "doc.txt").write_text("linha1\nachar AKIA aqui\nlinha3", encoding="utf-8")
+    # _open_at_line: abre o arquivo e pula para a linha
+    win._open_at_line(str(tmp_path / "doc.txt"), 2)
+    ed = win.current_editor()
+    assert ed.path == os.path.abspath(str(tmp_path / "doc.txt"))
+    assert ed.getCursorPosition()[0] == 1                    # linha 2 (0-based)
+    # dialogo: run_search popula os resultados
+    achados = []
+    dlg = SearchDialog(lambda p, ln: achados.append((p, ln)), str(tmp_path))
+    dlg.q.setText("achar")
+    assert dlg.run_search() == 1
+
+
+def test_paleta_commands_inclui_acoes_e_extras(win):
+    labels = [lbl for lbl, _sc, _fn in win.palette_commands()]
+    assert any("Salvar" in l for l in labels)
+    assert any("cofre" in l.lower() for l in labels)
+    assert any("Tema" in l for l in labels)                     # extra: tema claro/escuro
+    assert any("oculto" in l.lower() for l in labels)           # extra: revelar oculto
+    assert not any("Paleta de comandos" in l for l in labels)   # nao se auto-inclui
+
+
+def test_paleta_filtra_e_executa(win):
+    from notepy.mainwindow import CommandPalette
+    fired = []
+    dlg = CommandPalette([("Acao de Teste", "", lambda: fired.append(True))], win)
+    dlg.edit.setText("teste")               # fuzzy casa "Acao de Teste"
+    assert dlg.list.count() == 1
+    dlg._run_current()                       # dispara o comando selecionado
+    assert fired == [True]
+
+
+def test_diff_dialog_compara_arquivos(win, tmp_path):
+    from notepy.mainwindow import DiffDialog
+    a = tmp_path / "a.txt"; a.write_text("linha1\nlinha2\nfim", encoding="utf-8")
+    b = tmp_path / "b.txt"; b.write_text("linha1\nLINHA2X\nfim", encoding="utf-8")
+    dlg = DiffDialog(str(a), win)
+    dlg.b.setText(str(b))
+    assert dlg.compare() > 0                                   # ha diferencas
+    assert "LINHA2X" in dlg.view.toPlainText()                 # mostra a linha nova
+    dlg.b.setText(str(a))
+    dlg.compare()
+    assert "identicos" in dlg.status.text().lower()            # A vs A = identico
+
+
 def test_protect_repo_instala_hook_via_gui(win, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QFileDialog
     from notepy import scan_cli
