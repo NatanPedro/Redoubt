@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.0.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-176%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-212%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -108,7 +108,7 @@ As abas com segredo ganham um **▲** no título, e a janela carrega `[▲ EXPOS
 pip install -r requirements.txt
 ```
 
-O `requirements.txt` traz apenas duas dependências — `PyQt6` e `PyQt6-QScintilla`. Nada mais.
+O `requirements.txt` traz três dependências de runtime — `PyQt6`, `PyQt6-QScintilla` e `cryptography` (esta para o Cofre, a custódia Ed25519 e o release assinado).
 
 > ### ⚠️ Sobre o `venv`
 > A pasta do projeto vive dentro de uma pasta do **OneDrive**, que sincroniza para a nuvem. Por isso **não criamos um ambiente virtual** aqui — um `venv` sincronizado é lento e quebradiço. Os pacotes são instalados no Python **global** da máquina. Se você clonar para fora do OneDrive, fique à vontade para usar `venv` normalmente.
@@ -318,9 +318,9 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 ## Status
 
-A **Fase 3 foi 100% entregue** (Cofre cifrado, Burn Note, barra `:`, mapa de exposição) — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria, **hook git anti-segredo**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
+O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**4 pentests adversariais** sobrevividos e **176 testes** automatizados sustentam o 1.0.
+**Pentests adversariais** sobrevividos e **212 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiu com o release assinado e a identidade protegida).
 
 > Ideias futuras (sem data): instalador Windows + associação de `.rdbt` no Explorer; hook `pre-push` rodando a suíte de testes.
 
