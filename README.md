@@ -161,6 +161,50 @@ O pacote é definido em [`installer/redoubt.iss`](installer/redoubt.iss). O
 
 ---
 
+## Verificar o download (release assinado)
+
+Coerente com a tagline — *nada vaza sem você mandar* — o Redoubt **prova a própria
+integridade**. Cada release traz, ao lado dos binários:
+
+- **`SHA256SUMS`** — o SHA-256 de cada arquivo (formato `sha256sum` padrão);
+- **`RELEASE.json`** — um manifesto **assinado com a identidade Ed25519 do Redoubt** (a
+  mesma custódia que o editor usa para assinar arquivos).
+
+Para conferir o que você baixou — **sem nem instalar o Redoubt** (só Python +
+`cryptography`) — rode o verificador [`verify_release.py`](verify_release.py) na pasta
+dos binários:
+
+```bash
+python verify_release.py .
+```
+
+Saída esperada:
+
+```text
+Chave de confiança (fingerprint): 4e391f28930f3b6e
+Assinatura confere com a chave do autor: SIM
+Artefatos:
+  [OK] Redoubt-Setup-1.0.0.exe
+  [OK] Redoubt.exe
+
+Veredito: INTEGRO E AUTENTICO
+```
+
+O `verify_release.py` **embute a chave pública do autor** e valida a assinatura contra
+ela — então um binário adulterado e re-assinado com outra chave é **rejeitado** (a
+assinatura não confere com a âncora), e o `RELEASE.json` falha se qualquer hash não bater.
+
+> **Fingerprint oficial:** `4e391f28930f3b6e`
+> **Chave pública (Ed25519, base64):** `RZZBbCP6irycPMcBLFs5raHw5gONJOU5LMYZwGawrBA=`
+>
+> Confirme que o fingerprint impresso bate com este. **Modelo de confiança (honesto):** a
+> assinatura prova integridade + que o release veio desta chave, que chega pelo mesmo
+> repositório que você já confia. A chave privada é local e sem senha — quem tiver a
+> máquina do autor pode assinar como ele. Para verificar um release de **outra** pessoa:
+> `python verify_release.py <dir> --pubkey <chave-base64>`.
+
+---
+
 ## Atalhos de teclado
 
 | Ação | Atalho |

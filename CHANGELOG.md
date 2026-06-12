@@ -16,9 +16,22 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Release assinado + verificador standalone** — o Redoubt passa a provar a própria
+  integridade. `build-installer.bat` gera, ao lado dos binários, um `SHA256SUMS` e um
+  `RELEASE.json` **assinado com a identidade Ed25519** do Redoubt (núcleo puro em
+  `notepy/release.py`). O verificador [`verify_release.py`](verify_release.py) — standalone,
+  sem instalar o app — **embute a chave pública do autor** e valida a assinatura contra ela:
+  binário re-assinado com outra chave é rejeitado, e o manifesto falha se qualquer hash não
+  bater. Fingerprint oficial: `4e391f28930f3b6e`. Seção "Verificar o download" no README.
+- **+21 testes** (`tests/test_release.py`): núcleo + casos confirmados por *red-team*
+  adversarial (re-assinatura por outra chave, fingerprint forjado, `artifacts` malformado
+  sem crash, path traversal, autenticação forte por chave completa). **198 testes no total.**
+
 Ideias futuras (sem data):
+- Proteger a identidade Ed25519 com passphrase (key-slot do cofre).
+- Trilha de auditoria assinada por entrada + âncora anti-reset exportável.
 - Hook git local (pytest no pre-push).
-- Distribuição: instalador Windows + associação `.rdbt` no Explorer.
 
 ---
 

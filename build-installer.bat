@@ -21,4 +21,13 @@ if not exist "%DIR%dist\Redoubt.exe" (
   exit /b 1
 )
 %ISCC% "%DIR%installer\redoubt.iss"
+if errorlevel 1 exit /b 1
+
+echo.
+echo === Gerando manifesto de release assinado (RELEASE.json + SHA256SUMS) ===
+rem  Assina os binarios com a identidade Ed25519 do Redoubt (custody) e gera os
+rem  artefatos de verificacao. Tudo LOCAL. Verifique depois com:  verify_release.py
+pushd "%DIR%"
+python -m notepy.release make --dist "%DIR%dist"
+popd
 endlocal
