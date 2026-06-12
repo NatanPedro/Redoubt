@@ -241,6 +241,20 @@ def _cmd_make(args) -> int:
         return 1
 
     artifacts = scan_artifacts(args.dist, names)
+    if custody.is_protected():               # identidade com senha: destrava antes de assinar
+        import getpass
+        for _ in range(3):
+            try:
+                pw = getpass.getpass("Senha da identidade Redoubt (para assinar o release): ")
+            except (EOFError, KeyboardInterrupt):
+                print("\n[ERRO] assinatura cancelada.")
+                return 1
+            if custody.unlock_identity(pw):
+                break
+            print("Senha incorreta.")
+        else:
+            print("[ERRO] nao consegui destravar a identidade.")
+            return 1
     manifest = build_manifest(
         product=APP_NAME, version=version, date=when,
         public_key_b64=custody.public_key_b64(), fingerprint=custody.fingerprint(),

@@ -24,12 +24,16 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   sem instalar o app — **embute a chave pública do autor** e valida a assinatura contra ela:
   binário re-assinado com outra chave é rejeitado, e o manifesto falha se qualquer hash não
   bater. Fingerprint oficial: `4e391f28930f3b6e`. Seção "Verificar o download" no README.
-- **+21 testes** (`tests/test_release.py`): núcleo + casos confirmados por *red-team*
-  adversarial (re-assinatura por outra chave, fingerprint forjado, `artifacts` malformado
-  sem crash, path traversal, autenticação forte por chave completa). **198 testes no total.**
+- **Identidade Ed25519 protegida por senha** (opt-in, *Segurança ▸ Proteger identidade*) —
+  embrulha a chave privada no Cofre RDBT2 (`identity.rdbt`: senha **+ arquivo-chave**, multi-slot)
+  e apaga o PEM em claro; a pública fica em `identity.pub` (claro), então *fingerprint*/verificação
+  não pedem senha — só **assinar** pede (1× por sessão, cacheada). Preserva o fingerprint da
+  identidade existente. Endurecida por *red-team* (escrita atômica + *wipe* + remoção verificada
+  com **rollback**, *binding* pública↔chave, robustez a `identity.pub`/cofre corrompidos).
+- **Testes**: +21 (`test_release.py`) + 12 (`test_custody.py`, com os casos de red-team das duas
+  features) → **210 testes no total, 0 falhas.**
 
 Ideias futuras (sem data):
-- Proteger a identidade Ed25519 com passphrase (key-slot do cofre).
 - Trilha de auditoria assinada por entrada + âncora anti-reset exportável.
 - Hook git local (pytest no pre-push).
 

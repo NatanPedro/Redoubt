@@ -292,7 +292,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 - **(a) RAM:** o Python não garante zerar segredos da memória (strings imutáveis + *garbage collector*). A **Burn Note** e o *lock* do cofre **reduzem** o resíduo, não o eliminam.
 - **(b) Detecção é best-effort:** existem falsos-positivos (base64 de imagem, JS minificado, um SKU com formato idêntico a chave AWS) e falsos-negativos (formatos de provedor desconhecidos, segredos ofuscados).
 - **(c) Tela × clipboard:** a tarja **na tela** é um indicador visual (o texto real continua no documento); mas, com a redação ligada, o **clipboard é de fato mascarado**. Confidencialidade em repouso é trabalho do **Cofre**.
-- **(d) Custódia assinada:** a chave privada Ed25519 fica **local e sem senha** — prova *"veio desta instalação e não mudou"*, desde que a chave não vaze.
+- **(d) Custódia assinada:** a chave privada Ed25519 fica **local** — opcionalmente **protegida por senha/arquivo-chave** (*Segurança ▸ Proteger identidade*, embrulhada no mesmo Cofre AES-256-GCM); prova *"veio desta instalação e não mudou"*, desde que a chave não vaze.
 - **(e) Tudo é local:** nenhum dado sai da máquina. Sem rede, sem telemetria.
 
 📖 **Leia o modelo de ameaça completo, os números do *red-team* e as garantias em [`docs/SECURITY.md`](docs/SECURITY.md).**

@@ -10,8 +10,12 @@ prova de adulteração.
 
 Na primeira vez, o Redoubt gera um **par de chaves Ed25519** desta instalação:
 
-- Chave **privada**: `%APPDATA%\Redoubt\Redoubt\identity.ed25519` (PEM, local, sem senha).
-- Chave **pública**: exportável — é o que outra pessoa usa para verificar.
+- Chave **privada**: `%APPDATA%\Redoubt\Redoubt\identity.ed25519` (PEM, local). Por padrão fica
+  **sem senha**; em **Segurança ▸ Proteger identidade com senha** ela é embrulhada num Cofre
+  (`identity.rdbt`, o mesmo AES-256-GCM + senha/arquivo-chave do Cofre do app) e o PEM nu é
+  apagado — daí só **assinar** pede a credencial (1× por sessão).
+- Chave **pública**: exportável (`identity.pub`, em claro) — é o que outra pessoa usa para
+  verificar, e por ficar em claro o *fingerprint* e a verificação **não pedem senha**.
 
 Veja o *fingerprint* da sua identidade em **Verificar custódia** (`Ctrl+Shift+H`).
 
@@ -52,9 +56,11 @@ A trilha guarda **caminho + hash do conteúdo + timestamp** — nunca o conteúd
 
 ## Honestidade (modelo de ameaça)
 
-- A chave privada é **local e sem senha** (escolha de usabilidade): quem tem a máquina
-  pode assinar como você. A assinatura prova *"veio desta instalação e não mudou"* —
-  **desde que a chave privada não tenha vazado**.
+- A chave privada é **local**. **Sem proteção**, fica sem senha (usabilidade) e quem tem a
+  máquina pode assinar como você. Com **Proteger identidade**, passa a exigir senha (ou
+  arquivo-chave) para assinar — *zero-knowledge*, sem backdoor: esqueceu a credencial, perde
+  a identidade (mas a pública exportada segue verificando o que já foi assinado). A assinatura
+  prova *"veio desta instalação e não mudou"*, desde que a chave não tenha vazado.
 - Para confidencialidade **em repouso**, o mecanismo é o **Cofre** (`.rdbt`, AES-256-GCM):
   a custódia assinada é sobre **integridade/autenticidade**, não sobre esconder conteúdo.
 - Tudo é **local, sem rede**.

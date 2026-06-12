@@ -464,6 +464,8 @@ class MainWindow(QMainWindow):
                              self.sign_and_export)
         self.act_protect_repo = make("&Proteger repositorio git (hook anti-segredo)…",
                                      SP.SP_DialogApplyButton, None, self.protect_repo)
+        self.act_protect_id = make("Proteger &identidade com senha…",
+                                   SP.SP_DialogYesButton, None, self.protect_identity)
 
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
@@ -504,6 +506,7 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_scan_report)
         m_sec.addAction(self.act_verify)
         m_sec.addAction(self.act_sign)
+        m_sec.addAction(self.act_protect_id)
         m_sec.addSeparator()
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_lock_now)
@@ -945,10 +948,102 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, f"{APP_NAME} — Cadeia de custodia",
             f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
-            f"Identidade (fingerprint da chave publica): {custody.fingerprint()}\n"
+            f"Identidade (fingerprint da chave publica): {self._safe_fingerprint()}\n"
             f"Trilha de auditoria: {n} evento(s) — {trilha}\n\n"
             "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
             "chave publica verifica que o arquivo nao mudou.")
+
+    def _safe_fingerprint(self) -> str:
+        """Fingerprint para EXIBIR; tolera identity.pub ilegivel (protegida+travada) sem abortar o fluxo."""
+        try:
+            return custody.fingerprint()
+        except custody.CustodyError:
+            return "protegida (publica ilegivel)"
+
+    def _unlock_identity_dialog(self) -> bool:
+        """Pede a senha (ou arquivo-chave) da identidade protegida e destrava por esta sessao."""
+        kinds = custody.identity_unlockers()
+        if vault.KIND_PASSWORD in kinds:
+            pw, ok = QInputDialog.getText(
+                self, "Identidade protegida",
+                f"Senha da sua identidade ({self._safe_fingerprint()}) para assinar:",
+                QLineEdit.EchoMode.Password)
+            if not ok:
+                return False
+            if pw and custody.unlock_identity(pw):
+                return True
+            if pw:
+                QMessageBox.warning(self, APP_NAME, "Senha incorreta.")
+        if vault.KIND_KEYFILE in kinds:
+            resp = QMessageBox.question(
+                self, APP_NAME, "Destravar a identidade com um arquivo-chave?")
+            if resp == QMessageBox.StandardButton.Yes:
+                path, _ = QFileDialog.getOpenFileName(self, "Arquivo-chave da identidade")
+                if path:
+                    try:
+                        with open(path, "rb") as fh:
+                            kf = fh.read()
+                    except OSError as exc:
+                        QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler:\n{exc}")
+                        return False
+                    if custody.unlock_identity(keyfile=kf):
+                        return True
+                    QMessageBox.warning(self, APP_NAME, "Arquivo-chave incorreto.")
+        return False
+
+    def _sign_or_unlock(self, text: str) -> str | None:
+        """Assina `text`; se a identidade estiver travada, pede a credencial e tenta de novo.
+        Devolve a assinatura, ou None se o usuario cancelar o desbloqueio."""
+        try:
+            return custody.sign(text)
+        except custody.IdentityLocked:
+            if not self._unlock_identity_dialog():
+                return None
+            return custody.sign(text)
+
+    def protect_identity(self) -> None:
+        """Protege a identidade Ed25519 com senha (opt-in) — ou adiciona credencial se ja protegida."""
+        if custody.is_protected():
+            cur, ok = QInputDialog.getText(self, "Adicionar credencial",
+                                           "Senha ATUAL da identidade:", QLineEdit.EchoMode.Password)
+            if not ok or not cur:
+                return
+            new, ok = QInputDialog.getText(self, "Adicionar credencial",
+                                           "NOVA senha (rota de backup):", QLineEdit.EchoMode.Password)
+            if not ok or not new:
+                return
+            try:
+                custody.add_identity_unlocker(passphrase=cur, new_password=new)
+            except vault.VaultError:
+                QMessageBox.warning(self, APP_NAME, "Senha atual incorreta.")
+                return
+            QMessageBox.information(self, APP_NAME, "Senha de backup adicionada a sua identidade.")
+            return
+
+        pw1, ok = QInputDialog.getText(self, "Proteger identidade",
+                                       "Crie uma senha para sua identidade Ed25519:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or not pw1:
+            return
+        if len(pw1) < 4:
+            QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
+            return
+        pw2, ok = QInputDialog.getText(self, "Proteger identidade", "Confirme a senha:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or pw1 != pw2:
+            QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
+            return
+        try:
+            custody.protect_identity(pw1)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel proteger:\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_NAME,
+            f"Identidade ({custody.fingerprint()}) protegida. A chave privada agora exige "
+            "senha para assinar (pedida 1x por sessao).\n\nIMPORTANTE: nao ha recuperacao — "
+            "esqueceu a senha, perdeu a identidade (a chave publica exportada ainda verifica o "
+            "que voce ja assinou). Considere adicionar uma 2a senha/arquivo-chave de backup.")
 
     def sign_and_export(self) -> None:
         """Assina o conteudo (Ed25519) e grava a assinatura destacada .sig + a chave publica."""
@@ -962,9 +1057,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP_NAME, "Salve o arquivo antes de assinar.")
             return
         try:
+            signature = self._sign_or_unlock(editor.custody_text())
+            if signature is None:
+                return                                  # usuario cancelou o desbloqueio
             sig_path = editor.path + ".sig"
             with open(sig_path, "w", encoding="utf-8") as fh:
-                fh.write(custody.sign(editor.custody_text()) + "\n")
+                fh.write(signature + "\n")
             pub_path = os.path.join(custody._data_dir(), "redoubt-pubkey.txt")
             with open(pub_path, "w", encoding="utf-8") as fh:
                 fh.write(custody.public_key_b64() + "\n")
