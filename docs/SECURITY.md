@@ -327,8 +327,19 @@ depende de `cryptography`). Verificar com `Ctrl+Shift+H`; assinar/exportar `.sig
 ### Trilha de auditoria (hash-chain append-only)
 
 Os eventos `abrir`/`salvar`/`selar`/`queimar`/`assinar` são registrados em `audit.log`,
-cada entrada incluindo o **hash da anterior**. Adulterar um evento passado **quebra a
-cadeia** de forma detectável (`verify_chain`).
+cada entrada incluindo o **hash da anterior** + um `seq` (posição, no hash) e uma `sig`
+Ed25519 *best-effort*. Adulterar/remover um evento passado **quebra a cadeia** de forma
+detectável (`verify_chain`).
+
+**Âncora anti-reset.** A hash-chain sozinha **não detecta reset** (apagar o `audit.log` e
+recomeçar gera uma cadeia nova válida). Por isso há a **âncora exportável** (`export_anchor` →
+`custody-anchor.json`, assinada): guardada **fora da máquina**, `check_anchor` depois acusa
+reset / truncamento / reescrita. A verificação **amarra a âncora a uma identidade** — o
+fingerprint derivado da chave tem que bater com o esperado (por padrão, a identidade local).
+**Limitação honesta:** o padrão compara com a identidade *local*; um atacante que troca a
+identidade local antes de forjar a âncora passaria o `identity_match`. Defesa: **proteja a
+identidade** (ele não assina como você) e **confira o fingerprint da âncora com o que você
+conhece do autor**, fora da máquina. A âncora que *você* guardou sempre detecta o reset.
 
 ### Hash SHA-256
 
@@ -350,6 +361,8 @@ prova real é a **assinatura**.
 - **NÃO dá confidencialidade do conteúdo** (só integridade/autoria).
 - **Sem** proteção da identidade, quem tem a máquina assina como você.
 - `content_hash` **sozinho não prova autoria** — a prova é a assinatura.
+- A hash-chain **sozinha não detecta RESET** (apagar a trilha e recomeçar) — só a **âncora**
+  guardada fora da máquina detecta, e o binding dela é tão forte quanto a proteção da identidade.
 
 ---
 
@@ -524,7 +537,7 @@ O Redoubt mira o **vazamento acidental** de material sensível por humanos, e a
 | --- | --- | --- | --- |
 | **Sentinela** | Detecção | Aponta credencial/PII de formato conhecido ou alta entropia, local, com validação real onde dá (CPF/CNPJ/Luhn) | Best-effort: segredo sem padrão/ofuscado escapa; há FP. `LIMPO` = "nada detectado", não "sem segredo" |
 | **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM, zero-knowledge, multi-destravador; disco sempre cifrado | Não prova autoria; não recupera senha; resíduo em RAM enquanto destravado |
-| **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha detecta adulteração retroativa | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina como você |
+| **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha + âncora detectam adulteração e reset | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina/forja como você |
 | **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >2 MB não varrido |
 | **Release assinado** | Integridade + autenticidade do download | Integridade + autenticidade contra a âncora embutida | Assinatura sozinha não prova autoria (pubkey viaja no payload); chave local sem senha por padrão |
 | **Modo Redação** | Privacidade (tela + clipboard) | Esconde de olhos/câmeras e mascara o clipboard para o detectado | Tela é só visual; conteúdo real permanece no disco; clipboard só mascara o detectado |

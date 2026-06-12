@@ -466,6 +466,10 @@ class MainWindow(QMainWindow):
                                      SP.SP_DialogApplyButton, None, self.protect_repo)
         self.act_protect_id = make("Proteger &identidade com senha…",
                                    SP.SP_DialogYesButton, None, self.protect_identity)
+        self.act_export_anchor = make("Exportar â&ncora de custódia…",
+                                      SP.SP_DialogSaveButton, None, self.export_custody_anchor)
+        self.act_check_anchor = make("&Verificar âncora de custódia…",
+                                     SP.SP_FileDialogInfoView, None, self.check_custody_anchor)
 
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
@@ -507,6 +511,8 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_verify)
         m_sec.addAction(self.act_sign)
         m_sec.addAction(self.act_protect_id)
+        m_sec.addAction(self.act_export_anchor)
+        m_sec.addAction(self.act_check_anchor)
         m_sec.addSeparator()
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_lock_now)
@@ -942,7 +948,8 @@ class MainWindow(QMainWindow):
                 sig_line = ""
 
         ok_chain, idx = custody.verify_chain()
-        n = len(custody.read_audit())
+        st = custody.audit_stats()
+        n = st["total"]
         trilha = "✓ CADEIA INTEGRA" if ok_chain else f"⚠ CADEIA QUEBRADA na entrada {idx}"
         base = f"Linha de base (ultimo salvamento):\n{editor.saved_hash}\n\n" if editor.saved_hash else ""
         orfao = ("\n⚠ ATENCAO: ha uma copia EM CLARO da chave (identity.ed25519) coexistindo com a "
@@ -953,9 +960,70 @@ class MainWindow(QMainWindow):
             self, f"{APP_NAME} — Cadeia de custodia",
             f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
             f"Identidade (fingerprint da chave publica): {self._safe_fingerprint()}\n"
-            f"Trilha de auditoria: {n} evento(s) — {trilha}\n{orfao}\n"
+            f"Trilha de auditoria: {n} evento(s) (seq {st['head_seq']}, {st['signed']} assinado(s)) — {trilha}\n{orfao}\n"
             "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
             "chave publica verifica que o arquivo nao mudou.")
+
+    def export_custody_anchor(self) -> None:
+        """Exporta uma âncora assinada da trilha (anti-reset). Pede senha se a identidade estiver protegida."""
+        import json
+        if not custody.read_audit():
+            QMessageBox.information(self, APP_NAME, "A trilha de auditoria está vazia — nada a ancorar ainda.")
+            return
+        try:
+            anchor = custody.export_anchor()
+        except custody.IdentityLocked:
+            if not self._unlock_identity_dialog():
+                return
+            try:
+                anchor = custody.export_anchor()
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, f"Não foi possível exportar a âncora:\n{exc}")
+                return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível exportar a âncora:\n{exc}")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar âncora de custódia",
+                                              "custody-anchor.json", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(anchor, fh, ensure_ascii=True, indent=2)
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível salvar:\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_NAME,
+            f"Âncora exportada (seq {anchor['seq']}, fingerprint {anchor['fingerprint']}).\n\n"
+            "Guarde este arquivo FORA da máquina (e-mail, nuvem, pendrive). Depois, "
+            "'Verificar âncora' detecta se a trilha foi resetada ou truncada.")
+
+    def check_custody_anchor(self) -> None:
+        """Verifica uma âncora exportada contra a trilha ATUAL (detecta reset/truncamento/reescrita)."""
+        import json
+        path, _ = QFileDialog.getOpenFileName(self, "Escolher âncora de custódia", "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as fh:
+                anchor = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível ler a âncora:\n{exc}")
+            return
+        r = custody.check_anchor(anchor)        # default: amarra à identidade LOCAL (anti-forja)
+        icon = QMessageBox.Icon.Information if r["ok"] else QMessageBox.Icon.Warning
+        ident = ("✓ confere com a identidade LOCAL" if r["identity_match"]
+                 else "⚠ NÃO confere com a identidade local")
+        QMessageBox(icon, f"{APP_NAME} — Verificar âncora",
+                    f"Assinatura: {'✓ válida' if r['sig_ok'] else '⚠ INVÁLIDA'}\n"
+                    f"Fingerprint da âncora: {r['fingerprint']} — {ident}\n\n"
+                    f"{r['detail']}\n\n"
+                    f"Veredito: {'✓ TRILHA ÍNTEGRA E AUTÊNTICA' if r['ok'] else '⚠ NÃO CONFIRMADA'}\n\n"
+                    "Nota: 'identidade local' = a chave desta instalação. Contra uma máquina "
+                    "comprometida, confira o fingerprint acima com o que você conhece do autor "
+                    "(fora da máquina) e proteja a identidade com senha.",
+                    parent=self).exec()
 
     def _safe_fingerprint(self) -> str:
         """Fingerprint para EXIBIR; tolera identity.pub ilegivel (protegida+travada) sem abortar o fluxo."""

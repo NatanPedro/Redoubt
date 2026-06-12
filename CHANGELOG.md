@@ -32,11 +32,21 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   *wipe* + remoção verificada com **rollback** (em proteger E desproteger), *binding* pública↔chave,
   robustez a `identity.pub`/cofre corrompidos, e **detecção + auto-cura** do PEM órfão quando cofre
   e chave em claro coexistirem (interrupção abrupta).
-- **Testes**: +21 (`test_release.py`) + 14 (`test_custody.py`, com os casos de red-team das duas
-  features) → **212 testes no total, 0 falhas.**
+- **Trilha de auditoria assinada + âncora anti-reset** — cada entrada da trilha ganha `seq`
+  (posição, dentro do hash) e uma `sig` Ed25519 *best-effort*; `verify_chain` passa a validar o
+  `seq` (pega remoção no meio). Para o reset que a hash-chain não pega (apagar o `audit.log` e
+  recomeçar), **Segurança ▸ Exportar/Verificar âncora de custódia**: uma âncora assinada
+  (`custody-anchor.json`) guardada fora da máquina detecta reset/truncamento/reescrita.
+  `check_anchor` **amarra a âncora à identidade** (fingerprint derivado da chave; default = a
+  identidade local) — âncora forjada por outra chave é rejeitada. Endurecida por *red-team* +
+  confirmação (binding de identidade, verificação read-only que não cria chave, robustez a
+  trilha/âncora malformadas). Limitação documentada honestamente no `SECURITY.md`.
+- **Testes**: +21 (`test_release.py`) + 31 (`test_custody.py`, 9→40 — casos de red-team das três
+  features) → **229 testes no total, 0 falhas.**
 
 Ideias futuras (sem data):
-- Trilha de auditoria assinada por entrada + âncora anti-reset exportável.
+- Selo de proveniência exportável (`.rdbt-seal`).
+- KDF do Cofre: scrypt → Argon2id (formato RDBT3 retrocompatível).
 - Hook git local (pytest no pre-push).
 
 ---

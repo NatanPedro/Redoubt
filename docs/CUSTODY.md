@@ -52,7 +52,28 @@ anexados a `%APPDATA%\Redoubt\Redoubt\audit.log`, um por linha (JSON). Cada entr
 inclui o **hash da anterior** (`prev`), formando uma cadeia: alterar/remover um evento
 passado faz `verify_chain()` apontar exatamente onde a cadeia quebrou.
 
-A trilha guarda **caminho + hash do conteúdo + timestamp** — nunca o conteúdo.
+A trilha guarda **caminho + hash do conteúdo + timestamp** — nunca o conteúdo. Cada entrada nova
+carrega `seq` (posição, dentro do hash) e uma `sig` Ed25519 do hash (*best-effort*: vazia se a
+identidade estiver protegida e travada — não pede senha só para registrar um evento).
+
+## Âncora anti-reset
+
+A hash-chain prova que a sequência interna não mudou — mas, sozinha, **não detecta reset**: apagar
+o `audit.log` e recomeçar do zero gera uma cadeia nova internamente válida. Para fechar isso,
+**Segurança ▸ Exportar âncora de custódia** (`export_anchor`) grava um `custody-anchor.json`
+assinado com `{seq, head_hash, fingerprint}` do estado atual. **Guarde-o fora da máquina.** Depois,
+**Verificar âncora** (`check_anchor`) compara a trilha atual com a âncora e **acusa** reset,
+truncamento ou reescrita.
+
+A verificação **amarra a âncora a uma identidade**: a assinatura sozinha não prova autoria (a chave
+pública viaja na âncora — um atacante re-assina com a própria chave), então `check_anchor` exige que
+o fingerprint derivado da chave bata com o **esperado** (por padrão, a identidade local).
+
+> **Limitação honesta:** o padrão compara com a identidade **local**. Se o atacante tem acesso à
+> máquina e **troca a identidade local** antes de forjar a âncora, o `identity_match` local passaria.
+> Defesa: (a) **proteja a identidade com senha** (ele não assina como você) e (b) **confira o
+> fingerprint da âncora** com o que você conhece do autor, obtido fora da máquina. A âncora que
+> **você** guardou sempre detecta o reset pela divergência de `head_hash`/`seq`.
 
 ## Honestidade (modelo de ameaça)
 

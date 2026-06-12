@@ -278,6 +278,30 @@ def fingerprint() -> str:
     return hashlib.sha256(_public_raw()).hexdigest()[:16]
 
 
+def _local_fingerprint_or_none() -> str | None:
+    """Fingerprint da identidade LOCAL se ela JA existir; None caso contrario. Puramente READ-ONLY:
+    NAO cria nem grava identidade (diferente de fingerprint(), que materializaria uma chave numa
+    instalacao limpa). Usado por check_anchor para nao escrever no disco ao apenas verificar."""
+    raw = serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    if os.path.exists(_pub_path()):
+        try:
+            with open(_pub_path(), encoding="ascii") as fh:
+                pub = base64.b64decode(fh.read().strip(), validate=True)
+            return hashlib.sha256(pub).hexdigest()[:16]
+        except (OSError, binascii.Error, ValueError):
+            return None
+    if is_protected():
+        return None                              # protegida sem pub em claro: nao da p/ derivar
+    if os.path.exists(_pem_path()):
+        try:
+            with open(_pem_path(), "rb") as fh:
+                key = serialization.load_pem_private_key(fh.read(), password=None)
+            return hashlib.sha256(key.public_key().public_bytes(*raw)).hexdigest()[:16]
+        except (OSError, ValueError, TypeError):
+            return None
+    return None                                  # sem identidade local — NAO cria
+
+
 # --------------------------------------------------------------------------- #
 # Proteger / destravar a identidade (opt-in, reusa o Cofre RDBT2)
 # --------------------------------------------------------------------------- #
@@ -406,9 +430,23 @@ _CHAIN_FIELDS = ("ts", "event", "detail", "content_hash", "prev")
 
 
 def _entry_hash(entry: dict) -> str:
-    payload = json.dumps({k: entry.get(k, "") for k in _CHAIN_FIELDS},
+    # Campos base + 'seq' QUANDO presente (entradas v2). Entradas legadas (sem seq) sao
+    # hasheadas sem ele, preservando a compatibilidade do hash ja gravado. 'sig' NUNCA entra
+    # no hash (e calculada SOBRE ele).
+    fields = list(_CHAIN_FIELDS)
+    if "seq" in entry:
+        fields.append("seq")
+    payload = json.dumps({k: entry.get(k, "") for k in fields},
                          sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _try_sign(data: str) -> str:
+    """Assina `data` SE a chave estiver acessivel sem pedir senha (best-effort); senao ''."""
+    try:
+        return sign(data)
+    except IdentityLocked:
+        return ""
 
 
 def read_audit() -> list[dict]:
@@ -422,34 +460,158 @@ def read_audit() -> list[dict]:
             if not line:
                 continue
             try:
-                out.append(json.loads(line))
+                obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(obj, dict):       # descarta linhas que nao sao objeto JSON (robustez)
+                out.append(obj)
     return out
 
 
 def log_event(event: str, detail: str = "", content_hash: str = "",
               ts: str | None = None) -> dict:
-    """Anexa um evento a trilha, encadeado no hash do anterior."""
+    """Anexa um evento a trilha, encadeado no hash do anterior.
+
+    Cada entrada carrega 'seq' (posicao 1-based, DENTRO do hash) e 'sig' (assinatura Ed25519 do
+    hash, best-effort: vazia se a identidade estiver protegida e travada). O anti-reset forte e a
+    ancora exportavel (export_anchor)."""
     entries = read_audit()
     prev = entries[-1].get("hash", "") if entries else ""
     entry = {
         "ts": ts or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "event": event, "detail": detail, "content_hash": content_hash, "prev": prev,
+        "seq": len(entries) + 1,
     }
     entry["hash"] = _entry_hash(entry)
+    entry["sig"] = _try_sign(entry["hash"])
     with open(_audit_path(), "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
 
 
 def verify_chain() -> tuple[bool, int]:
-    """Verifica a integridade da cadeia. Retorna (intacta, indice_da_quebra | -1)."""
+    """Verifica a integridade da cadeia. Retorna (intacta, indice_da_quebra | -1).
+
+    Valida o encadeamento prev<->hash e, para entradas v2 (com 'seq'), que seq == posicao
+    (1-based) — pega remocao/reordenacao no MEIO. NAO detecta reset/truncamento do FIM (a cadeia
+    recomecada e internamente valida): para isso, use a ANCORA (export_anchor/check_anchor). Tambem
+    NAO valida a 'sig' por-entrada (best-effort/forense) — a prova forte de autoria/anti-reset e a ancora."""
     prev = ""
     for i, e in enumerate(read_audit()):
         if e.get("prev", "") != prev:
             return False, i
         if _entry_hash(e) != e.get("hash"):
             return False, i
+        if "seq" in e and e.get("seq") != i + 1:
+            return False, i
         prev = e["hash"]
     return True, -1
+
+
+def audit_stats() -> dict:
+    """Resumo da trilha para a UI: total de eventos, quantos estao assinados, e o seq da cabeca."""
+    entries = read_audit()
+    return {
+        "total": len(entries),
+        "signed": sum(1 for e in entries if e.get("sig")),
+        "head_seq": entries[-1].get("seq", len(entries)) if entries else 0,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Ancora exportavel (anti-reset / anti-truncamento da trilha)
+# --------------------------------------------------------------------------- #
+ANCHOR_FORMAT = "RDBT-ANCHOR1"
+
+
+def _anchor_payload(seq: int, head_hash: str, ts: str, fingerprint: str) -> str:
+    """String canonica que a assinatura da ancora cobre EXATAMENTE (zero divergencia)."""
+    return json.dumps({"format": ANCHOR_FORMAT, "seq": seq, "head_hash": head_hash,
+                       "ts": ts, "fingerprint": fingerprint},
+                      sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def export_anchor(ts: str | None = None) -> dict:
+    """ANCORA assinada do estado atual da trilha: (seq, head_hash) atestado pela identidade.
+    Guardada FORA da maquina, permite depois detectar reset/truncamento (check_anchor). Pede a
+    credencial se a identidade estiver protegida (sob demanda). Levanta CustodyError se vazia."""
+    entries = read_audit()
+    if not entries:
+        raise CustodyError("trilha de auditoria vazia — nada a ancorar")
+    head = entries[-1]
+    seq = head.get("seq", len(entries))
+    head_hash = head.get("hash", "")
+    if not (isinstance(head_hash, str) and len(head_hash) == 64):
+        raise CustodyError("cabeca da trilha sem hash valido — nao e possivel ancorar")
+    when = ts or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    fp = fingerprint()
+    sig = sign(_anchor_payload(seq, head_hash, when, fp))   # IdentityLocked se protegida+travada
+    return {"format": ANCHOR_FORMAT, "seq": seq, "head_hash": head_hash, "ts": when,
+            "fingerprint": fp, "public_key": public_key_b64(), "sig": sig}
+
+
+def check_anchor(anchor: dict, expected_fingerprint: str | None = None) -> dict:
+    """Verifica uma ANCORA contra a trilha ATUAL **e contra a identidade esperada**.
+
+    A assinatura sozinha NAO prova autoria: a public_key viaja na ancora, entao um atacante
+    re-assina com a propria chave. Por isso a autenticidade exige AMARRAR a chave — o fingerprint
+    declarado tem que casar com a chave (derivado) E com `expected_fingerprint` (default: a
+    identidade LOCAL; o caso de uso e a propria maquina verificando a propria trilha).
+
+    Retorno: sig_ok, fingerprint (DERIVADO da chave), fingerprint_declared_ok, identity_match,
+    present, head_match, chain_ok, ok, detail. `ok` exige TODOS. Nunca levanta por ancora malformada."""
+    result = {"sig_ok": False, "fingerprint": None, "fingerprint_declared_ok": False,
+              "identity_match": False, "present": False, "head_match": False,
+              "chain_ok": False, "ok": False, "detail": None}
+    try:
+        seq = anchor["seq"]
+        head_hash = anchor["head_hash"]
+        ts = anchor["ts"]
+        fp_declared = anchor.get("fingerprint", "")
+        pub = anchor["public_key"]
+        sig = anchor["sig"]
+        if not (isinstance(seq, int) and isinstance(head_hash, str) and isinstance(pub, str)):
+            raise ValueError("seq/head_hash/public_key invalido")
+        fp_real = hashlib.sha256(base64.b64decode(pub, validate=True)).hexdigest()[:16]
+    except (KeyError, TypeError, ValueError, binascii.Error) as e:
+        result["detail"] = f"ancora malformada: {e}"
+        return result
+
+    result["sig_ok"] = verify(_anchor_payload(seq, head_hash, ts, fp_declared), sig, pub)
+    result["fingerprint"] = fp_real
+    result["fingerprint_declared_ok"] = (fp_declared == fp_real)
+    expected = expected_fingerprint
+    if expected is None:                        # default: a IDENTIDADE LOCAL, sem CRIAR uma (read-only)
+        expected = _local_fingerprint_or_none()
+    result["identity_match"] = (expected is not None and fp_real == expected)
+
+    entries = read_audit()
+    match = next((e for e in entries if e.get("seq") == seq), None)
+    if match is None and 1 <= seq <= len(entries):
+        match = entries[seq - 1]                # fallback p/ trilha legada sem 'seq'
+    result["present"] = match is not None
+    if match is not None:
+        result["head_match"] = (match.get("hash") == head_hash)
+    result["chain_ok"] = verify_chain()[0]      # a trilha atual nao pode estar adulterada por dentro
+
+    if not result["sig_ok"]:
+        result["detail"] = "assinatura da ancora INVALIDA"
+    elif not result["fingerprint_declared_ok"]:
+        result["detail"] = "ancora inconsistente: o fingerprint declarado nao corresponde a chave"
+    elif not result["identity_match"]:
+        result["detail"] = (f"ancora assinada por OUTRA chave ({fp_real}) — NAO e a identidade "
+                            f"esperada ({expected}); POSSIVEL FORJA")
+    elif not result["present"]:
+        result["detail"] = (f"trilha RESETADA/TRUNCADA: nao alcanca o seq {seq} "
+                            f"(a trilha atual tem {len(entries)} eventos)")
+    elif not result["head_match"]:
+        result["detail"] = "trilha DIVERGENTE: o hash no ponto ancorado nao confere (reset/reescrita)"
+    elif not result["chain_ok"]:
+        result["detail"] = "cadeia da trilha QUEBRADA por dentro (adulteracao de evento)"
+    else:
+        result["detail"] = (f"trilha CONSISTENTE e AUTENTICA (seq {seq}; "
+                            f"+{len(entries) - seq} evento(s) novo(s) desde entao)")
+    result["ok"] = bool(result["sig_ok"] and result["fingerprint_declared_ok"]
+                        and result["identity_match"] and result["present"]
+                        and result["head_match"] and result["chain_ok"])
+    return result

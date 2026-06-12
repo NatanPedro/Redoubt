@@ -268,3 +268,181 @@ def test_auditoria_detecta_adulteracao(tmp_identity):
 def test_auditoria_vazia(tmp_identity):
     assert custody.read_audit() == []
     assert custody.verify_chain() == (True, -1)
+
+
+# --------------------------------------------------------------------------- #
+# Trilha v2: seq, assinatura best-effort, ancora anti-reset
+# --------------------------------------------------------------------------- #
+def test_trilha_tem_seq_e_assinatura(tmp_identity):
+    custody.log_event("abriu", "a.txt", "h1")
+    custody.log_event("salvou", "a.txt", "h2")
+    e = custody.read_audit()
+    assert [x["seq"] for x in e] == [1, 2]
+    assert all(x["sig"] for x in e)                     # nao-protegida: assina (best-effort)
+    assert custody.verify_chain() == (True, -1)
+    assert custody.audit_stats() == {"total": 2, "signed": 2, "head_seq": 2}
+
+
+def test_seq_no_hash_detecta_remocao_no_meio(tmp_identity):
+    for i in range(3):
+        custody.log_event("ev", f"e{i}", f"h{i}", ts=f"2026-01-01T00:0{i}:00+00:00")
+    p = custody._audit_path()
+    lines = open(p, encoding="utf-8").read().splitlines()
+    del lines[1]                                        # remove a entrada do meio
+    open(p, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    ok, _ = custody.verify_chain()
+    assert not ok                                       # cadeia quebra (prev e/ou seq)
+
+
+def test_assinatura_vazia_quando_protegida_e_travada(tmp_identity):
+    custody.sign("x")
+    custody.protect_identity("pw")
+    custody.lock_identity()
+    e = custody.log_event("abriu", "a.txt", "h1")       # best-effort: nao assina (travada)
+    assert e["sig"] == ""
+    assert custody.verify_chain() == (True, -1)         # encadeamento ok mesmo sem sig
+
+
+def test_ancora_consistente(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    custody.log_event("b", "2", "h2")
+    anchor = custody.export_anchor(ts="2026-01-01T00:00:00+00:00")
+    custody.log_event("c", "3", "h3")                   # +1 evento depois de ancorar
+    r = custody.check_anchor(anchor)
+    assert r["sig_ok"] and r["present"] and r["head_match"] and r["ok"]
+
+
+def test_ancora_detecta_reset(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    custody.log_event("b", "2", "h2")
+    anchor = custody.export_anchor()
+    os.remove(custody._audit_path())                    # RESET: apaga a trilha inteira
+    custody.log_event("novo", "x", "hx")                # recomeca do zero
+    r = custody.check_anchor(anchor)
+    assert r["sig_ok"]                                  # a ancora em si e valida...
+    assert not r["present"] and not r["ok"]             # ...mas a trilha nao alcanca o seq ancorado
+
+
+def test_ancora_detecta_divergencia(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    custody.log_event("b", "2", "h2")
+    anchor = custody.export_anchor()
+    os.remove(custody._audit_path())                    # reescreve com eventos DIFERENTES
+    custody.log_event("X", "9", "h9")
+    custody.log_event("Y", "8", "h8")
+    r = custody.check_anchor(anchor)
+    assert r["sig_ok"] and r["present"]                 # alcanca o seq 2...
+    assert not r["head_match"] and not r["ok"]          # ...mas o hash no ponto diverge
+
+
+def test_ancora_adulterada_falha_assinatura(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    anchor = custody.export_anchor()
+    anchor["head_hash"] = "0" * 64                      # adultera o valor ancorado
+    r = custody.check_anchor(anchor)
+    assert not r["sig_ok"] and not r["ok"]              # a assinatura nao cobre o valor adulterado
+
+
+def test_ancora_malformada_nao_crasha(tmp_identity):
+    assert custody.check_anchor({})["detail"]
+    assert custody.check_anchor({})["ok"] is False
+
+
+def test_export_anchor_protegida_pede_senha(tmp_identity):
+    custody.sign("x")
+    custody.protect_identity("pw")
+    custody.lock_identity()
+    custody.log_event("abriu", "a.txt", "h1")           # trilha nao-vazia (sig vazio, travada)
+    with pytest.raises(custody.IdentityLocked):
+        custody.export_anchor()                         # travada: assinar a ancora pede senha
+    custody.unlock_identity("pw")
+    anchor = custody.export_anchor()
+    assert custody.check_anchor(anchor)["ok"]
+
+
+def test_export_anchor_trilha_vazia_erra(tmp_identity):
+    with pytest.raises(custody.CustodyError):
+        custody.export_anchor()                         # nada a ancorar
+
+
+def test_ancora_forjada_por_outra_chave_rejeitada(tmp_path, monkeypatch):
+    """Binding (licao do release nº1): ancora assinada por OUTRA chave NAO e aceita como autentica."""
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path / "A"))
+    (tmp_path / "A").mkdir()
+    custody.log_event("a", "1", "h1")
+    fp_a = custody.fingerprint()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path / "B"))  # atacante
+    (tmp_path / "B").mkdir()
+    custody.log_event("x", "9", "h9")
+    anchor_b = custody.export_anchor()                  # assinada pela chave B
+    r = custody.check_anchor(anchor_b, expected_fingerprint=fp_a)
+    assert r["sig_ok"]                                  # internamente valida (chave B)...
+    assert r["fingerprint"] != fp_a
+    assert not r["identity_match"] and not r["ok"]      # ...mas NAO e a identidade esperada -> rejeitada
+
+
+def test_ancora_default_amarra_identidade_local(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    anchor = custody.export_anchor()
+    r = custody.check_anchor(anchor)                    # sem expected: usa a identidade LOCAL
+    assert r["identity_match"] and r["ok"]
+
+
+def test_trilha_com_linha_nao_dict_nao_crasha(tmp_identity):
+    custody.log_event("a", "1", "h1")
+    with open(custody._audit_path(), "a", encoding="utf-8") as fh:
+        fh.write("[1, 2, 3]\n\"so uma string\"\n42\n")  # linhas JSON validas mas NAO-objeto
+    assert custody.audit_stats()["total"] == 1          # nao-dicts descartados
+    assert custody.verify_chain()[0] is True
+    anchor = custody.export_anchor()
+    assert custody.check_anchor(anchor)["ok"]           # nenhuma funcao crashou
+
+
+def test_export_anchor_recusa_head_sem_hash(tmp_identity):
+    import json as _json
+    e = {"ts": "t", "event": "x", "detail": "", "content_hash": "", "prev": ""}  # legada SEM hash
+    with open(custody._audit_path(), "w", encoding="utf-8") as fh:
+        fh.write(_json.dumps(e) + "\n")
+    with pytest.raises(custody.CustodyError):
+        custody.export_anchor()                         # cabeca sem hash valido
+
+
+def test_check_anchor_pega_cadeia_quebrada(tmp_identity):
+    import json as _json
+    for i in range(3):
+        custody.log_event("ev", f"e{i}", f"h{i}", ts=f"2026-01-01T00:0{i}:00+00:00")
+    anchor = custody.export_anchor()                    # seq=3
+    lines = open(custody._audit_path(), encoding="utf-8").read().splitlines()
+    bad = _json.loads(lines[1]); bad["detail"] = "ADULTERADO"
+    lines[1] = _json.dumps(bad)
+    open(custody._audit_path(), "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    r = custody.check_anchor(anchor)
+    assert not r["chain_ok"] and not r["ok"]            # adulteracao interna detectada
+
+
+def test_check_anchor_nao_cria_identidade(tmp_path, monkeypatch):
+    """Verificar e READ-ONLY: numa instalacao limpa, check_anchor NAO materializa chave no disco."""
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path / "A"))
+    (tmp_path / "A").mkdir()
+    custody.log_event("a", "1", "h1")
+    anchor = custody.export_anchor()
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(clean))
+    custody.lock_identity()
+    r = custody.check_anchor(anchor)                    # sem identidade local
+    assert not os.path.exists(os.path.join(str(clean), "identity.ed25519"))   # NAO criou a privada
+    assert not os.path.exists(os.path.join(str(clean), "identity.pub"))       # nem a publica
+    assert r["identity_match"] is False                 # sem identidade local para comparar
+
+
+def test_trilha_legada_sem_seq_ainda_valida(tmp_identity):
+    """Compat: entradas no formato antigo (sem seq/sig) continuam validas em verify_chain."""
+    import json as _json
+    e1 = {"ts": "2026-01-01T00:00:00+00:00", "event": "abriu", "detail": "a", "content_hash": "h1", "prev": ""}
+    e1["hash"] = custody._entry_hash(e1)                # hash legado (sem seq)
+    e2 = {"ts": "2026-01-01T00:01:00+00:00", "event": "salvou", "detail": "a", "content_hash": "h2", "prev": e1["hash"]}
+    e2["hash"] = custody._entry_hash(e2)
+    with open(custody._audit_path(), "w", encoding="utf-8") as fh:
+        fh.write(_json.dumps(e1) + "\n" + _json.dumps(e2) + "\n")
+    assert custody.verify_chain() == (True, -1)         # legado sem seq: cadeia intacta
