@@ -945,11 +945,15 @@ class MainWindow(QMainWindow):
         n = len(custody.read_audit())
         trilha = "✓ CADEIA INTEGRA" if ok_chain else f"⚠ CADEIA QUEBRADA na entrada {idx}"
         base = f"Linha de base (ultimo salvamento):\n{editor.saved_hash}\n\n" if editor.saved_hash else ""
+        orfao = ("\n⚠ ATENCAO: ha uma copia EM CLARO da chave (identity.ed25519) coexistindo com a "
+                 "identidade protegida — provavel proteger/desproteger interrompido. Assine algo "
+                 "(vai pedir a senha) e o Redoubt remove a copia automaticamente.\n"
+                 if custody.identity_has_orphan_pem() else "")
         QMessageBox.information(
             self, f"{APP_NAME} — Cadeia de custodia",
             f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
             f"Identidade (fingerprint da chave publica): {self._safe_fingerprint()}\n"
-            f"Trilha de auditoria: {n} evento(s) — {trilha}\n\n"
+            f"Trilha de auditoria: {n} evento(s) — {trilha}\n{orfao}\n"
             "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
             "chave publica verifica que o arquivo nao mudou.")
 

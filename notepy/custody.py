@@ -122,6 +122,38 @@ def is_protected() -> bool:
     return os.path.exists(_vault_path())
 
 
+def identity_has_orphan_pem() -> bool:
+    """Estado INCONSISTENTE: identidade protegida (cofre) E um PEM nu (identity.ed25519)
+    coexistindo. O PEM e uma copia em CLARO da chave — residuo de um proteger/desproteger
+    interrompido (ex.: processo morto entre gravar o cofre e remover o PEM). O rollback de
+    protect/unprotect previne isso no fluxo normal; isto detecta o residuo de uma interrupcao
+    abrupta para a UI sinalizar e para a auto-limpeza no unlock."""
+    return is_protected() and os.path.exists(_pem_path())
+
+
+def _heal_orphan_pem(key: Ed25519PrivateKey) -> bool:
+    """Se ha um PEM nu coexistindo com o cofre E ele e a MESMA chave de `key`, remove-o (com wipe),
+    eliminando a copia em claro. So apaga apos confirmar que a chave publica bate — NUNCA remove uma
+    chave diferente. Devolve True se limpou. Chamado no unlock, quando temos a chave real em maos."""
+    pem = _pem_path()
+    if not (is_protected() and os.path.exists(pem)):
+        return False
+    raw = serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    try:
+        with open(pem, "rb") as fh:
+            orphan = serialization.load_pem_private_key(fh.read(), password=None)
+        same = orphan.public_key().public_bytes(*raw) == key.public_key().public_bytes(*raw)
+    except (ValueError, OSError, TypeError):
+        return False
+    if not same:
+        return False                    # chave diferente: nao apaga (conservador)
+    try:
+        _secure_remove(pem)
+        return True
+    except OSError:
+        return False
+
+
 def _pub_b64_of(key: Ed25519PrivateKey) -> str:
     raw = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw)
@@ -202,6 +234,7 @@ def unlock_identity(passphrase: str | None = None, *, keyfile: bytes | None = No
         return False
     _session_key = key
     _write_pub(_pub_b64_of(key))
+    _heal_orphan_pem(key)               # limpa PEM nu residual de operacao interrompida (mesma chave)
     return True
 
 

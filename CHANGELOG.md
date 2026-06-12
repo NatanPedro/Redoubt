@@ -28,10 +28,12 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   embrulha a chave privada no Cofre RDBT2 (`identity.rdbt`: senha **+ arquivo-chave**, multi-slot)
   e apaga o PEM em claro; a pública fica em `identity.pub` (claro), então *fingerprint*/verificação
   não pedem senha — só **assinar** pede (1× por sessão, cacheada). Preserva o fingerprint da
-  identidade existente. Endurecida por *red-team* (escrita atômica + *wipe* + remoção verificada
-  com **rollback**, *binding* pública↔chave, robustez a `identity.pub`/cofre corrompidos).
-- **Testes**: +21 (`test_release.py`) + 12 (`test_custody.py`, com os casos de red-team das duas
-  features) → **210 testes no total, 0 falhas.**
+  identidade existente. Endurecida por *red-team* + 2 rodadas de confirmação: escrita atômica +
+  *wipe* + remoção verificada com **rollback** (em proteger E desproteger), *binding* pública↔chave,
+  robustez a `identity.pub`/cofre corrompidos, e **detecção + auto-cura** do PEM órfão quando cofre
+  e chave em claro coexistirem (interrupção abrupta).
+- **Testes**: +21 (`test_release.py`) + 14 (`test_custody.py`, com os casos de red-team das duas
+  features) → **212 testes no total, 0 falhas.**
 
 Ideias futuras (sem data):
 - Trilha de auditoria assinada por entrada + âncora anti-reset exportável.

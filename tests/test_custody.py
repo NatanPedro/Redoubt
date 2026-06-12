@@ -170,6 +170,37 @@ def test_unprotect_orfao_faz_rollback(tmp_identity, monkeypatch):
     assert not os.path.exists(custody._pem_path())      # PEM em claro desfeito (rollback)
 
 
+def test_orphan_pem_detectado_e_curado_no_unlock(tmp_identity):
+    """Coexistencia rdbt+pem (proteger morto no meio): detectada e auto-curada ao destravar."""
+    from cryptography.hazmat.primitives import serialization as _ser
+    custody.sign("x")
+    custody.protect_identity("pw")
+    key = custody._session_key                          # a chave real (cacheada)
+    pem = key.private_bytes(_ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption())
+    with open(custody._pem_path(), "wb") as fh:         # simula o PEM nu residual da MESMA chave
+        fh.write(pem)
+    assert custody.identity_has_orphan_pem()            # estado inconsistente detectado
+    custody.lock_identity()
+    assert custody.unlock_identity("pw")                # destravar -> auto-cura
+    assert not os.path.exists(custody._pem_path())      # copia em claro removida (mesma chave)
+    assert not custody.identity_has_orphan_pem()
+
+
+def test_orphan_pem_de_chave_diferente_nao_e_removido(tmp_identity):
+    """Conservador: se o PEM coexistente for de OUTRA chave, NAO apaga (nao destroi material alheio)."""
+    from cryptography.hazmat.primitives import serialization as _ser
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    custody.sign("x")
+    custody.protect_identity("pw")
+    outra = Ed25519PrivateKey.generate()
+    pem = outra.private_bytes(_ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption())
+    with open(custody._pem_path(), "wb") as fh:
+        fh.write(pem)
+    custody.lock_identity()
+    assert custody.unlock_identity("pw")
+    assert os.path.exists(custody._pem_path())          # chave diferente: preservado
+
+
 def test_pub_corrompida_nao_crasha(tmp_identity):
     custody.sign("x")
     custody.protect_identity("pw")
