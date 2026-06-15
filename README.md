@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.1.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-229%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-264%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -230,6 +230,7 @@ assinatura não confere com a âncora), e o `RELEASE.json` falha se qualquer has
 | **Relatório de segredos** | `Ctrl+Shift+E` |
 | **Verificar custódia** (hash + assinatura) | `Ctrl+Shift+H` |
 | **Assinar e exportar** (`.sig`) | `Ctrl+Shift+G` |
+| **Selo de proveniência** (`.rdbt-seal`) / **Verificar selo** | menu Segurança |
 | **Selar como cofre** | `Ctrl+Shift+L` |
 | **Travar / Destravar cofre** | `Ctrl+Shift+K` / `Ctrl+Shift+U` |
 | **Nova nota de queima** (Burn) | `Ctrl+Shift+B` |
@@ -318,11 +319,11 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 ## Status
 
-O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
+O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
 **Pentests adversariais** sobrevividos e **229 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, identidade protegida e trilha de auditoria ancorada).
 
-> Ideias futuras (sem data): selo de proveniência exportável (`.rdbt-seal`); KDF do Cofre scrypt → Argon2id (formato RDBT3 retrocompatível); hook `pre-push` rodando a suíte de testes.
+> Ideias futuras (sem data): KDF do Cofre scrypt → Argon2id (formato RDBT3 retrocompatível); hook `pre-push` rodando a suíte de testes.
 
 ---
 

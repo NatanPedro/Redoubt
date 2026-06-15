@@ -341,6 +341,18 @@ identidade local antes de forjar a âncora passaria o `identity_match`. Defesa: 
 identidade** (ele não assina como você) e **confira o fingerprint da âncora com o que você
 conhece do autor**, fora da máquina. A âncora que *você* guardou sempre detecta o reset.
 
+### Selo de proveniência (`.rdbt-seal`)
+
+Onde a assinatura `.sig` é só os bytes crus, o **selo** (`notepy/seal.py`, formato **RDBT-SEAL1**)
+é um artefato **portátil**: liga, assinado, o `sha256` do conteúdo + nome + tamanho + timestamp + o
+**head da trilha** (seq/head_hash) à identidade. *Segurança ▸ Selo de proveniência* grava
+`<arquivo>.rdbt-seal`; o standalone `verify_seal.py` (embute a pubkey do autor) prova origem +
+integridade **offline**. Mesmo modelo de confiança do release: `ok=True` só quando a assinatura bate
+com a âncora de confiança **e** o `sha256` do arquivo confere — a amarra é o **conteúdo**
+(anti-substituição), o fingerprint é sempre **derivado** (nunca o campo declarado), e o `name` é
+inerte (jamais vira caminho — sem path traversal). Leitura do alvo blindada contra `OSError`
+(lock OneDrive/AV/TOCTOU); o head da trilha é asserção forense (verificável só por quem tem a `audit.log`).
+
 ### Hash SHA-256
 
 `content_hash()` (SHA-256 do texto vivo, UTF-8) continua exibido na barra de status
@@ -540,6 +552,7 @@ O Redoubt mira o **vazamento acidental** de material sensível por humanos, e a
 | **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha + âncora detectam adulteração e reset | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina/forja como você |
 | **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >2 MB não varrido |
 | **Release assinado** | Integridade + autenticidade do download | Integridade + autenticidade contra a âncora embutida | Assinatura sozinha não prova autoria (pubkey viaja no payload); chave local sem senha por padrão |
+| **Selo (`.rdbt-seal`)** | Integridade + autenticidade do arquivo | Liga conteúdo+identidade+trilha num artefato portátil; verificável offline contra a âncora embutida | Amarra o conteúdo, não esconde (sem confidencialidade); head da trilha é asserção forense, não verificável por terceiros |
 | **Modo Redação** | Privacidade (tela + clipboard) | Esconde de olhos/câmeras e mascara o clipboard para o detectado | Tela é só visual; conteúdo real permanece no disco; clipboard só mascara o detectado |
 | **Burn Note** | Redução de resíduo | Nada vai ao disco; reduz resíduo em RAM | Não elimina resíduo em RAM/swap |
 | **Ocultar (restaurar)** | Privacidade | Não exibe segredo ao restaurar; só em RAM até revelar | Não cifra — arquivo segue em claro no disco |

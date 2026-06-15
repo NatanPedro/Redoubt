@@ -16,8 +16,20 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Selo de proveniência (`.rdbt-seal`)** — cada arquivo vira evidência **portátil**.
+  *Segurança ▸ Selo de proveniência* grava, ao lado do arquivo, um `<arquivo>.rdbt-seal`
+  (formato **RDBT-SEAL1**, núcleo puro em `notepy/seal.py`): liga, assinado, o **sha256 do
+  conteúdo** + nome + tamanho + timestamp + o **head da trilha de custódia** (`seq`/`head_hash`)
+  à identidade Ed25519. Diferente do `.sig` cru, o selo **viaja com o arquivo** e prova origem
+  + integridade **offline, sem instalar o Redoubt**, via [`verify_seal.py`](verify_seal.py)
+  (standalone, com a chave pública do autor embutida). Endurecido por *red-team* adversarial +
+  rodada de confirmação: assinatura sobre string canônica (fingerprint **derivado**, nunca o
+  campo declarado), amarra **anti-substituição** pelo conteúdo, `name` inerte (sem path
+  traversal), leitura do alvo blindada contra `OSError` (lock OneDrive/AV/TOCTOU) e `trail`
+  normalizado. **+35 testes** (`test_seal.py`) → **264 no total**.
+
 Ideias futuras (sem data):
-- Selo de proveniência exportável (`.rdbt-seal`).
 - KDF do Cofre: scrypt → Argon2id (formato RDBT3 retrocompatível).
 - Hook git local (pytest no pre-push).
 

@@ -79,7 +79,8 @@ decisão de design mais importante do projeto:
 ```
 Notepad/                     (pasta do projeto — o produto é o "Redoubt")
 ├── main.py                  ponto de entrada: tema, ícone, abre arquivos do argv
-├── verify_release.py        verificador standalone (embute a pubkey do autor)
+├── verify_release.py        verificador standalone de release (embute a pubkey do autor)
+├── verify_seal.py           verificador standalone de selo .rdbt-seal (mesma pubkey)
 ├── requirements.txt         PyQt6 + PyQt6-QScintilla + cryptography
 ├── requirements-dev.txt     pyinstaller + pillow (só build)
 ├── run.bat                  abre sem console (pythonw)
@@ -95,6 +96,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── vault.py             Cofre++ .rdbt — AES-256-GCM + scrypt, envelope RDBT2
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria
     ├── release.py           Manifesto de release assinado (RDBT-REL1)
+    ├── seal.py              Selo de proveniência de arquivo (RDBT-SEAL1)
     ├── scan_cli.py          CLI da Sentinela + hook git pre-commit
     ├── searchfiles.py       Busca em arquivos / grep recursivo na pasta
     ├── palette.py           Busca fuzzy da paleta de comandos
@@ -234,6 +236,17 @@ sha256+tamanho de cada artefato) + uma **assinatura Ed25519** dessa string.
 fingerprint é **sempre derivado** da chave (`sha256(pubkey)[:16]`), nunca lido de
 um campo. Detalhado na [seção 6](#o-release-assinado--prova-do-próprio-download)
 e na [ADR-6](#adr-6--release-assinado-pela-string-canônica--âncora-de-pubkey).
+
+#### `notepy/seal.py` — selo de proveniência de arquivo
+
+**Sem Qt**, reusa as primitivas puras de `release.py` (`canonical_payload`,
+`derive_fingerprint`, `is_safe_name`, `sha256_file`). Mesmo padrão do RDBT-REL1, mas
+**por arquivo**: o `RDBT-SEAL1` tem um `signed_payload` (string JSON canônica com
+nome/sha256/tamanho/data/pubkey/fingerprint + o head da trilha `seq`/`head_hash`) +
+uma assinatura Ed25519 dessa string. `verify_seal` checa a assinatura **sobre a
+string**, deriva o fingerprint, exige o `sha256` do arquivo bater (amarra o
+**conteúdo**, anti-substituição) e blinda a leitura do alvo contra `OSError`. O
+standalone `verify_seal.py` espelha a lógica e embute a pubkey do autor.
 
 #### `notepy/scan_cli.py` — CLI da Sentinela + hook git
 
@@ -435,6 +448,7 @@ cripto; ela chama `vault`/`custody`/`release`/`scan_cli` e traduz o resultado.
 | Custódia     | `custody.py`           | Ed25519 + SHA-256  | Integridade + autenticidade     |
 | Hook git     | `scan_cli.py`          | (reusa `secrets`)  | Prevenção de vazamento no commit|
 | Release      | `release.py` + `verify_release.py` | Ed25519  | Integridade + autenticidade do download |
+| Selo         | `seal.py` + `verify_seal.py` | Ed25519 + SHA-256 | Integridade + autenticidade de arquivo (portátil) |
 
 A identidade Ed25519 é **uma só**: a mesma chave que a Custódia usa para assinar
 arquivos assina o `RELEASE.json`. O fingerprint oficial do autor é

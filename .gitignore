@@ -64,6 +64,8 @@ service-account*.json
 *.rdbt
 # Assinaturas destacadas da custodia (.sig) — artefato local de quem assina.
 *.sig
+# Selos de proveniencia (.rdbt-seal) — artefato local de quem sela um arquivo.
+*.rdbt-seal
 
 # --- Endurecimento defensivo (pre-publico): artefatos que o Redoubt pode
 #     gerar localmente, ou padroes que as regras acima ainda nao pegam.

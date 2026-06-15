@@ -45,6 +45,32 @@ from notepy import custody
 ok = custody.verify(conteudo, assinatura_b64, chave_publica_b64)
 ```
 
+## Selo de proveniência (`.rdbt-seal`)
+
+A assinatura `.sig` é só os bytes crus — você ainda precisa saber *qual* conteúdo e *qual* chave.
+O **selo** empacota tudo num artefato **portátil e auto-explicativo**: **Segurança ▸ Selo de
+proveniência** grava, ao lado do arquivo, um `<arquivo>.rdbt-seal` (formato **RDBT-SEAL1**) que
+liga, **assinado**, o `sha256` do conteúdo + nome + tamanho + timestamp + o **head da trilha de
+custódia** no momento do selo (`seq`/`head_hash`) à sua identidade Ed25519.
+
+Entregue o arquivo **+ o `.rdbt-seal`**: qualquer um prova a origem e a integridade **offline e
+sem instalar o Redoubt**, com o verificador standalone:
+
+```bash
+python verify_seal.py meu-arquivo.txt          # lê meu-arquivo.txt.rdbt-seal ao lado
+python verify_seal.py arquivo --pubkey <b64>    # selo de OUTRO autor (chave por canal confiável)
+```
+
+Saída: `INTEGRO E AUTENTICO` (a assinatura bate com a chave do autor **embutida no verificador** e
+o `sha256` do arquivo confere com o selado) ou `FALHOU`. Como no release, o `verify_seal.py` oficial
+**embute a chave pública do autor**, então um selo re-assinado por outra chave é rejeitado.
+
+> **O que o selo prova (e o que não).** A amarra forte é o **conteúdo**: o selo só confere com os
+> bytes exatos que foram selados (renomear não quebra — o `name` viaja assinado, mas é informativo,
+> e nunca vira caminho de arquivo). O **head da trilha** é uma *asserção assinada*: só quem tem a sua
+> `audit.log` cruza com a trilha real — para terceiros é proveniência forense. O selo dá **integridade
+> + autenticidade**, não confidencialidade (para esconder conteúdo, use o Cofre).
+
 ## Trilha de auditoria (hash-chain)
 
 Eventos de custódia — `abrir`, `salvar`, `selar cofre`, `queimou`, `assinou` — são

@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
-               palette, searchfiles, secrets as secrets_mod, theme, vault)
+               palette, seal, searchfiles, secrets as secrets_mod, theme, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -470,6 +470,10 @@ class MainWindow(QMainWindow):
                                       SP.SP_DialogSaveButton, None, self.export_custody_anchor)
         self.act_check_anchor = make("&Verificar âncora de custódia…",
                                      SP.SP_FileDialogInfoView, None, self.check_custody_anchor)
+        self.act_prov_seal = make("&Selo de proveniência (.rdbt-seal)…",
+                                  SP.SP_DialogSaveButton, None, self.export_provenance_seal)
+        self.act_verify_seal = make("Verificar se&lo de proveniência…",
+                                    SP.SP_FileDialogInfoView, None, self.verify_provenance_seal)
 
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
@@ -513,6 +517,8 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_protect_id)
         m_sec.addAction(self.act_export_anchor)
         m_sec.addAction(self.act_check_anchor)
+        m_sec.addAction(self.act_prov_seal)
+        m_sec.addAction(self.act_verify_seal)
         m_sec.addSeparator()
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_lock_now)
@@ -1148,6 +1154,123 @@ class MainWindow(QMainWindow):
             f"Chave publica (para quem for verificar):\n{pub_path}\n"
             f"Fingerprint: {custody.fingerprint()}\n\n"
             "Verificar custodia (Ctrl+Shift+H) confere o .sig contra o conteudo atual.")
+
+    def export_provenance_seal(self) -> None:
+        """Sela o arquivo (RDBT-SEAL1): liga conteudo + identidade + trilha num .rdbt-seal portatil."""
+        import json
+        from datetime import datetime, timezone
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_burn or editor.is_locked():
+            QMessageBox.information(self, APP_NAME, "Nota de queima / cofre travado nao pode ser selado.")
+            return
+        if not editor.path:
+            QMessageBox.information(self, APP_NAME, "Salve o arquivo antes de selar.")
+            return
+        if editor.content_hash() != editor.saved_hash:
+            QMessageBox.information(
+                self, APP_NAME,
+                "O selo reflete o arquivo SALVO em disco. Salve as alteracoes (Ctrl+S) antes de selar.")
+            return
+        when = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        def _make():
+            return seal.seal_file(editor.path, sign_fn=custody.sign,
+                                  public_key_b64=custody.public_key_b64(),
+                                  fingerprint=custody.fingerprint(),
+                                  sealed_at=when, trail=seal.current_trail())
+        try:
+            obj = _make()
+        except custody.IdentityLocked:
+            if not self._unlock_identity_dialog():
+                return
+            try:
+                obj = _make()
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, f"Nao foi possivel selar:\n{exc}")
+                return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel selar:\n{exc}")
+            return
+
+        seal_path = editor.path + seal.SEAL_SUFFIX
+        try:
+            with open(seal_path, "w", encoding="utf-8") as fh:
+                json.dump(obj, fh, ensure_ascii=True, indent=2)
+                fh.write("\n")
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel salvar o selo:\n{exc}")
+            return
+        payload = json.loads(obj["signed_payload"])
+        self._audit("selou", editor, payload["sha256"])
+        trecho = (f", no ponto seq {payload['trail']['seq']} da trilha"
+                  if isinstance(payload.get("trail"), dict) else "")
+        QMessageBox.information(
+            self, f"{APP_NAME} — Selo de proveniencia",
+            f"Selo gravado em:\n{seal_path}\n\n"
+            f"Liga o conteudo ({payload['sha256'][:16]}…) a sua identidade {custody.fingerprint()}{trecho}.\n\n"
+            "Envie o arquivo + o .rdbt-seal: qualquer um verifica a origem e a integridade, "
+            "offline e sem instalar o Redoubt, com verify_seal.py.")
+
+    def verify_provenance_seal(self) -> None:
+        """Verifica o arquivo atual contra o seu .rdbt-seal (origem + integridade)."""
+        import json
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if not editor.path:
+            QMessageBox.information(self, APP_NAME, "Salve o arquivo para verificar o selo.")
+            return
+        seal_path = editor.path + seal.SEAL_SUFFIX
+        if not os.path.exists(seal_path):
+            QMessageBox.information(
+                self, APP_NAME,
+                f"Nenhum selo ao lado do arquivo ({os.path.basename(seal_path)}).\n\n"
+                "Gere um em Seguranca ▸ Selo de proveniencia.")
+            return
+        try:
+            with open(seal_path, encoding="utf-8") as fh:
+                obj = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o selo:\n{exc}")
+            return
+        # Ancora = a identidade LOCAL (read-only; verifica os SEUS selos). Para selos de
+        # terceiros, use verify_seal.py --pubkey <a chave do autor>.
+        try:
+            r = seal.verify_seal(obj, editor.path,
+                                 expect_fingerprint=custody._local_fingerprint_or_none())
+        except Exception as exc:                       # defesa em profundidade: nunca crashar a UI
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel verificar o selo:\n{exc}")
+            return
+        if r["error"]:
+            QMessageBox.critical(self, APP_NAME, f"Selo invalido:\n{r['error']}")
+            return
+        icon = QMessageBox.Icon.Information if r["ok"] else QMessageBox.Icon.Warning
+        if r["authentic"] is True:
+            autor = "✓ a SUA identidade local"
+        elif r["authentic"] is False:
+            autor = "⚠ OUTRA identidade — confira o fingerprint com o autor"
+        else:
+            autor = "nao verificada (sem identidade local)"
+        if not r["present"]:
+            conteudo = "⚠ arquivo AUSENTE"
+        elif r["io_error"]:
+            conteudo = f"⚠ nao consegui ler o arquivo ({r['io_error']})"
+        elif r["content_ok"]:
+            conteudo = "✓ confere com o selo"
+        else:
+            conteudo = "⚠ NAO confere — o conteudo mudou desde que foi selado"
+        nome = "" if r["name_match"] else f"\n(selado originalmente como {r['declared_name']!r})"
+        trilha = (f"\nTrilha selada: seq {r['trail'].get('seq')}"
+                  if isinstance(r.get("trail"), dict) else "")
+        QMessageBox(icon, f"{APP_NAME} — Verificar selo",
+                    f"Fingerprint do selo: {r['fingerprint']} — {autor}\n"
+                    f"Assinatura: {'✓ valida' if r['signature_ok'] else '⚠ INVALIDA'}\n"
+                    f"Conteudo: {conteudo}{nome}{trilha}\n\n"
+                    f"Veredito: {'✓ INTEGRO E AUTENTICO' if r['ok'] else '⚠ NAO CONFIRMADO'}\n\n"
+                    "Para um selo de OUTRO autor, verifique com verify_seal.py --pubkey <a chave dele>.",
+                    parent=self).exec()
 
     # ================================================================== #
     # Barra de comando ':'
