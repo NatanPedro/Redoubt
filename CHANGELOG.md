@@ -36,9 +36,15 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   custo por slot e agregado** (recusa antes de derivar — fecha um DoS de ~minutos/512 MiB que
   cofre forjado causaria, para ~5s/128 MiB), anti-downgrade (KDF na AAD), slot inválido é **pulado**
   (não nega credencial válida). **+8 testes** (`test_vault.py`, 21→29) → **272 no total**.
+- **Hook git `pre-push` (suíte antes de empurrar)** — `install-hooks.bat` instala um hook
+  `pre-push` em `.git/hooks/` (coexiste com o `pre-commit` anti-segredo) que roda a suíte e
+  **bloqueia o push se algo quebrar**. Usa o runner resiliente `tools/run_tests.py` (isola cada
+  arquivo de teste + re-tenta no crash flaky de teardown do Qt offscreen). Local, sem servidor;
+  `git push --no-verify` pula. Protege a invariante "272 testes sempre verdes".
 
-Ideias futuras (sem data):
-- Hook git local (pytest no pre-push).
+Visão (sem data):
+- Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
+  **FIDO2**/chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
 
 ---
 

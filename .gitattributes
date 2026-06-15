@@ -1,0 +1,8 @@
+# Hooks git e shell scripts PRECISAM de LF: o sh.exe do Git para Windows nao executa
+# um shebang terminado em CRLF. Forcamos LF independente do core.autocrlf da maquina.
+tools/hooks/pre-push text eol=lf
+*.sh text eol=lf
+
+# Batch do Windows PRECISA de CRLF: o cmd.exe lê .bat por offset de byte assumindo CRLF;
+# com LF ele "come" os primeiros caracteres de cada linha.
+*.bat text eol=crlf

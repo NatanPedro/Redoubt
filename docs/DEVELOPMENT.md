@@ -133,9 +133,10 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (~212 testes coletados); o conftest força offscreen
+pytest                  # roda tudo (272 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
+python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
 ```
 
 O `pyproject.toml` já fixa `pythonpath = ["."]`, `testpaths = ["tests"]` e
@@ -143,15 +144,27 @@ O `pyproject.toml` já fixa `pythonpath = ["."]`, `testpaths = ["tests"]` e
 marcador `slow` está registrado lá (`tests/test_redteam_corpus.py` e o teto de DoS do
 scanner).
 
+### Runner resiliente + hook `pre-push`
+
+A suíte combinada às vezes sofre um **crash de teardown do Qt offscreen** (exit `0xC0000005`
+no shutdown do interpretador) — *flaky*, não é falha de teste. Por isso `tools/run_tests.py`
+**isola cada arquivo** num processo, lê o resultado por `--junitxml` e **re-tenta 1×** se o XML
+não sair; soma tudo e sai `!= 0` se algo falhar. Use-o quando o `pytest` combinado der esse crash.
+
+`install-hooks.bat` instala um hook **`pre-push`** (em `.git/hooks/`, coexistindo com o
+`pre-commit` anti-segredo) que roda esse runner e **bloqueia o push se a suíte quebrar**. É
+**local** (sem CI de servidor); `git push --no-verify` pula numa emergência.
+
 A suíte vive em `tests/` e cobre **núcleo a núcleo**:
 
 | Arquivo | O que cobre |
 | --- | --- |
 | `test_secrets.py` | Sentinela: verdadeiros/falsos-positivos, validadores (CPF/CNPJ/Luhn), resistência a *placeholder-poison*, exclusão de hash, teto `MAX_MATCHES`. |
 | `test_redteam_corpus.py` | Roda o corpus adversarial (`tests/fixtures/redteam_corpus.json`) e exige piso de **recall/precisão** — pega regressão grande do scanner. Marcado `slow`. |
-| `test_vault.py` | Cofre RDBT2: round-trip, senha errada → `WrongPassword`, adulteração de ciphertext/salt/nonce/slot, *scrypt-bomb* (`_check_kdf`), múltiplos slots (senhas + arquivo-chave), migração de RDBT1. |
-| `test_custody.py` | Identidade Ed25519, assinar/verificar, hash-chain append-only (`verify_chain`), proteger/desproteger a identidade com Cofre RDBT2 (escrita atômica + wipe + rollback). |
+| `test_vault.py` | Cofre RDBT3 (Argon2id por slot): round-trip, senha errada → `WrongPassword`, adulteração de ciphertext/salt/nonce/slot, *bomba* de KDF + **teto de custo agregado** (anti-DoS), anti-downgrade, slot ruim pulado, múltiplos slots, **retrocompat scrypt RDBT2/RDBT1**. |
+| `test_custody.py` | Identidade Ed25519, assinar/verificar, hash-chain append-only (`verify_chain`), proteger/desproteger a identidade com o Cofre (escrita atômica + wipe + rollback), âncora anti-reset. |
 | `test_release.py` | Manifesto RDBT-REL1: assinatura sobre o `signed_payload`, hashes batem, fingerprint derivado da chave, rejeição de re-assinatura com outra chave / âncora divergente. |
+| `test_seal.py` | Selo de proveniência RDBT-SEAL1: round-trip, conteúdo adulterado, **anti-substituição** (selo de outro arquivo), re-assinatura forjada rejeitada, `name` inerte (sem traversal), leitura blindada a `OSError`, verificador standalone (`verify_seal.py`). |
 | `test_scan_cli.py` | CLI da Sentinela e hook git: `--staged`, `--install-hook` (backup de hook alheio), decodificação UTF-16/32 e NUL, *fail-closed*, whitelist `redoubt:allow`, relatório nunca imprime o segredo. |
 | `test_searchfiles.py`, `test_palette.py`, `test_difftool.py`, `test_config.py`, `test_theme.py`, `test_findbar.py` | Núcleos puros de busca, paleta fuzzy, diff, wrapper de QSettings, paletas/QSS/retheme e a barra Localizar/Substituir. |
 | `test_app.py` | Integração de UI: selar/lock/unlock cofre, redação do clipboard, burn, encoding/BOM, mapa de exposição, restauração com conteúdo oculto. Usa a fixture `win`. |

@@ -323,7 +323,7 @@ O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) *
 
 **Pentests adversariais** sobrevividos e **229 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, identidade protegida e trilha de auditoria ancorada).
 
-> Ideias futuras (sem data): hook `pre-push` rodando a suíte de testes.
+> Visão (sem data): Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
 
 ---
 

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Redoubt :: hook git pre-push — roda a suite de testes e BLOQUEIA o push se algo quebrar.
+# Instale com  install-hooks.bat  (copia este arquivo para .git/hooks/pre-push).
+# Coexiste com o pre-commit anti-segredo (arquivos distintos).
+# Emergencia (pular a checagem):  git push --no-verify
+root="$(git rev-parse --show-toplevel)"
+echo "[pre-push] rodando a suite do Redoubt antes de empurrar (--no-verify pula)..."
+if ! python "$root/tools/run_tests.py"; then
+    echo ""
+    echo "[pre-push] BLOQUEADO: a suite falhou. Corrija os testes ou use 'git push --no-verify'."
+    exit 1
+fi
+echo "[pre-push] suite verde — seguindo com o push."
+exit 0
