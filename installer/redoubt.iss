@@ -6,7 +6,11 @@
 ; ============================================================
 
 #define AppName "Redoubt"
-#define AppVersion "1.0.0"
+; AppVersion vem da linha de comando (build-installer.bat extrai de notepy/__init__.py:
+;   ISCC /DAppVersion=1.2.3 ...). O fallback abaixo so vale se o ISCC for chamado a seco.
+#ifndef AppVersion
+  #define AppVersion "1.1.0"
+#endif
 #define AppPublisher "Natan Lopes"
 #define AppExe "Redoubt.exe"
 

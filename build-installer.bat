@@ -20,14 +20,26 @@ if not exist "%DIR%dist\Redoubt.exe" (
   echo [ERRO] dist\Redoubt.exe nao existe. Rode build.bat primeiro.
   exit /b 1
 )
-%ISCC% "%DIR%installer\redoubt.iss"
-if errorlevel 1 exit /b 1
+rem  Da raiz: ler APP_VERSION (notepy) e, depois, assinar o manifesto exigem o pacote no path.
+pushd "%DIR%"
+rem  Versao unica fonte da verdade: notepy/__init__.py (APP_VERSION).
+for /f "usebackq delims=" %%v in (`python -c "from notepy import APP_VERSION; print(APP_VERSION)"`) do set APPVER=%%v
+if not defined APPVER (
+  echo [ERRO] nao consegui ler APP_VERSION de notepy/__init__.py.
+  popd
+  exit /b 1
+)
+echo Versao do release: %APPVER%
+%ISCC% /DAppVersion=%APPVER% "%DIR%installer\redoubt.iss"
+if errorlevel 1 (
+  popd
+  exit /b 1
+)
 
 echo.
 echo === Gerando manifesto de release assinado (RELEASE.json + SHA256SUMS) ===
 rem  Assina os binarios com a identidade Ed25519 do Redoubt (custody) e gera os
 rem  artefatos de verificacao. Tudo LOCAL. Verifique depois com:  verify_release.py
-pushd "%DIR%"
 python -m notepy.release make --dist "%DIR%dist"
 popd
 endlocal
