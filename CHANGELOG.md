@@ -16,6 +16,19 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+Visão (sem data):
+- Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
+  **FIDO2**/chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
+
+---
+
+## [1.2.0] - 2026-06-15 — Evidência portátil + cofre moderno: selo, Argon2id, guarda de testes 🔏
+
+Marco de portabilidade e endurecimento: cada arquivo vira **evidência que viaja** (selo
+verificável offline, sem instalar o Redoubt), o Cofre adota o KDF *memory-hard* padrão
+(**Argon2id**, retrocompatível), e um **guarda-corpo de testes** trava o push se algo quebrar.
+Cada entrega de segurança passou por *red-team* adversarial + rodada(s) de confirmação.
+
 ### Added
 - **Selo de proveniência (`.rdbt-seal`)** — cada arquivo vira evidência **portátil**.
   *Segurança ▸ Selo de proveniência* grava, ao lado do arquivo, um `<arquivo>.rdbt-seal`
@@ -42,9 +55,10 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   arquivo de teste + re-tenta no crash flaky de teardown do Qt offscreen). Local, sem servidor;
   `git push --no-verify` pula. Protege a invariante "272 testes sempre verdes".
 
-Visão (sem data):
-- Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
-  **FIDO2**/chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
+### Changed
+- Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `DEVELOPMENT.md` / `CUSTODY.md`) e
+  README sincronizados a cada feature: Cofre RDBT3/Argon2id (ADR-5 atualizada), selo de
+  proveniência, runner resiliente + hook `pre-push`. Badge de testes 229 → **272**.
 
 ---
 

@@ -10,7 +10,7 @@
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.11.0-41CD52?logo=qt&logoColor=white)](https://pypi.org/project/PyQt6/)
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
-[![Status](https://img.shields.io/badge/status-v1.1.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-v1.2.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
 [![Testes](https://img.shields.io/badge/testes-272%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
@@ -184,7 +184,7 @@ Saída esperada:
 Chave de confiança (fingerprint): 4e391f28930f3b6e
 Assinatura confere com a chave do autor: SIM
 Artefatos:
-  [OK] Redoubt-Setup-1.1.0.exe
+  [OK] Redoubt-Setup-1.2.0.exe
   [OK] Redoubt.exe
 
 Veredito: INTEGRO E AUTENTICO
@@ -335,7 +335,7 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para os termos com
 
 <div align="center">
 
-**Redoubt** · v1.1.0 · *Python · PyQt6 · QScintilla*
+**Redoubt** · v1.2.0 · *Python · PyQt6 · QScintilla*
 
 *Nada vaza sem você mandar.*
 
