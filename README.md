@@ -10,8 +10,8 @@
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.11.0-41CD52?logo=qt&logoColor=white)](https://pypi.org/project/PyQt6/)
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
-[![Status](https://img.shields.io/badge/status-v1.0.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-212%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Status](https://img.shields.io/badge/status-v1.1.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
+[![Testes](https://img.shields.io/badge/testes-229%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -184,7 +184,7 @@ Saída esperada:
 Chave de confiança (fingerprint): 4e391f28930f3b6e
 Assinatura confere com a chave do autor: SIM
 Artefatos:
-  [OK] Redoubt-Setup-1.0.0.exe
+  [OK] Redoubt-Setup-1.1.0.exe
   [OK] Redoubt.exe
 
 Veredito: INTEGRO E AUTENTICO
@@ -320,9 +320,9 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **212 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiu com o release assinado e a identidade protegida).
+**Pentests adversariais** sobrevividos e **229 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, identidade protegida e trilha de auditoria ancorada).
 
-> Ideias futuras (sem data): instalador Windows + associação de `.rdbt` no Explorer; hook `pre-push` rodando a suíte de testes.
+> Ideias futuras (sem data): selo de proveniência exportável (`.rdbt-seal`); KDF do Cofre scrypt → Argon2id (formato RDBT3 retrocompatível); hook `pre-push` rodando a suíte de testes.
 
 ---
 
@@ -334,7 +334,7 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para os termos com
 
 <div align="center">
 
-**Redoubt** · v1.0.0 · *Python · PyQt6 · QScintilla*
+**Redoubt** · v1.1.0 · *Python · PyQt6 · QScintilla*
 
 *Nada vaza sem você mandar.*
 

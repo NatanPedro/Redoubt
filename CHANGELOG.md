@@ -16,6 +16,19 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+Ideias futuras (sem data):
+- Selo de proveniência exportável (`.rdbt-seal`).
+- KDF do Cofre: scrypt → Argon2id (formato RDBT3 retrocompatível).
+- Hook git local (pytest no pre-push).
+
+---
+
+## [1.1.0] - 2026-06-15 — Custódia forte: release assinado, identidade protegida, trilha ancorada 🔐
+
+Marco de segurança: o eixo de **integridade + autenticidade** amadureceu — o Redoubt passa a
+provar a própria distribuição, proteger a identidade que assina, e a trilha de auditoria detecta
+reset. Cada entrega passou por *red-team* adversarial + rodada(s) de confirmação.
+
 ### Added
 - **Release assinado + verificador standalone** — o Redoubt passa a provar a própria
   integridade. `build-installer.bat` gera, ao lado dos binários, um `SHA256SUMS` e um
@@ -44,10 +57,11 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 - **Testes**: +21 (`test_release.py`) + 31 (`test_custody.py`, 9→40 — casos de red-team das três
   features) → **229 testes no total, 0 falhas.**
 
-Ideias futuras (sem data):
-- Selo de proveniência exportável (`.rdbt-seal`).
-- KDF do Cofre: scrypt → Argon2id (formato RDBT3 retrocompatível).
-- Hook git local (pytest no pre-push).
+### Changed
+- Documentação técnica (`SECURITY.md`/`ARCHITECTURE.md`/`DEVELOPMENT.md`) sincronizada do estado
+  congelado em v0.2.0 para o v1.x real (Cofre++, custódia, identidade protegida, release assinado,
+  arquitetura em camadas); modelo de ameaça reescrito em 3 eixos honestos. README alinhado
+  (badge de testes, dependências).
 
 ---
 
