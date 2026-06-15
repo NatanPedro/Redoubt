@@ -10,6 +10,30 @@ PW = "senha-mestra-de-teste"
 SECRET = "senha do banco: batata123\nnetflix: lulu2010"
 
 
+@pytest.fixture(autouse=True)
+def _argon_rapido(monkeypatch):
+    """Argon2id leve (1 MiB, t=1) para a suite rodar rapido; producao usa 64 MiB / t=3."""
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_MEMLOG2", 10)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_T", 1)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_LANES", 1)
+
+
+def _build_rdbt2_scrypt(secret: str, password: str, log2n: int = 14) -> bytes:
+    """Constroi na mao um cofre RDBT2 legado (slot scrypt) — para testar retrocompatibilidade."""
+    import os
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    ck = vault.generate_key()
+    salt, wrap_nonce = os.urandom(16), os.urandom(12)
+    kind_byte = vault.KIND_PASSWORD | (vault.KDF_SCRYPT << 4)        # nibble alto 0 = scrypt
+    head = bytes([kind_byte, log2n, 8, 1]) + salt + wrap_nonce
+    kek = vault._scrypt(password.encode("utf-8", "surrogatepass"), salt, log2n, 8, 1)
+    slot = head + AESGCM(kek).encrypt(wrap_nonce, ck, head)
+    header = bytes([*vault.MAGIC_V2, vault.VERSION, 1])
+    cnonce = os.urandom(12)
+    ct = AESGCM(ck).encrypt(cnonce, secret.encode("utf-8", "surrogatepass"), header + slot)
+    return header + slot + cnonce + ct
+
+
 def test_round_trip():
     blob = vault.encrypt(SECRET, PW)
     assert vault.looks_like_vault(blob)
@@ -71,8 +95,14 @@ def test_senha_vazia_recusada():
 # --------------------------------------------------------------------------- #
 # RDBT2 — envelope / key-slots (Cofre++)
 # --------------------------------------------------------------------------- #
-def test_formato_rdbt2():
-    assert vault.encrypt(SECRET, PW)[:5] == b"RDBT2"
+def test_formato_rdbt3():
+    assert vault.encrypt(SECRET, PW)[:5] == b"RDBT3"
+
+
+def test_usa_argon2id_por_padrao():
+    blob = vault.new_vault("x", password="pw")
+    assert (blob[7] >> 4) == vault.KDF_ARGON2        # nibble alto do byte kind do slot 0
+    assert (blob[7] & 0x0F) == vault.KIND_PASSWORD
 
 
 def test_multiplas_senhas_independentes():
@@ -120,15 +150,18 @@ def test_le_e_migra_rdbt1_legado():
     assert blob_v1[:5] == b"RDBT1"
     o = vault.open_vault(blob_v1, password=PW)
     assert o.text == SECRET                                  # le o legado
-    novo = vault.reseal(o.text, o.key, o.slots)              # migra p/ RDBT2 ao re-selar
-    assert novo[:5] == b"RDBT2" and vault.decrypt(novo, PW) == SECRET
+    novo = vault.reseal(o.text, o.key, o.slots)              # migra p/ RDBT3 (Argon2id) ao re-selar
+    assert novo[:5] == b"RDBT3" and vault.decrypt(novo, PW) == SECRET
 
 
 def test_slot_kdf_bomba_bloqueada():
+    """Argon2id com memory_log2 gigante (2^63 KiB) nao pode travar/derrubar o app."""
     blob = bytearray(vault.encrypt("x", PW))
-    blob[8] = 63                       # log2n do slot 0 (offset 7+1) -> scrypt bomba
+    blob[9] = 63                       # memory_log2 do slot 0 (offset 7+2) -> Argon2id bomba
+    t = time.time()
     with pytest.raises(vault.VaultError):
         vault.decrypt(bytes(blob), PW)
+    assert time.time() - t < 1.0, "validacao de parametros deveria ser instantanea"
 
 
 def test_strip_de_slot_detectado():
@@ -146,4 +179,81 @@ def test_slot_kinds():
     assert vault.slot_kinds(vault.new_vault("x", keyfile=b"kf-1234")) == [1]
     o = vault.open_vault(vault.new_vault("x", password="A"), password="A")
     blob = vault.reseal("x", o.key, vault.add_unlocker(o.key, o.slots, keyfile=b"kf-1234"))
-    assert vault.slot_kinds(blob) == [0, 1]
+    assert vault.slot_kinds(blob) == [0, 1]               # mascarado p/ nibble baixo (ignora KDF)
+
+
+# --------------------------------------------------------------------------- #
+# RDBT3 — Argon2id + retrocompatibilidade scrypt (KDF por slot)
+# --------------------------------------------------------------------------- #
+def test_rdbt2_scrypt_legado_ainda_abre():
+    """Um cofre RDBT2 antigo (slot scrypt) continua abrindo; re-selar migra o envelope p/ RDBT3."""
+    blob = _build_rdbt2_scrypt(SECRET, PW)
+    assert blob[:5] == b"RDBT2"
+    assert vault.decrypt(blob, PW) == SECRET                   # scrypt legado abre
+    with pytest.raises(vault.WrongPassword):
+        vault.decrypt(blob, "errada")
+    o = vault.open_vault(blob, password=PW)
+    novo = vault.reseal(o.text, o.key, o.slots)                # re-sela: MAGIC RDBT3, slot scrypt preservado
+    assert novo[:5] == b"RDBT3"
+    assert (novo[7] >> 4) == vault.KDF_SCRYPT                   # o slot continua scrypt (nao re-derivavel)
+    assert vault.decrypt(novo, PW) == SECRET
+
+
+def test_mistura_scrypt_e_argon_no_mesmo_cofre():
+    """Slot scrypt (legado) + slot Argon2id (novo) abrem o MESMO cofre, cada um com seu KDF."""
+    base = _build_rdbt2_scrypt(SECRET, "scrypt-pw")
+    o = vault.open_vault(base, password="scrypt-pw")
+    slots = vault.add_unlocker(o.key, o.slots, password="argon-pw")   # +slot Argon2id
+    novo = vault.reseal(SECRET, o.key, slots)
+    assert [s[0] >> 4 for s in slots] == [vault.KDF_SCRYPT, vault.KDF_ARGON2]
+    assert vault.decrypt(novo, "scrypt-pw") == SECRET          # slot scrypt (legado) abre
+    assert vault.decrypt(novo, "argon-pw") == SECRET           # slot Argon2id (novo) abre
+    with pytest.raises(vault.WrongPassword):
+        vault.decrypt(novo, "nao-cadastrada")
+
+
+def test_downgrade_de_kdf_no_slot_detectado():
+    """Trocar o KDF no byte kind (argon->scrypt) quebra o GCM do slot (o byte esta na AAD)."""
+    blob = bytearray(vault.new_vault(SECRET, password=PW))     # slot Argon2id
+    assert (blob[7] >> 4) == vault.KDF_ARGON2
+    blob[7] = vault.KIND_PASSWORD | (vault.KDF_SCRYPT << 4)     # forca nibble do KDF p/ scrypt
+    with pytest.raises(vault.VaultError):                      # scrypt c/ params de argon + AAD muda -> falha
+        vault.decrypt(bytes(blob), PW)
+
+
+# --------------------------------------------------------------------------- #
+# Pos red-team: teto de custo do KDF (anti-DoS) + slot ruim pulado (nao fatal)
+# --------------------------------------------------------------------------- #
+def test_check_scrypt_rejeita_custo_alto():
+    """O pior caso que ANTES passava (log2n=18,r=16,p=16 ~ 512 MiB / dezenas de seg) agora e barrado."""
+    with pytest.raises(vault.VaultError):
+        vault._check_scrypt(18, 16, 16)
+    vault._check_scrypt(15, 8, 1)            # default: nao levanta
+
+
+def test_check_argon_rejeita_custo_alto():
+    with pytest.raises(vault.VaultError):
+        vault._check_argon(8, 18, 16)        # mem 256 MiB + lanes 16: fora do teto
+    vault._check_argon(3, 16, 4)             # default: nao levanta
+
+
+def test_agregado_de_kdf_excede_orcamento_recusa_rapido():
+    """16 slots no teto aceito por-slot (custo 512 cada) somam > orcamento: open_vault recusa
+    ANTES de derivar qualquer KEK — instantaneo, em vez de congelar a UI por minutos."""
+    import os
+    kind = vault.KIND_PASSWORD | (vault.KDF_ARGON2 << 4)
+    slot = bytes([kind, 8, 17, 8]) + os.urandom(76)            # argon t=8,memlog2=17: work=2^20 (passa por-slot)
+    blob = bytes([*vault.MAGIC_V3, vault.VERSION, 16]) + slot * 16 + os.urandom(12 + 16)
+    t = time.time()
+    with pytest.raises(vault.VaultError):                      # 16*2^20 = 2^24 > teto agregado 2^22
+        vault.decrypt(blob, "qualquer")
+    assert time.time() - t < 1.0, "deveria recusar pelo orcamento agregado, sem derivar"
+
+
+def test_slot_envenenado_antes_do_real_nao_nega_credencial():
+    """Um slot com KDF desconhecido prependido ao slot real NAO pode negar a credencial correta."""
+    import os
+    o = vault.open_vault(vault.new_vault(SECRET, password="dono"), password="dono")
+    poison = bytes([vault.KIND_PASSWORD | (3 << 4), 1, 10, 1]) + os.urandom(76)   # KDF=3 desconhecido
+    blob = vault.reseal(SECRET, o.key, [poison, o.slots[0]])    # envenenado PRIMEIRO
+    assert vault.decrypt(blob, "dono") == SECRET               # pula o slot ruim, abre no real

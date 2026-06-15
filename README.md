@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.1.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-264%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-272%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -64,7 +64,7 @@ O **filtro de placeholder** descarta automaticamente material de exemplo (`examp
 
 ### 🗝️ Cofre++ — cifragem em repouso
 
-`Ctrl+Shift+L` sela a aba como um cofre **`.rdbt`** cifrado com **AES-256-GCM** (chave derivada por **scrypt**), *zero-knowledge* (a senha nunca é gravada). Formato **envelope** (estilo LUKS/age): **múltiplas senhas independentes** e/ou um **arquivo-chave** abrem o mesmo cofre. Auto-lock por inatividade, travar/destravar, e o conteúdo **nunca toca o disco em claro**.
+`Ctrl+Shift+L` sela a aba como um cofre **`.rdbt`** cifrado com **AES-256-GCM** (chave derivada por **Argon2id**, *memory-hard*; cofres scrypt legados seguem abrindo), *zero-knowledge* (a senha nunca é gravada). Formato **envelope** (estilo LUKS/age): **múltiplas senhas independentes** e/ou um **arquivo-chave** abrem o mesmo cofre. Auto-lock por inatividade, travar/destravar, e o conteúdo **nunca toca o disco em claro**.
 
 ### 🔏 Custódia assinada + trilha de auditoria
 
@@ -269,7 +269,7 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── mainwindow.py        Janela: abas, menus, barra :, custódia, cofre, busca/paleta/diff
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + hash + encoding
     ├── secrets.py           Sentinela de Segredos — scan(text) (testável sem Qt)
-    ├── vault.py             Cofre++ .rdbt — AES-256-GCM + scrypt, envelope/key-slots (sem Qt)
+    ├── vault.py             Cofre++ .rdbt — AES-256-GCM + Argon2id, envelope RDBT3 (sem Qt)
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria (sem Qt)
     ├── scan_cli.py          CLI da Sentinela + hook git pre-commit (sem Qt)
     ├── searchfiles.py       Busca em arquivos / grep na pasta (sem Qt)
@@ -323,7 +323,7 @@ O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) *
 
 **Pentests adversariais** sobrevividos e **229 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, identidade protegida e trilha de auditoria ancorada).
 
-> Ideias futuras (sem data): KDF do Cofre scrypt → Argon2id (formato RDBT3 retrocompatível); hook `pre-push` rodando a suíte de testes.
+> Ideias futuras (sem data): hook `pre-push` rodando a suíte de testes.
 
 ---
 

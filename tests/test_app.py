@@ -11,6 +11,14 @@ from notepy.editor import read_text
 SECRET_FILE = 'AWS = "AKIA3FK7XQ2MNP8RTUVW"\nsenha: batata123'
 
 
+@pytest.fixture(autouse=True)
+def _argon_rapido(monkeypatch):
+    """O Cofre usa Argon2id; params leves p/ os testes de cofre rodarem rapido."""
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_MEMLOG2", 10)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_T", 1)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_LANES", 1)
+
+
 # --------------------------------------------------------------------------- #
 # Cofre: selar -> gravar cifrado -> reabrir
 # --------------------------------------------------------------------------- #
@@ -24,7 +32,7 @@ def test_selar_grava_cifrado_e_reabre(win, tmp_path):
     vp = str(tmp_path / "c.rdbt")
     assert win._write(ed, vp)
     raw = open(vp, "rb").read()
-    assert raw[:5] == b"RDBT2" and b"senha: y" not in raw   # envelope RDBT2
+    assert raw[:5] == b"RDBT3" and b"senha: y" not in raw   # envelope RDBT3 (Argon2id)
 
     # reabre com a senha certa
     win._inbox.append(("pw1234", True))

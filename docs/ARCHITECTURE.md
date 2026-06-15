@@ -93,7 +93,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     │
     │   ── núcleos puros (sem Qt) ──
     ├── secrets.py           Sentinela de Segredos — scan(text)
-    ├── vault.py             Cofre++ .rdbt — AES-256-GCM + scrypt, envelope RDBT2
+    ├── vault.py             Cofre++ .rdbt — AES-256-GCM + Argon2id, envelope RDBT3 (KDF por slot)
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria
     ├── release.py           Manifesto de release assinado (RDBT-REL1)
     ├── seal.py              Selo de proveniência de arquivo (RDBT-SEAL1)
@@ -203,15 +203,17 @@ e na [ADR-4](#adr-4--detecção-em-camadas-com-filtro-de-placeholder).
 
 #### `notepy/vault.py` — o Cofre++ (`.rdbt`)
 
-Cifragem em repouso, **sem Qt**, dependendo de `cryptography`. Formato **RDBT2**
+Cifragem em repouso, **sem Qt**, dependendo de `cryptography`. Formato **RDBT3**
 em *envelope* / *key-slots* (estilo LUKS/age): uma **chave-de-conteúdo (CK)**
 aleatória de 256 bits cifra o texto com **AES-256-GCM**; cada destravador (senha
 **ou** arquivo-chave) é um *slot* de 80 bytes que **embrulha** a CK via chave
-derivada por **scrypt**. API: `new_vault` / `open_vault` / `reseal` /
-`add_unlocker` / `slot_kinds` (e `encrypt`/`decrypt` mantidos por
-retrocompatibilidade). Lê e migra em memória o formato legado **RDBT1** (senha
-única). Detalhado na [seção 6](#o-cofre--confidencialidade-em-repouso) e na
-[ADR-5](#adr-5--cofre-em-envelope-rdbt2-múltiplos-destravadores).
+derivada por **Argon2id** (*memory-hard*). O **KDF é por slot** (nibble alto do byte
+`kind`), então slots **scrypt** legados (RDBT2/RDBT1) e Argon2id coexistem. Teto de
+custo **por slot e agregado** (anti-DoS) checado antes de derivar. API: `new_vault` /
+`open_vault` / `reseal` / `add_unlocker` / `slot_kinds` (e `encrypt`/`decrypt` por
+retrocompatibilidade). Lê e migra **RDBT1** legado. Detalhado na
+[seção 6](#o-cofre--confidencialidade-em-repouso) e na
+[ADR-5](#adr-5--cofre-em-envelope-rdbt3-múltiplos-destravadores).
 
 #### `notepy/custody.py` — Custódia assinada + trilha de auditoria
 
@@ -444,7 +446,7 @@ cripto; ela chama `vault`/`custody`/`release`/`scan_cli` e traduz o resultado.
 
 | Subsistema   | Núcleo (sem Qt)        | Cripto             | Eixo que cobre                  |
 |--------------|------------------------|--------------------|---------------------------------|
-| Cofre `.rdbt`| `vault.py`             | AES-256-GCM + scrypt | Confidencialidade em repouso    |
+| Cofre `.rdbt`| `vault.py`             | AES-256-GCM + Argon2id | Confidencialidade em repouso    |
 | Custódia     | `custody.py`           | Ed25519 + SHA-256  | Integridade + autenticidade     |
 | Hook git     | `scan_cli.py`          | (reusa `secrets`)  | Prevenção de vazamento no commit|
 | Release      | `release.py` + `verify_release.py` | Ed25519  | Integridade + autenticidade do download |
@@ -507,13 +509,15 @@ segredo".**
 
 ### O Cofre — confidencialidade em repouso
 
-`vault.py`, formato **RDBT2** (*envelope* / *key-slots*). Uma CK aleatória cifra
+`vault.py`, formato **RDBT3** (*envelope* / *key-slots*). Uma CK aleatória cifra
 o conteúdo com **AES-256-GCM**; cada destravador (senha **ou** arquivo-chave) é
-um slot que embrulha a CK via chave derivada por **scrypt** (não PBKDF2 — o
-roadmap antigo errava ao dizer PBKDF2). Até 16 slots; **múltiplas senhas e/ou
-arquivos-chave** abrem o mesmo cofre; `reseal` preserva todos os slots. A AAD liga
-o conteúdo a todos os slots (anti slot-strip); `_check_kdf` valida `log2n/r/p`
-(anti scrypt-bomb). Lê e migra RDBT1 legado em memória.
+um slot que embrulha a CK via chave derivada por **Argon2id** (*memory-hard*; não
+PBKDF2 — o roadmap antigo errava ao dizer PBKDF2). O **KDF é por slot** (nibble alto
+do byte `kind`), então slots **scrypt** legados e Argon2id coexistem; cofres
+RDBT2/RDBT1 continuam abrindo. Até 16 slots; **múltiplas senhas e/ou arquivos-chave**
+abrem o mesmo cofre; `reseal` preserva todos os slots e seus KDFs. A AAD liga o
+conteúdo a todos os slots (anti slot-strip) e o byte `kind` à CK (anti-downgrade);
+o custo de KDF tem **teto por slot e agregado** (anti-DoS). Lê e migra RDBT1 legado.
 
 **Garante:** confidencialidade em repouso, **zero-knowledge** (nenhuma credencial
 é gravada; esqueceu = irrecuperável). GCM autenticado: senha errada e adulteração
@@ -650,18 +654,23 @@ Precisão 55% → 87%.
 **Consequências.** Detector testável headless e isolado; trade-off explícito
 FP×FN, documentado nas [limitações honestas](#a-sentinela-em-5-camadas).
 
-### ADR-5 — Cofre em envelope RDBT2 (múltiplos destravadores)
+### ADR-5 — Cofre em envelope RDBT3 (múltiplos destravadores, Argon2id por slot)
 
 **Contexto.** Cifrar o conteúdo com uma única senha derivada amarraria o cofre a
-um segredo só — sem rotação de senha, sem "algo que você tem".
+um segredo só — sem rotação de senha, sem "algo que você tem". E, embora scrypt
+seja forte, **Argon2id** é o padrão atual (mais resistente a GPU/ASIC).
 **Decisão.** Formato **envelope** (estilo LUKS/age): uma CK aleatória cifra o
 conteúdo; cada destravador (senha **ou** arquivo-chave) é um **slot** que embrulha
-a CK via **scrypt** (memory-hard, validado contra scrypt-bomb). Até 16 slots; a
-AAD liga o conteúdo aos slots (anti slot-strip); `reseal` re-cifra sem re-derivar
-credenciais. Lê/migra RDBT1.
+a CK via KDF. O **KDF é por slot** (nibble alto do byte `kind`): cofres novos usam
+**Argon2id** (memory-hard), e slots **scrypt** legados (RDBT2/RDBT1) continuam
+abrindo e coexistem no mesmo cofre. Até 16 slots; a AAD liga o conteúdo aos slots
+(anti slot-strip) e o byte `kind` à CK (anti-downgrade); o custo de KDF tem **teto
+por slot e agregado** (anti-DoS, checado antes de derivar); `reseal` re-cifra sem
+re-derivar credenciais. Lê/migra RDBT1.
 **Consequências.** Múltiplas senhas independentes e arquivo-chave abrem o mesmo
-cofre; rotação trivial. **Scrypt** (não PBKDF2) é a KDF efetiva. Mantém
-retrocompatibilidade com cofres antigos.
+cofre; rotação trivial. **Argon2id** é a KDF padrão (sem dependência nova — vem do
+`cryptography`); scrypt permanece como leitura legada. Retrocompatibilidade total
+com cofres e identidades antigos.
 
 ### ADR-6 — Release assinado pela string canônica + âncora de pubkey
 

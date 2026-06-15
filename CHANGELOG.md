@@ -28,9 +28,16 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   campo declarado), amarra **anti-substituição** pelo conteúdo, `name` inerte (sem path
   traversal), leitura do alvo blindada contra `OSError` (lock OneDrive/AV/TOCTOU) e `trail`
   normalizado. **+35 testes** (`test_seal.py`) → **264 no total**.
+- **Cofre com Argon2id (formato RDBT3, retrocompatível)** — o KDF do Cofre evoluiu de scrypt para
+  **Argon2id** (*memory-hard*, mais resistente a GPU/ASIC), **sem dependência nova** (`cryptography`
+  já o traz). O KDF é **por slot** (nibble alto do byte `kind`): cofres novos usam Argon2id, e
+  cofres **RDBT2/RDBT1 legados** (scrypt) — e identidades já protegidas — continuam abrindo; slots
+  scrypt e Argon2id coexistem no mesmo cofre. Endurecido por *red-team* + confirmação: **teto de
+  custo por slot e agregado** (recusa antes de derivar — fecha um DoS de ~minutos/512 MiB que
+  cofre forjado causaria, para ~5s/128 MiB), anti-downgrade (KDF na AAD), slot inválido é **pulado**
+  (não nega credencial válida). **+8 testes** (`test_vault.py`, 21→29) → **272 no total**.
 
 Ideias futuras (sem data):
-- KDF do Cofre: scrypt → Argon2id (formato RDBT3 retrocompatível).
 - Hook git local (pytest no pre-push).
 
 ---

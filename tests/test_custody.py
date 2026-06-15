@@ -23,6 +23,14 @@ def _reset_identity_cache():
     custody.lock_identity()
 
 
+@pytest.fixture(autouse=True)
+def _argon_rapido(monkeypatch):
+    """Identidade protegida usa o Cofre (Argon2id); params leves p/ a suite rodar rapido."""
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_MEMLOG2", 10)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_T", 1)
+    monkeypatch.setattr(vault, "_DEFAULT_ARGON_LANES", 1)
+
+
 # --------------------------------------------------------------------------- #
 # Assinatura
 # --------------------------------------------------------------------------- #

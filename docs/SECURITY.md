@@ -16,7 +16,7 @@ do editor, na sua máquina.
 >
 > | Eixo | Defesa principal | O que prova |
 > | --- | --- | --- |
-> | **Confidencialidade em repouso** | Cofre `.rdbt` (AES-256-GCM) | quem não tem a credencial não lê o conteúdo |
+> | **Confidencialidade em repouso** | Cofre `.rdbt` (AES-256-GCM + Argon2id) | quem não tem a credencial não lê o conteúdo |
 > | **Integridade + autenticidade** | Custódia assinada (Ed25519) + trilha de auditoria; Release assinado | "veio desta instalação e não mudou desde que assinei" |
 > | **Detecção / privacidade** | Sentinela, Modo Redação, Hook git, Ocultar, Burn | reduz a chance de vazamento *acidental* na hora da edição |
 >
@@ -267,18 +267,24 @@ O **Cofre `.rdbt`** (`notepy/vault.py`, núcleo puro; depende da lib `cryptograp
 cifra o conteúdo em disco de verdade. Selar com `Ctrl+Shift+L`; travar/destravar com
 `Ctrl+Shift+K` / `Ctrl+Shift+U`.
 
-### Formato RDBT2 (envelope / key-slots, estilo LUKS/age)
+### Formato RDBT3 (envelope / key-slots, estilo LUKS/age)
 
 - Uma **chave-de-conteúdo (CK)** aleatória de 256 bits cifra o texto com **AES-256-GCM**
   (cifragem autenticada).
 - Cada **destravador** — uma **senha** *ou* um **arquivo-chave** — é um **slot** de 80
-  bytes que **embrulha a CK** com uma chave derivada por **scrypt** (memory-hard).
+  bytes que **embrulha a CK** com uma chave derivada por **Argon2id** (*memory-hard*, mais
+  resistente a GPU/ASIC que o scrypt; sem dependência nova). O **KDF é por slot** (no byte
+  `kind`): cofres novos usam Argon2id; slots **scrypt** de cofres **RDBT2/RDBT1 legados**
+  continuam abrindo e **coexistem** com slots Argon2id no mesmo cofre.
 - **Múltiplas senhas e/ou arquivos-chave independentes** abrem o **mesmo** cofre (até
-  **16 slots**). Re-selar (`reseal`) preserva todos os slots: a CK fica em memória e o
-  conteúdo é re-cifrado sem re-derivar as credenciais.
-- O **AAD** liga o conteúdo a **todos** os slots (anti slot-strip: remover um slot
-  invalida o GCM); `_check_kdf` valida `log2n`/`r`/`p` (anti **scrypt-bomb** — um `.rdbt`
-  malicioso com `log2n` gigante alocaria petabytes).
+  **16 slots**). Re-selar (`reseal`) preserva todos os slots (e seus KDFs): a CK fica em
+  memória e o conteúdo é re-cifrado sem re-derivar as credenciais.
+- O **AAD** liga o conteúdo a **todos** os slots (anti slot-strip: remover um slot invalida
+  o GCM) e o byte `kind` — incluindo o KDF — à CK embrulhada (**anti-downgrade**: trocar o
+  KDF quebra o GCM). Os parâmetros do KDF têm **teto de custo por slot e agregado**, checado
+  **antes de derivar**: um `.rdbt` malicioso (params no teto × 16 slots, derivados em série)
+  não trava a UI — cai de **~minutos / 512 MiB** para **~5s / 128 MiB**. Um slot
+  inválido/de KDF desconhecido é **pulado** (não nega uma credencial válida).
 - Lê e **migra em memória** o formato legado **RDBT1** (senha única) ao re-salvar.
 
 ### Garantias
@@ -548,7 +554,7 @@ O Redoubt mira o **vazamento acidental** de material sensível por humanos, e a
 | Defesa | Eixo | Garante | NÃO garante |
 | --- | --- | --- | --- |
 | **Sentinela** | Detecção | Aponta credencial/PII de formato conhecido ou alta entropia, local, com validação real onde dá (CPF/CNPJ/Luhn) | Best-effort: segredo sem padrão/ofuscado escapa; há FP. `LIMPO` = "nada detectado", não "sem segredo" |
-| **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM, zero-knowledge, multi-destravador; disco sempre cifrado | Não prova autoria; não recupera senha; resíduo em RAM enquanto destravado |
+| **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM (KDF **Argon2id**, RDBT3), zero-knowledge, multi-destravador; disco sempre cifrado | Não prova autoria; não recupera senha; resíduo em RAM enquanto destravado |
 | **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha + âncora detectam adulteração e reset | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina/forja como você |
 | **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >2 MB não varrido |
 | **Release assinado** | Integridade + autenticidade do download | Integridade + autenticidade contra a âncora embutida | Assinatura sozinha não prova autoria (pubkey viaja no payload); chave local sem senha por padrão |
