@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.2.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-272%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-294%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -59,6 +59,8 @@ O **filtro de placeholder** descarta automaticamente material de exemplo (`examp
 ### 🔒 Modo Redação
 
 `Ctrl+Shift+R` cobre **todos** os segredos detectados com tarja preta **e mascara o clipboard** — copiar um segredo entrega `●●●` no lugar do texto real. Ideal pra compartilhar a tela ou colar trechos em call sem vazar credencial.
+
+Quer esconder segredos que a Sentinela **não** detecta (uma senha memorável, por exemplo)? **Segurança ▸ Lista de redação** deixa você cadastrar strings literais — guardadas **cifradas** num Cofre (`.rdbt`, Argon2id) — que a Redação passa a tarjar sempre, na tela e no clipboard.
 
 > ⚠️ A tarja na tela é **visual** (o conteúdo real continua no documento); a proteção em repouso é o **Cofre**. Veja as [limitações honestas](#segurança).
 
@@ -228,6 +230,7 @@ assinatura não confere com a âncora), e o `RELEASE.json` falha se qualquer has
 | **Modo Redação** (tarjar segredos) | `Ctrl+Shift+R` |
 | **Ir ao próximo segredo** | `F8` |
 | **Relatório de segredos** | `Ctrl+Shift+E` |
+| **Lista de redação** (segredos literais a tarjar) | menu Segurança |
 | **Verificar custódia** (hash + assinatura) | `Ctrl+Shift+H` |
 | **Assinar e exportar** (`.sig`) | `Ctrl+Shift+G` |
 | **Selo de proveniência** (`.rdbt-seal`) / **Verificar selo** | menu Segurança |

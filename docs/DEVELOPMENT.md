@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (272 testes); o conftest força offscreen
+pytest                  # roda tudo (294 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -165,6 +165,7 @@ A suíte vive em `tests/` e cobre **núcleo a núcleo**:
 | `test_custody.py` | Identidade Ed25519, assinar/verificar, hash-chain append-only (`verify_chain`), proteger/desproteger a identidade com o Cofre (escrita atômica + wipe + rollback), âncora anti-reset. |
 | `test_release.py` | Manifesto RDBT-REL1: assinatura sobre o `signed_payload`, hashes batem, fingerprint derivado da chave, rejeição de re-assinatura com outra chave / âncora divergente. |
 | `test_seal.py` | Selo de proveniência RDBT-SEAL1: round-trip, conteúdo adulterado, **anti-substituição** (selo de outro arquivo), re-assinatura forjada rejeitada, `name` inerte (sem traversal), leitura blindada a `OSError`, verificador standalone (`verify_seal.py`). |
+| `test_redaction.py` | Lista de Redação: round-trip cifrado, senha errada, **comprimento mínimo + teto de spans** (anti-DoS), `find_in` literal, `_decode` robusto. Integração de UI (em `test_app.py`): tarja no editor, byte-spans com unicode, cópia parcial no clipboard, gerenciador travado sem crash. |
 | `test_scan_cli.py` | CLI da Sentinela e hook git: `--staged`, `--install-hook` (backup de hook alheio), decodificação UTF-16/32 e NUL, *fail-closed*, whitelist `redoubt:allow`, relatório nunca imprime o segredo. |
 | `test_searchfiles.py`, `test_palette.py`, `test_difftool.py`, `test_config.py`, `test_theme.py`, `test_findbar.py` | Núcleos puros de busca, paleta fuzzy, diff, wrapper de QSettings, paletas/QSS/retheme e a barra Localizar/Substituir. |
 | `test_app.py` | Integração de UI: selar/lock/unlock cofre, redação do clipboard, burn, encoding/BOM, mapa de exposição, restauração com conteúdo oculto. Usa a fixture `win`. |

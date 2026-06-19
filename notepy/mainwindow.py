@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
-               palette, seal, searchfiles, secrets as secrets_mod, theme, vault)
+               palette, redaction, seal, searchfiles, secrets as secrets_mod, theme, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -241,6 +241,95 @@ class DiffDialog(QDialog):
         return len(diff)
 
 
+class RedactionListDialog(QDialog):
+    """Gerenciador da Lista de redacao. NUNCA mostra o segredo em claro — so indice +
+    tamanho. Adicionar pede o valor com echo mascarado; cada mudanca re-cifra (reseal,
+    sem re-derivar o KDF -> rapido). Pressupoe a lista JA destravada."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{APP_NAME} — Lista de redação")
+        self.resize(440, 340)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Segredos LITERAIS que o Modo Redação sempre tarja "
+                             "(guardados cifrados; nunca exibidos aqui):"))
+        self.listw = QListWidget(self)
+        lay.addWidget(self.listw)
+        row = QHBoxLayout()
+        b_add = QPushButton("Adicionar…", self)
+        b_rem = QPushButton("Remover", self)
+        b_lock = QPushButton("Bloquear", self)
+        b_close = QPushButton("Fechar", self)
+        for b in (b_add, b_rem, b_lock, b_close):
+            row.addWidget(b)
+        lay.addLayout(row)
+        b_add.clicked.connect(self._add)
+        b_rem.clicked.connect(self._remove)
+        b_lock.clicked.connect(self._lock)
+        b_close.clicked.connect(self.accept)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self.listw.clear()
+        for i, s in enumerate(redaction.entries(), 1):
+            self.listw.addItem(f"Segredo #{i} — {len(s)} caractere(s)")
+
+    def _persist(self) -> bool:
+        try:
+            redaction.save()
+            return True
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível salvar a lista:\n{exc}")
+            return False
+
+    def _ensure_unlocked(self) -> bool:
+        if redaction.is_unlocked():
+            return True
+        QMessageBox.information(self, APP_NAME,
+                               "A lista foi bloqueada (inatividade). Reabra para gerenciar.")
+        self.reject()
+        return False
+
+    def _add(self) -> None:
+        if not self._ensure_unlocked():
+            return
+        val, ok = QInputDialog.getText(self, "Adicionar segredo",
+                                       "Valor literal a tarjar (senha/credencial, mín. 4 caracteres):",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or not val:
+            return
+        try:
+            added = redaction.add(val)
+        except vault.VaultError:
+            self.reject()
+            return
+        if not added:
+            QMessageBox.information(self, APP_NAME,
+                                    "Não adicionado: curto demais (mín. 4), duplicado, longo demais ou lista cheia.")
+            return
+        if self._persist():
+            self._refresh()
+
+    def _remove(self) -> None:
+        if not self._ensure_unlocked():
+            return
+        i = self.listw.currentRow()
+        ents = redaction.entries()
+        if not (0 <= i < len(ents)):
+            return
+        try:
+            redaction.remove(ents[i])
+        except vault.VaultError:
+            self.reject()
+            return
+        if self._persist():
+            self._refresh()
+
+    def _lock(self) -> None:
+        redaction.lock()
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -324,11 +413,17 @@ class MainWindow(QMainWindow):
         # uma copia feita numa aba redigida VAZA se outra aba (sem redacao) estiver
         # em foco no instante do dataChanged (bug do pentest: a aba dona da copia
         # nao e necessariamente a current_editor()).
-        snippets: list[str] = []
+        # Separa os REGISTRADOS (declaracao explicita do usuario — podem ser curtos) dos
+        # detectados por padrao/entropia (estes mantem o piso de 6 contra falso-positivo).
+        reg: list[str] = []
+        other: list[str] = []
         for i in range(self.tabs.count()):
             ed = self.tabs.widget(i)
             if isinstance(ed, CodeEditor) and ed.is_redacted():
-                snippets.extend(m.snippet for m in ed.secret_matches() if m.snippet)
+                for m in ed.secret_matches():
+                    if m.snippet:
+                        (reg if m.kind == "segredo registrado" else other).append(m.snippet)
+        snippets = reg + other
         if not snippets:
             return
         cb = QApplication.clipboard()
@@ -339,10 +434,15 @@ class MainWindow(QMainWindow):
         for snip in snippets:                       # mascara segredos INTEIROS presentes
             if snip in new:
                 new = new.replace(snip, "●" * len(snip))
-        if new == txt:                              # nada inteiro? checa copia PARCIAL
+        if new == txt:                              # nada inteiro? checa copia PARCIAL (fragmento)
             stripped = txt.strip()
-            if len(stripped) >= 6 and any(stripped in snip for snip in snippets):
-                new = "●" * len(txt)
+            # Registrado: mascara fragmento >= 2 chars (PIN/senha curta nao pode vazar pela copia
+            # parcial). Detectado: mantem piso 6. Mascara so o FRAGMENTO (nao apaga o clipboard
+            # inteiro), pra nao destruir uma copia legitima que so colide com um segredo maior.
+            hit = ((len(stripped) >= 2 and any(stripped in s for s in reg))
+                   or (len(stripped) >= 6 and any(stripped in s for s in other)))
+            if hit:
+                new = txt.replace(stripped, "●" * len(stripped))
         if new != txt:
             self._clip_guard = True
             cb.setText(new)
@@ -422,6 +522,9 @@ class MainWindow(QMainWindow):
                                     SP.SP_FileDialogInfoView,
                                     QKeySequence("Ctrl+Shift+E"),
                                     self.show_secret_report)
+        self.act_redaction_list = make("&Lista de redação (segredos a tarjar)…",
+                                       SP.SP_DialogSaveButton, None,
+                                       self.manage_redaction_list)
         # Cofre: sela a aba atual (sera gravada cifrada como .rdbt).
         self.act_seal = make("Selar como &cofre…",
                              SP.SP_DriveHDIcon,
@@ -512,6 +615,7 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_redact)
         m_sec.addAction(self.act_next_secret)
         m_sec.addAction(self.act_scan_report)
+        m_sec.addAction(self.act_redaction_list)
         m_sec.addAction(self.act_verify)
         m_sec.addAction(self.act_sign)
         m_sec.addAction(self.act_protect_id)
@@ -699,6 +803,63 @@ class MainWindow(QMainWindow):
         self._update_seal()
         self._update_window_title()
 
+    def _rescan_all_editors(self) -> None:
+        """Re-varre todas as abas (ex.: a Lista de redação mudou/destravou/travou)."""
+        for i in range(self.tabs.count()):
+            ed = self.tabs.widget(i)
+            if isinstance(ed, CodeEditor):
+                ed.rescan_secrets()
+        self._update_seal()
+        self._update_status()
+
+    def manage_redaction_list(self) -> None:
+        """Gerencia a Lista de redação: segredos LITERAIS, guardados CIFRADOS num Cofre, que o
+        Modo Redação sempre tarja. Destrava (ou cria) com senha; nunca vai em claro ao disco."""
+        if not redaction.is_unlocked():
+            if redaction.exists():
+                pw, ok = QInputDialog.getText(self, "Lista de redação",
+                                              "Senha da lista de redação:", QLineEdit.EchoMode.Password)
+                if not ok or not pw:
+                    return
+                if not redaction.unlock(pw):
+                    QMessageBox.warning(self, APP_NAME, "Senha incorreta (ou lista corrompida).")
+                    return
+            else:
+                resp = QMessageBox.question(
+                    self, APP_NAME,
+                    "Ainda não há Lista de redação. Criar uma agora, protegida por senha?\n\n"
+                    "Ela guarda segredos LITERAIS (suas senhas/credenciais) que o Modo Redação "
+                    "vai sempre tarjar — cifrada no disco (AES-256-GCM + Argon2id).")
+                if resp != QMessageBox.StandardButton.Yes:
+                    return
+                pw1, ok = QInputDialog.getText(self, "Criar lista de redação",
+                                               "Crie uma senha para a lista:", QLineEdit.EchoMode.Password)
+                if not ok or not pw1:
+                    return
+                if len(pw1) < 4:
+                    QMessageBox.warning(self, APP_NAME, "Senha muito curta (mínimo 4 caracteres).")
+                    return
+                pw2, ok = QInputDialog.getText(self, "Criar lista de redação",
+                                               "Confirme a senha:", QLineEdit.EchoMode.Password)
+                if not ok or pw1 != pw2:
+                    QMessageBox.warning(self, APP_NAME, "As senhas não conferem.")
+                    return
+                try:
+                    redaction.init_new(pw1)
+                    redaction.save()                 # cria o cofre (vazio) no disco
+                except Exception as exc:
+                    QMessageBox.critical(self, APP_NAME, f"Não foi possível criar a lista:\n{exc}")
+                    return
+
+        # Pausa o auto-lock enquanto o gerenciador modal esta aberto: senao o idle poderia
+        # travar a lista por baixo do dialogo e a proxima acao bateria em lista travada.
+        self._idle_timer.stop()
+        try:
+            RedactionListDialog(self).exec()
+        finally:
+            self._touch_idle()                       # rearma o auto-lock (se ativo)
+        self._rescan_all_editors()                   # reflete as mudanças nas tarjas já abertas
+
     def goto_next_secret(self) -> None:
         editor = self.current_editor()
         if editor is None or not editor.goto_next_secret():
@@ -713,10 +874,19 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, f"{APP_NAME} — Cadeia de custodia",
                                     "Nenhum segredo detectado. Documento LIMPO. ●")
             return
+        # Reusa os byte-offsets ja computados (lineares, ordenados) em vez de re-codificar
+        # text[:start] por match (era O(n*m)); e limita as linhas exibidas (lista de redacao
+        # com literal comum pode gerar milhares de matches — diálogo gigante é inutil).
+        spans = editor._secret_byte_spans
         lines = [f"{len(matches)} segredo(s) detectado(s):\n"]
-        for m in matches:
-            line, _ = editor.lineIndexFromPosition(len(editor.text()[:m.start].encode("utf-8")))
+        shown = 0
+        for m, (bstart, _blen, _k) in zip(matches, spans):
+            if shown >= 50:
+                lines.append(f"  … e mais {len(matches) - 50}.")
+                break
+            line, _ = editor.lineIndexFromPosition(bstart)
             lines.append(f"  • linha {line + 1}: {m.kind}")
+            shown += 1
         lines.append("\nCtrl+Shift+R tarja todos para compartilhar a tela com seguranca.")
         QMessageBox.warning(self, f"{APP_NAME} — Relatorio de segredos", "\n".join(lines))
 
@@ -824,9 +994,14 @@ class MainWindow(QMainWindow):
             if ed.is_vault and not ed.is_locked() and ed._vault_key is not None and ed.lock():
                 locked += 1
                 self._refresh_tab(ed)
-        if locked:
+        red = redaction.is_unlocked()
+        if red:
+            redaction.lock()                  # esquece os segredos da lista (estavam em RAM)
+            self._rescan_all_editors()        # limpa as tarjas vindas da lista
+        if locked or red:
             self._update_status()
-            self.statusBar().showMessage(f"{locked} cofre(s) travado(s) por inatividade.", 5000)
+            parts = ([f"{locked} cofre(s)"] if locked else []) + (["lista de redação"] if red else [])
+            self.statusBar().showMessage(f"Travado por inatividade: {', '.join(parts)}.", 5000)
 
     # --- Cofre++: multiplos destravadores (senhas / arquivos-chave) ---------- #
     def _unlocked_vault(self) -> CodeEditor | None:

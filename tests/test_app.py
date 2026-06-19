@@ -13,10 +13,14 @@ SECRET_FILE = 'AWS = "AKIA3FK7XQ2MNP8RTUVW"\nsenha: batata123'
 
 @pytest.fixture(autouse=True)
 def _argon_rapido(monkeypatch):
-    """O Cofre usa Argon2id; params leves p/ os testes de cofre rodarem rapido."""
+    """O Cofre usa Argon2id; params leves p/ os testes de cofre rodarem rapido. Tambem isola
+    a Lista de redacao (global de modulo) — nenhum teste herda a lista destravada de outro."""
     monkeypatch.setattr(vault, "_DEFAULT_ARGON_MEMLOG2", 10)
     monkeypatch.setattr(vault, "_DEFAULT_ARGON_T", 1)
     monkeypatch.setattr(vault, "_DEFAULT_ARGON_LANES", 1)
+    yield
+    from notepy import redaction
+    redaction.lock()
 
 
 # --------------------------------------------------------------------------- #
@@ -513,3 +517,75 @@ def test_protect_repo_instala_hook_via_gui(win, tmp_path, monkeypatch):
     monkeypatch.setattr(scan_cli, "_hooks_dir", lambda repo: str(hooks))
     win.protect_repo()
     assert (hooks / "pre-commit").exists()
+
+
+def test_lista_de_redacao_tarja_no_editor(win, tmp_path, monkeypatch):
+    """A Lista de redacao destravada faz o editor marcar o segredo LITERAL cadastrado —
+    mesmo uma senha memoravel que a Sentinela (padrao/entropia) NAO pegaria sozinha."""
+    from notepy import custody, redaction
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    redaction.lock()
+    redaction.init_new("pw")
+    redaction.add("batata123")
+    ed = win.current_editor()
+    ed.setText("uma frase qualquer com batata123 no meio dela\n")
+    ed.rescan_secrets()
+    regs = [m for m in ed.secret_matches() if m.kind == "segredo registrado"]
+    assert len(regs) == 1
+    assert ed.text()[regs[0].start:regs[0].end] == "batata123"
+    assert regs[0].snippet == "batata123"          # snippet = o segredo (cobre tarja + clipboard)
+    redaction.lock()                                # travada -> editor deixa de marcar
+    ed.rescan_secrets()
+    assert not any(m.kind == "segredo registrado" for m in ed.secret_matches())
+
+
+def test_lista_redacao_byte_spans_unicode(win, tmp_path, monkeypatch):
+    """Regressao do red-team: a conversao char->byte (agora linear) mapeia certo com unicode
+    multibyte + varios matches da lista."""
+    from notepy import custody, redaction
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    redaction.lock()
+    redaction.init_new("pw")
+    redaction.add("café")
+    redaction.add("xyz9")
+    ed = win.current_editor()
+    ed.setText("café 日本 xyz9 café fim\n")
+    ed.rescan_secrets()
+    raw = ed.text().encode("utf-8", "surrogatepass")
+    regs = [m for m in ed.secret_matches() if m.kind == "segredo registrado"]
+    assert len(regs) == 3                            # café x2, xyz9 x1
+    for bstart, blen, kind in ed._secret_byte_spans:
+        if kind == "segredo registrado":
+            assert raw[bstart:bstart + blen].decode("utf-8", "surrogatepass") in ("café", "xyz9")
+    redaction.lock()
+
+
+def test_lista_redacao_clipboard_fragmento_curto_mascarado(win, tmp_path, monkeypatch):
+    """Regressao do red-team: copia PARCIAL (3 chars) de um segredo REGISTRADO curto e mascarada."""
+    from notepy import custody, redaction
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    redaction.lock()
+    redaction.init_new("pw")
+    redaction.add("PIN4")
+    ed = win.current_editor()
+    ed.setText("meu PIN4 aqui\n")
+    ed.set_redaction(True)
+    ed.rescan_secrets()
+    cb = QApplication.clipboard()
+    cb.setText("PIN")                                # fragmento de 3 chars do segredo
+    win._sanitize_clipboard()
+    assert cb.text() == "●●●"                        # mascarado (piso 2 p/ registrados)
+    redaction.lock()
+
+
+def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
+    """Regressao do red-team: gerenciar uma lista travada (ex.: auto-lock) avisa e fecha, sem levantar."""
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import redaction
+    import notepy.mainwindow as mw
+    redaction.lock()
+    dlg = mw.RedactionListDialog(win)
+    seen = {}
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: seen.setdefault("info", 1)))
+    dlg._add()                                       # nao deve levantar VaultError
+    assert seen.get("info") == 1

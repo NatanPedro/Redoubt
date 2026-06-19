@@ -93,6 +93,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     │
     │   ── núcleos puros (sem Qt) ──
     ├── secrets.py           Sentinela de Segredos — scan(text)
+    ├── redaction.py         Lista de Redacao — segredos literais cifrados que a Redacao tarja
     ├── vault.py             Cofre++ .rdbt — AES-256-GCM + Argon2id, envelope RDBT3 (KDF por slot)
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria
     ├── release.py           Manifesto de release assinado (RDBT-REL1)

@@ -466,8 +466,20 @@ texto) e, **com a redação ligada**, **mascara o clipboard**.
 - **Clipboard.** `mainwindow._sanitize_clipboard`, no sinal `dataChanged` do
   `QClipboard`, intercepta **todos** os caminhos nativos do Scintilla (`SCI_COPY`,
   `SCI_COPYRANGE`, seleção retangular, `Ctrl+Insert`, `Shift+Del`) e substitui um segredo
-  detectado por `●` — inclusive cópias **parciais** ≥ 6 caracteres de um segredo. Reúne
-  os segredos de **todas** as abas em redação, não só a focada.
+  por `●` — inclusive cópias **parciais** (≥ 6 caracteres de um segredo detectado, ≥ 2 de um
+  segredo **registrado** na Lista de Redação). Reúne os segredos de **todas** as abas em redação.
+
+### Lista de Redação (segredos do usuário)
+
+A Sentinela detecta por **padrão/entropia** — uma senha memorável (`batata123`) escapa. A **Lista
+de Redação** (`notepy/redaction.py`, *Segurança ▸ Lista de redação*) deixa o usuário registrar
+strings **literais** que a Redação passa a **sempre** tarjar. A lista é guardada **cifrada** num
+Cofre `.rdbt` (AES-256-GCM + Argon2id — nunca em claro no disco), destravada por sessão e travada
+no auto-lock. Os literais entram como matches com `snippet` = o próprio trecho, então a tarja, o
+mapa de exposição **e** o mascaramento de clipboard cobrem o que foi cadastrado. Endurecida por
+*red-team*: comprimento mínimo + teto de ocorrências + conversão char→byte **linear** (fecha um
+DoS O(n²)); o gerenciador nunca exibe o valor (só índice + tamanho) e o auto-lock é pausado
+enquanto ele está aberto (anti-crash).
 
 ### Garantias
 

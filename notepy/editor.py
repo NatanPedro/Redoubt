@@ -17,6 +17,7 @@ from PyQt6.QtGui import QColor, QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
 from . import config
+from . import redaction
 from . import secrets as secrets_mod
 from . import theme
 from . import vault
@@ -295,14 +296,26 @@ class CodeEditor(QsciScintilla):
             self.secretsChanged.emit(0)
             return
         self._scan_skipped = False
-        self._secret_matches = secrets_mod.scan(text)
-        # Offsets de caractere -> byte (posicoes do Scintilla sao bytes). O
+        matches = secrets_mod.scan(text)
+        # Lista de redacao: segredos LITERAIS que o usuario registrou (cifrados; destravados na
+        # sessao) entram como matches. snippet = o proprio trecho -> tarja, mapa de exposicao e
+        # mascaramento de clipboard cobrem tambem o que voce cadastrou.
+        for s, e in redaction.find_in(text):
+            matches.append(secrets_mod.Match(s, e, "segredo registrado", text[s:e]))
+        matches.sort(key=lambda m: (m.start, m.end))
+        self._secret_matches = matches
+        # Offsets de caractere -> byte (as posicoes do Scintilla sao em bytes) numa UNICA passada
+        # O(n+m): matches ordenados por start + cursor cumulativo, em vez de re-codificar text[:start]
+        # a cada match (era O(n*m) -> congelava a GUI com muitos matches da lista de redacao).
         # 'surrogatepass' evita crash com surrogates solitarios (colaveis do clipboard).
         spans: list[tuple[int, int, str]] = []
+        char_pos = byte_pos = 0
         for m in self._secret_matches:
-            bstart = len(text[:m.start].encode("utf-8", "surrogatepass"))
+            if m.start > char_pos:
+                byte_pos += len(text[char_pos:m.start].encode("utf-8", "surrogatepass"))
+                char_pos = m.start
             blen = len(text[m.start:m.end].encode("utf-8", "surrogatepass"))
-            spans.append((bstart, blen, m.kind))
+            spans.append((byte_pos, blen, m.kind))
         self._secret_byte_spans = spans
 
         self._fill_indicator(SECRET_INDICATOR, spans)
@@ -338,6 +351,10 @@ class CodeEditor(QsciScintilla):
 
     def secret_matches(self) -> list[secrets_mod.Match]:
         return self._secret_matches
+
+    def rescan_secrets(self) -> None:
+        """Re-varre o conteudo agora (ex.: depois que a Lista de redacao mudou/destravou)."""
+        self._rescan_secrets()
 
     def is_redacted(self) -> bool:
         return self._redaction_on

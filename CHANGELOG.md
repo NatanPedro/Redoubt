@@ -16,6 +16,19 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
+  padrão/entropia, você registra strings **literais** (suas senhas/credenciais) que o **Modo
+  Redação** sempre tarja — pega até senha memorável (`batata123`) que os padrões ignorariam.
+  A lista é guardada **cifrada** num Cofre `.rdbt` (AES-256-GCM + Argon2id; nunca em claro no
+  disco), destravada por sessão e travada no auto-lock; *Segurança ▸ Lista de redação* gerencia
+  (nunca exibe o valor, só "Segredo #N — M caracteres"). O `snippet` é o próprio segredo, então
+  a tarja, o mapa de exposição **e** o mascaramento de clipboard cobrem o que você cadastrou.
+  Endurecida por *red-team* + confirmação: comprimento mínimo + teto de ocorrências + conversão
+  char→byte **linear** (fecha um DoS O(n²)), gerenciador com auto-lock pausado (anti-crash) e
+  cópia parcial de segredo curto mascarada. **+22 testes** (`test_redaction.py` + integração) →
+  **294 no total**.
+
 Visão (sem data):
 - Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
   **FIDO2**/chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
