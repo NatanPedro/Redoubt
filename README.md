@@ -104,6 +104,18 @@ As abas com segredo ganham um **▲** no título, e a janela carrega `[▲ EXPOS
 
 ## Como instalar
 
+### Via Scoop (Windows — o jeito mais rápido)
+
+Sem Python, num comando: o [Scoop](https://scoop.sh) baixa o `Redoubt.exe`, **confere o SHA-256** e cria o atalho no menu Iniciar.
+
+```powershell
+scoop install https://raw.githubusercontent.com/NatanPedro/Redoubt/main/scoop/redoubt.json
+```
+
+Atualizar depois: `scoop update redoubt`. Para conferir também a **assinatura** do binário (não só o hash), rode o `verify_release.py` — veja [Verificar o download](#verificar-o-download-release-assinado).
+
+### A partir do código (Python 3.11+)
+
 **Pré-requisito:** Python 3.11+.
 
 ```bash

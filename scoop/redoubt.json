@@ -1,0 +1,36 @@
+{
+    "version": "1.2.0",
+    "description": "Editor onde a seguranca e a identidade: vigia segredos, sela arquivos como evidencia e mantem cadeia de custodia. Nada vaza sem voce mandar.",
+    "homepage": "https://github.com/NatanPedro/Redoubt",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/NatanPedro/Redoubt/releases/download/v1.2.0/Redoubt.exe",
+            "hash": "7b7285aacda1c7754a52810e07d3355ed09ca4d1c3bb90c5d58cdb431b90aada"
+        }
+    },
+    "bin": "Redoubt.exe",
+    "shortcuts": [
+        [
+            "Redoubt.exe",
+            "Redoubt"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/NatanPedro/Redoubt/releases/download/v$version/Redoubt.exe",
+                "hash": {
+                    "url": "https://github.com/NatanPedro/Redoubt/releases/download/v$version/SHA256SUMS"
+                }
+            }
+        }
+    },
+    "notes": [
+        "Redoubt instalado. O Scoop ja conferiu o SHA-256 do binario.",
+        "Para verificar tambem a ASSINATURA (opcional, recomendado): baixe verify_release.py,",
+        "RELEASE.json e SHA256SUMS do release e rode  python verify_release.py  na mesma pasta.",
+        "Fingerprint oficial do autor: 4e391f28930f3b6e"
+    ]
+}

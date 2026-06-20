@@ -41,5 +41,10 @@ echo === Gerando manifesto de release assinado (RELEASE.json + SHA256SUMS) ===
 rem  Assina os binarios com a identidade Ed25519 do Redoubt (custody) e gera os
 rem  artefatos de verificacao. Tudo LOCAL. Verifique depois com:  verify_release.py
 python -m notepy.release make --dist "%DIR%dist"
+
+echo.
+echo === Atualizando o manifesto Scoop (scoop\redoubt.json) ===
+rem  Sincroniza versao + hash do Redoubt.exe com o release (nunca fica stale).
+python "%DIR%tools\make_scoop_manifest.py"
 popd
 endlocal

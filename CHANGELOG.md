@@ -28,6 +28,11 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   char→byte **linear** (fecha um DoS O(n²)), gerenciador com auto-lock pausado (anti-crash) e
   cópia parcial de segredo curto mascarada. **+22 testes** (`test_redaction.py` + integração) →
   **294 no total**.
+- **Instalação via Scoop** — `scoop install https://raw.githubusercontent.com/NatanPedro/Redoubt/main/scoop/redoubt.json`
+  baixa o `Redoubt.exe`, **confere o SHA-256** e cria o atalho — sem Python. Manifesto em
+  `scoop/redoubt.json`, gerado por `tools/make_scoop_manifest.py` (chamado no `build-installer.bat`,
+  então versão+hash nunca ficam stale); `checkver`/`autoupdate` puxam o hash do `SHA256SUMS` do
+  release. Para a integridade extra (assinatura), o `verify_release.py` segue valendo.
 
 Visão (sem data):
 - Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
