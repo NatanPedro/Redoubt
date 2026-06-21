@@ -16,17 +16,21 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+Visão (sem data):
+- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**;
+  proteger a chave de destinatário X25519 com senha (hoje fica local em claro, como a Ed25519).
+
+---
+
+## [1.3.0] - 2026-06-21 — Cifrar para destinatário (X25519) + seus segredos na Redação + Scoop 🔐
+
+O Cofre cresce de simétrico para **assimétrico**: agora você sela um arquivo **para a chave
+pública de alguém** (X25519, estilo `age` — ECDH efêmero + HKDF), não só com senha. A **Lista de
+Redação** ensina o Modo Redação a tarjar **os seus** segredos literais (mesmo os que a Sentinela
+não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entrega passou por
+*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 310 testes** verdes.
+
 ### Added
-- **Cofre cifrado para destinatário (X25519)** — o Cofre deixa de ser só simétrico: *Segurança ▸
-  Selar para destinatário* cifra o conteúdo **para a chave pública X25519** de alguém (estilo `age`,
-  ECDH efêmero + HKDF), e *Exportar minha chave de destinatário* compartilha a sua. Abrir um `.rdbt`
-  selado para você é **automático** (a chave X25519 local é tentada antes da senha). Multi-destinatário
-  e misto (senha + destinatário) no mesmo cofre. Novo formato **RDBT4** (slots de tamanho variável,
-  length-prefixed) — **retrocompatível**: cofres RDBT1/2/3 e identidades existentes continuam abrindo
-  (re-enquadrados sem reembrulhar, AAD preservada). Endurecido por *red-team* + confirmação: ponto de
-  ordem baixa, slot malformado e payload curto são **pulados** (nunca crasham, "slot ruim não é
-  fatal"), e abrir cofre de terceiro **não materializa** sua chave (gate read-only). **+16 testes** →
-  **310 no total**.
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
   padrão/entropia, você registra strings **literais** (suas senhas/credenciais) que o **Modo
   Redação** sempre tarja — pega até senha memorável (`batata123`) que os padrões ignorariam.
@@ -43,10 +47,22 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   `scoop/redoubt.json`, gerado por `tools/make_scoop_manifest.py` (chamado no `build-installer.bat`,
   então versão+hash nunca ficam stale); `checkver`/`autoupdate` puxam o hash do `SHA256SUMS` do
   release. Para a integridade extra (assinatura), o `verify_release.py` segue valendo.
+- **Cofre cifrado para destinatário (X25519)** — o Cofre deixa de ser só simétrico: *Segurança ▸
+  Selar para destinatário* cifra o conteúdo **para a chave pública X25519** de alguém (estilo `age`,
+  ECDH efêmero + HKDF), e *Exportar minha chave de destinatário* compartilha a sua. Abrir um `.rdbt`
+  selado para você é **automático** (a chave X25519 local é tentada antes da senha). Multi-destinatário
+  e misto (senha + destinatário) no mesmo cofre. Novo formato **RDBT4** (slots de tamanho variável,
+  length-prefixed) — **retrocompatível**: cofres RDBT1/2/3 e identidades existentes continuam abrindo
+  (re-enquadrados sem reembrulhar, AAD preservada). Endurecido por *red-team* + confirmação: ponto de
+  ordem baixa, slot malformado e payload curto são **pulados** (nunca crasham, "slot ruim não é
+  fatal"), e abrir cofre de terceiro **não materializa** sua chave (gate read-only). **+16 testes** →
+  **310 no total**.
 
-Visão (sem data):
-- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**;
-  proteger a chave de destinatário X25519 com senha (hoje fica local em claro, como a Ed25519).
+### Changed
+- Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `CHANGELOG.md`) e README sincronizados:
+  Cofre **RDBT4** + cifrar-para-destinatário X25519 (ADR-5 atualizada, eixos/tabelas/mermaid),
+  identidade de destinatário **separada** da Ed25519, Lista de Redação e Scoop. Badge de testes
+  272 → **310**.
 
 ---
 
