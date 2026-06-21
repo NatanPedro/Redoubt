@@ -36,7 +36,7 @@ def test_selar_grava_cifrado_e_reabre(win, tmp_path):
     vp = str(tmp_path / "c.rdbt")
     assert win._write(ed, vp)
     raw = open(vp, "rb").read()
-    assert raw[:5] == b"RDBT3" and b"senha: y" not in raw   # envelope RDBT3 (Argon2id)
+    assert raw[:5] == b"RDBT4" and b"senha: y" not in raw   # envelope RDBT4 (Argon2id; X25519-capable)
 
     # reabre com a senha certa
     win._inbox.append(("pw1234", True))
@@ -589,3 +589,54 @@ def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: seen.setdefault("info", 1)))
     dlg._add()                                       # nao deve levantar VaultError
     assert seen.get("info") == 1
+
+
+def test_export_recipient_key_copia(win, tmp_path, monkeypatch):
+    """Exportar minha chave de destinatário copia a pubkey X25519 (32 bytes) p/ o clipboard."""
+    import base64
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    win.export_recipient_key()
+    assert len(base64.b64decode(QApplication.clipboard().text())) == 32
+
+
+def test_selar_para_destinatario_e_reabrir(win, tmp_path, monkeypatch):
+    """Selar p/ um destinatário X25519 cria um .rdbt cifrado; abrir tenta a chave local e abre sem senha."""
+    from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+    from notepy import custody
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    rpub = custody.recipient_public_b64()                       # sela p/ a propria chave (p/ reabrir no teste)
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (rpub, True)))
+    out = str(tmp_path / "para-dest.rdbt")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (out, "")))
+    ed = win.current_editor()
+    ed.setText("mensagem secreta\n")
+    win.seal_to_recipient()
+    assert os.path.exists(out)
+    raw = open(out, "rb").read()
+    assert raw[:5] == b"RDBT4" and b"mensagem secreta" not in raw     # cifrado p/ destinatario
+    win._open_vault(out)                                       # tenta X25519 local -> abre sem senha
+    assert "mensagem secreta" in win.current_editor().text()
+    assert win.current_editor().is_vault
+
+
+def test_abrir_cofre_de_terceiro_nao_cria_chave(win, tmp_path, monkeypatch):
+    """Regressão do red-team: abrir um .rdbt selado para OUTRA pessoa NÃO materializa a sua chave X25519."""
+    from PyQt6.QtWidgets import QInputDialog
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    assert not custody.recipient_exists()
+    other_pub = X25519PrivateKey.generate().public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    out = str(tmp_path / "de-terceiro.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.new_vault("nao e meu", recipient=other_pub))
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False)))  # cancela a senha
+    win._open_vault(out)
+    assert not custody.recipient_exists()                      # read-only: nao criou chave de destinatario sua

@@ -454,3 +454,36 @@ def test_trilha_legada_sem_seq_ainda_valida(tmp_identity):
     with open(custody._audit_path(), "w", encoding="utf-8") as fh:
         fh.write(_json.dumps(e1) + "\n" + _json.dumps(e2) + "\n")
     assert custody.verify_chain() == (True, -1)         # legado sem seq: cadeia intacta
+
+
+# --------------------------------------------------------------------------- #
+# Identidade de destinatario (X25519)
+# --------------------------------------------------------------------------- #
+def test_recipient_keypair_persiste(tmp_identity):
+    import base64
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    assert not custody.recipient_exists()
+    pub1 = custody.recipient_public_b64()
+    assert custody.recipient_exists()
+    assert custody.recipient_public_b64() == pub1        # nao regenera por cima
+    assert len(base64.b64decode(pub1)) == 32
+    # a privada bate com a publica exportada
+    priv = X25519PrivateKey.from_private_bytes(custody.recipient_private_bytes())
+    derived = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    assert base64.b64encode(derived).decode() == pub1
+    assert len(custody.recipient_fingerprint()) == 16
+
+
+def test_recipient_corrompido_erra(tmp_identity):
+    with open(custody._recipient_path(), "wb") as fh:
+        fh.write(b"curto")                               # tamanho invalido -> NAO regenera, erra
+    with pytest.raises(custody.CustodyError):
+        custody.recipient_public_b64()
+
+
+def test_recipient_seal_open_roundtrip(tmp_identity):
+    import base64
+    pub = base64.b64decode(custody.recipient_public_b64())
+    blob = vault.new_vault("para mim", recipient=pub)
+    assert vault.open_vault(blob, x25519_private=custody.recipient_private_bytes()).text == "para mim"

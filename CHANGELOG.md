@@ -17,6 +17,16 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 ### Added
+- **Cofre cifrado para destinatário (X25519)** — o Cofre deixa de ser só simétrico: *Segurança ▸
+  Selar para destinatário* cifra o conteúdo **para a chave pública X25519** de alguém (estilo `age`,
+  ECDH efêmero + HKDF), e *Exportar minha chave de destinatário* compartilha a sua. Abrir um `.rdbt`
+  selado para você é **automático** (a chave X25519 local é tentada antes da senha). Multi-destinatário
+  e misto (senha + destinatário) no mesmo cofre. Novo formato **RDBT4** (slots de tamanho variável,
+  length-prefixed) — **retrocompatível**: cofres RDBT1/2/3 e identidades existentes continuam abrindo
+  (re-enquadrados sem reembrulhar, AAD preservada). Endurecido por *red-team* + confirmação: ponto de
+  ordem baixa, slot malformado e payload curto são **pulados** (nunca crasham, "slot ruim não é
+  fatal"), e abrir cofre de terceiro **não materializa** sua chave (gate read-only). **+16 testes** →
+  **310 no total**.
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
   padrão/entropia, você registra strings **literais** (suas senhas/credenciais) que o **Modo
   Redação** sempre tarja — pega até senha memorável (`batata123`) que os padrões ignorariam.
@@ -35,8 +45,8 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   release. Para a integridade extra (assinatura), o `verify_release.py` segue valendo.
 
 Visão (sem data):
-- Cofre assimétrico **X25519** (cifrar-para-destinatário); destravar a identidade com
-  **FIDO2**/chave de hardware; **diff com proveniência**; distribuição via **Scoop**.
+- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**;
+  proteger a chave de destinatário X25519 com senha (hoje fica local em claro, como a Ed25519).
 
 ---
 

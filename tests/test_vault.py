@@ -4,7 +4,19 @@ import time
 
 import pytest
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
 from notepy import vault
+
+
+def _x25519_priv(k):
+    return k.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+                           serialization.NoEncryption())
+
+
+def _x25519_pub(k):
+    return k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 
 PW = "senha-mestra-de-teste"
 SECRET = "senha do banco: batata123\nnetflix: lulu2010"
@@ -95,8 +107,8 @@ def test_senha_vazia_recusada():
 # --------------------------------------------------------------------------- #
 # RDBT2 — envelope / key-slots (Cofre++)
 # --------------------------------------------------------------------------- #
-def test_formato_rdbt3():
-    assert vault.encrypt(SECRET, PW)[:5] == b"RDBT3"
+def test_formato_rdbt4():
+    assert vault.encrypt(SECRET, PW)[:5] == b"RDBT4"
 
 
 def test_usa_argon2id_por_padrao():
@@ -151,13 +163,13 @@ def test_le_e_migra_rdbt1_legado():
     o = vault.open_vault(blob_v1, password=PW)
     assert o.text == SECRET                                  # le o legado
     novo = vault.reseal(o.text, o.key, o.slots)              # migra p/ RDBT3 (Argon2id) ao re-selar
-    assert novo[:5] == b"RDBT3" and vault.decrypt(novo, PW) == SECRET
+    assert novo[:5] == b"RDBT4" and vault.decrypt(novo, PW) == SECRET
 
 
 def test_slot_kdf_bomba_bloqueada():
     """Argon2id com memory_log2 gigante (2^63 KiB) nao pode travar/derrubar o app."""
     blob = bytearray(vault.encrypt("x", PW))
-    blob[9] = 63                       # memory_log2 do slot 0 (offset 7+2) -> Argon2id bomba
+    blob[11] = 63                      # memory_log2 do slot 0 (RDBT4: 7 hdr + kind + 2 len + t) -> bomba
     t = time.time()
     with pytest.raises(vault.VaultError):
         vault.decrypt(bytes(blob), PW)
@@ -194,7 +206,7 @@ def test_rdbt2_scrypt_legado_ainda_abre():
         vault.decrypt(blob, "errada")
     o = vault.open_vault(blob, password=PW)
     novo = vault.reseal(o.text, o.key, o.slots)                # re-sela: MAGIC RDBT3, slot scrypt preservado
-    assert novo[:5] == b"RDBT3"
+    assert novo[:5] == b"RDBT4"                                 # re-selar migra o envelope p/ RDBT4
     assert (novo[7] >> 4) == vault.KDF_SCRYPT                   # o slot continua scrypt (nao re-derivavel)
     assert vault.decrypt(novo, PW) == SECRET
 
@@ -254,6 +266,91 @@ def test_slot_envenenado_antes_do_real_nao_nega_credencial():
     """Um slot com KDF desconhecido prependido ao slot real NAO pode negar a credencial correta."""
     import os
     o = vault.open_vault(vault.new_vault(SECRET, password="dono"), password="dono")
-    poison = bytes([vault.KIND_PASSWORD | (3 << 4), 1, 10, 1]) + os.urandom(76)   # KDF=3 desconhecido
+    poison = vault._frame(vault.KIND_PASSWORD | (3 << 4), os.urandom(79))   # slot RDBT4 c/ KDF=3 desconhecido
     blob = vault.reseal(SECRET, o.key, [poison, o.slots[0]])    # envenenado PRIMEIRO
     assert vault.decrypt(blob, "dono") == SECRET               # pula o slot ruim, abre no real
+
+
+# --------------------------------------------------------------------------- #
+# RDBT4 — X25519 (cifrar-para-destinatario)
+# --------------------------------------------------------------------------- #
+def test_x25519_roundtrip():
+    recip = X25519PrivateKey.generate()
+    blob = vault.new_vault(SECRET, recipient=_x25519_pub(recip))
+    assert blob[:5] == b"RDBT4"
+    assert vault.open_vault(blob, x25519_private=_x25519_priv(recip)).text == SECRET
+    assert vault.slot_kinds(blob) == [vault.KIND_X25519]
+    assert b"batata" not in blob and SECRET.encode() not in blob   # conteudo cifrado
+
+
+def test_x25519_chave_errada_nao_abre():
+    blob = vault.new_vault(SECRET, recipient=_x25519_pub(X25519PrivateKey.generate()))
+    outra = _x25519_priv(X25519PrivateKey.generate())
+    with pytest.raises(vault.WrongPassword):
+        vault.open_vault(blob, x25519_private=outra)
+    with pytest.raises(vault.WrongPassword):
+        vault.decrypt(blob, "qualquer-senha")                  # senha nao abre um cofre so-destinatario
+
+
+def test_x25519_multiplos_destinatarios():
+    a, b = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+    o = vault.open_vault(vault.new_vault(SECRET, recipient=_x25519_pub(a)),
+                         x25519_private=_x25519_priv(a))
+    blob = vault.reseal(SECRET, o.key, vault.add_recipient(o.key, o.slots, _x25519_pub(b)))
+    assert vault.open_vault(blob, x25519_private=_x25519_priv(a)).text == SECRET   # 1o destinatario
+    assert vault.open_vault(blob, x25519_private=_x25519_priv(b)).text == SECRET   # 2o destinatario
+    assert vault.slot_kinds(blob) == [vault.KIND_X25519, vault.KIND_X25519]
+
+
+def test_x25519_misto_senha_e_destinatario():
+    recip = X25519PrivateKey.generate()
+    o = vault.open_vault(vault.new_vault(SECRET, password="pw"), password="pw")
+    blob = vault.reseal(SECRET, o.key, vault.add_recipient(o.key, o.slots, _x25519_pub(recip)))
+    assert vault.decrypt(blob, "pw") == SECRET                 # senha abre
+    assert vault.open_vault(blob, x25519_private=_x25519_priv(recip)).text == SECRET  # destinatario abre
+    assert sorted(vault.slot_kinds(blob)) == [vault.KIND_PASSWORD, vault.KIND_X25519]
+
+
+def test_x25519_pubkey_invalida_recusada():
+    with pytest.raises(vault.VaultError):
+        vault.make_x25519_slot(vault.generate_key(), b"curta-demais")
+
+
+def test_x25519_conteudo_adulterado_detectado():
+    recip = X25519PrivateKey.generate()
+    blob = bytearray(vault.new_vault(SECRET, recipient=_x25519_pub(recip)))
+    blob[-1] ^= 0x01                                            # adultera o ciphertext do conteudo
+    with pytest.raises(vault.WrongPassword):
+        vault.open_vault(bytes(blob), x25519_private=_x25519_priv(recip))
+
+
+# --------------------------------------------------------------------------- #
+# Pos red-team: robustez do RDBT4/X25519 (nenhum .rdbt malformado derruba o app)
+# --------------------------------------------------------------------------- #
+def test_x25519_eph_ordem_baixa_nao_derruba():
+    """eph_pub de ordem baixa (all-zero) nao crasha open_vault — vira WrongPassword limpo."""
+    recip = X25519PrivateKey.generate()
+    blob = bytearray(vault.new_vault(SECRET, recipient=_x25519_pub(recip)))
+    blob[10:42] = b"\x00" * 32                                  # zera o eph_pub (offset 7+1+2)
+    with pytest.raises(vault.WrongPassword):
+        vault.open_vault(bytes(blob), x25519_private=_x25519_priv(recip))
+
+
+@pytest.mark.parametrize("plen", [49, 68])
+def test_slot_payload_curto_nao_derruba(plen):
+    """Slot senha RDBT4 com payload curto e PULADO (WrongPassword), nunca IndexError/ValueError."""
+    import os
+    kind = vault.KIND_PASSWORD | (vault.KDF_ARGON2 << 4)
+    slot = bytes([kind]) + plen.to_bytes(2, "big") + os.urandom(plen)
+    blob = bytes([*vault.MAGIC_V4, vault.VERSION, 1]) + slot + os.urandom(28)
+    with pytest.raises(vault.WrongPassword):
+        vault.decrypt(blob, password="x")
+
+
+def test_poison_curto_antes_do_real_ainda_abre():
+    """Um slot curto (poison) ANTES do slot real nao impede abrir no real — pula o ruim."""
+    import os
+    o = vault.open_vault(vault.new_vault(SECRET, password="dono"), password="dono")
+    poison = vault._frame(vault.KIND_PASSWORD | (vault.KDF_ARGON2 << 4), os.urandom(49))
+    blob = vault.reseal(SECRET, o.key, [poison, o.slots[0]])
+    assert vault.decrypt(blob, "dono") == SECRET

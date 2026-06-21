@@ -530,6 +530,10 @@ class MainWindow(QMainWindow):
                              SP.SP_DriveHDIcon,
                              QKeySequence("Ctrl+Shift+L"),
                              self.seal_current)
+        self.act_seal_to_recipient = make("Selar para &destinatário (X25519)…",
+                                          SP.SP_DriveHDIcon, None, self.seal_to_recipient)
+        self.act_export_recipient = make("Exportar minha &chave de destinatário…",
+                                         SP.SP_DialogSaveButton, None, self.export_recipient_key)
         self.act_lock_now = make("&Travar cofre agora",
                                  SP.SP_DriveHDIcon,
                                  QKeySequence("Ctrl+Shift+K"),
@@ -625,6 +629,8 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_verify_seal)
         m_sec.addSeparator()
         m_sec.addAction(self.act_seal)
+        m_sec.addAction(self.act_seal_to_recipient)
+        m_sec.addAction(self.act_export_recipient)
         m_sec.addAction(self.act_lock_now)
         m_sec.addAction(self.act_unlock)
         m_sec.addAction(self.act_unlock_keyfile)
@@ -1685,22 +1691,102 @@ class MainWindow(QMainWindow):
         self._audit("abriu", editor, editor.saved_hash or "")
         self.statusBar().showMessage(f"Aberto: {path}", 3000)
 
-    def _open_vault(self, path: str) -> None:
-        pw, ok = QInputDialog.getText(
-            self, "Abrir cofre", f"Senha-mestra de {os.path.basename(path)}:",
-            QLineEdit.EchoMode.Password)
-        if not ok:
+    def export_recipient_key(self) -> None:
+        """Mostra + copia a sua chave PUBLICA de destinatario (X25519) para compartilhar."""
+        try:
+            pub = custody.recipient_public_b64()
+            fp = custody.recipient_fingerprint()
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel obter sua chave:\n{exc}")
             return
+        self._clip_guard = True
+        QApplication.clipboard().setText(pub)
+        self._clip_guard = False
+        QMessageBox.information(
+            self, f"{APP_NAME} — Minha chave de destinatário",
+            f"Sua chave PÚBLICA de destinatário (fingerprint {fp}) foi copiada para a área de "
+            f"transferência:\n\n{pub}\n\nCompartilhe-a para que selem cofres para você "
+            f"(Segurança ▸ Selar para destinatário). A chave PRIVADA fica local e nunca sai.")
+
+    def seal_to_recipient(self) -> None:
+        """Sela o conteúdo atual num cofre cifrado PARA a chave pública X25519 de um destinatário
+        (e também para você, p/ manter acesso). Salva um .rdbt para enviar."""
+        import base64
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_burn or editor.is_locked() or editor.is_vault:
+            QMessageBox.information(self, APP_NAME, "Nota de queima / cofre não pode ser selado para destinatário.")
+            return
+        pub_b64, ok = QInputDialog.getText(
+            self, "Selar para destinatário",
+            "Cole a chave PÚBLICA de destinatário (base64) de quem vai abrir:")
+        if not ok or not pub_b64.strip():
+            return
+        try:
+            recipient = base64.b64decode(pub_b64.strip(), validate=True)
+            if len(recipient) != 32:
+                raise ValueError
+        except Exception:
+            QMessageBox.warning(self, APP_NAME, "Chave pública inválida (esperado base64 de 32 bytes).")
+            return
+        try:
+            ck = vault.generate_key()
+            slots = vault.add_recipient(ck, [], recipient)                # para o destinatário
+            my_pub = base64.b64decode(custody.recipient_public_b64(), validate=True)
+            if my_pub != recipient:                                       # e para você (manter acesso)
+                slots = vault.add_recipient(ck, slots, my_pub)
+            blob = vault.reseal(editor.custody_text(), ck, slots)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível selar:\n{exc}")
+            return
+        suggested = (os.path.basename(editor.path) if editor.path else "cofre") + ".rdbt"
+        out, _ = QFileDialog.getSaveFileName(self, "Salvar cofre para destinatário", suggested, VAULT_FILTER)
+        if not out:
+            return
+        try:
+            with open(out, "wb") as fh:
+                fh.write(blob)
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Não foi possível salvar:\n{exc}")
+            return
+        self._audit("selou p/ destinatario", editor, editor.content_hash())
+        QMessageBox.information(
+            self, f"{APP_NAME} — Selado para destinatário",
+            f"Cofre cifrado salvo:\n{out}\n\nSó quem tem a chave privada correspondente (ou você) "
+            f"consegue abrir. Envie o .rdbt — o conteúdo nunca trafega em claro.")
+
+    def _open_vault(self, path: str) -> None:
         try:
             with open(path, "rb") as fh:
                 blob = fh.read()
-            opened = vault.open_vault(blob, password=pw)
-        except vault.WrongPassword:
-            QMessageBox.critical(self, APP_NAME, "Senha incorreta ou cofre adulterado.")
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o cofre:\n{exc}")
             return
-        except (OSError, vault.VaultError) as exc:
-            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel abrir o cofre:\n{exc}")
-            return
+        # 1) Selado para VOCE (slot X25519)? Abre sem senha com a SUA chave de destinatario — mas só
+        # se ela JÁ existe (read-only: abrir um cofre de terceiro não deve materializar uma chave sua).
+        opened = None
+        if custody.recipient_exists():
+            try:
+                opened = vault.open_vault(blob, x25519_private=custody.recipient_private_bytes())
+            except Exception:                      # best-effort: qualquer falha cai no fluxo de senha
+                opened = None
+        # 2) Senao, pede a senha-mestra.
+        if opened is None:
+            pw, ok = QInputDialog.getText(
+                self, "Abrir cofre", f"Senha-mestra de {os.path.basename(path)}:",
+                QLineEdit.EchoMode.Password)
+            if not ok:
+                return
+            try:
+                opened = vault.open_vault(blob, password=pw)
+            except vault.WrongPassword:
+                QMessageBox.critical(self, APP_NAME,
+                                     "Senha incorreta, cofre adulterado, ou voce nao e destinatario.")
+                return
+            except vault.VaultError as exc:
+                QMessageBox.critical(self, APP_NAME, f"Nao foi possivel abrir o cofre:\n{exc}")
+                return
 
         editor = self._new_editor()
         editor.path = path

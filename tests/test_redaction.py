@@ -59,7 +59,7 @@ def test_disco_cifrado_sem_plaintext():
     with open(redaction._path(), "rb") as fh:
         blob = fh.read()
     assert b"super-secreto-XYZ" not in blob          # nunca em claro
-    assert blob[:5] == b"RDBT3"                        # cifrado (Argon2id por padrao)
+    assert blob[:5] == b"RDBT4"                        # cifrado (Argon2id por padrao)
 
 
 # --------------------------------------------------------------------------- #

@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from . import vault
 
@@ -74,6 +75,65 @@ def _pub_path() -> str:
 
 def _vault_path() -> str:
     return os.path.join(_data_dir(), "identity.rdbt")       # privada PROTEGIDA (cofre RDBT2)
+
+
+# --------------------------------------------------------------------------- #
+# Identidade de DESTINATARIO (X25519) — cifrar-PARA / abrir o que selaram pra voce.
+# Separada da Ed25519 (que e p/ ASSINAR): aqui e p/ CIFRAR (curva de troca de chaves).
+# --------------------------------------------------------------------------- #
+def _recipient_path() -> str:
+    return os.path.join(_data_dir(), "recipient.x25519")    # privada X25519 (raw 32 bytes, local)
+
+
+_X_RAW = (serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
+
+
+def _load_or_create_recipient() -> X25519PrivateKey:
+    """Carrega (ou gera, na 1a vez) o par X25519 desta instalacao. NUNCA regenera por cima de
+    um arquivo existente — isso perderia o acesso a cofres ja selados para voce."""
+    p = _recipient_path()
+    if os.path.exists(p):
+        try:
+            with open(p, "rb") as fh:
+                raw = fh.read()
+        except OSError as exc:
+            raise CustodyError("nao consegui ler a chave de destinatario") from exc
+        if len(raw) != 32:
+            raise CustodyError("chave de destinatario (recipient.x25519) corrompida")
+        try:
+            return X25519PrivateKey.from_private_bytes(raw)
+        except ValueError as exc:
+            raise CustodyError("chave de destinatario (recipient.x25519) invalida") from exc
+    key = X25519PrivateKey.generate()
+    _atomic_write(p, key.private_bytes(*_X_RAW))
+    return key
+
+
+def _recipient_pub_raw() -> bytes:
+    key = _load_or_create_recipient()
+    return key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+def recipient_public_b64() -> str:
+    """Sua chave PUBLICA de destinatario (32 bytes, base64) — compartilhe para receberem cofres
+    selados para voce. Gera o par na 1a chamada."""
+    return base64.b64encode(_recipient_pub_raw()).decode()
+
+
+def recipient_fingerprint() -> str:
+    """Impressao digital curta da chave de destinatario: sha256(pub)[:16]."""
+    return hashlib.sha256(_recipient_pub_raw()).hexdigest()[:16]
+
+
+def recipient_private_bytes() -> bytes:
+    """Bytes da chave PRIVADA de destinatario (raw, 32 bytes) — para ABRIR cofres selados para
+    voce. NAO compartilhe. Gera o par na 1a chamada."""
+    return _load_or_create_recipient().private_bytes(*_X_RAW)
+
+
+def recipient_exists() -> bool:
+    """True se ja existe um par de destinatario no disco (sem cria-lo)."""
+    return os.path.exists(_recipient_path())
 
 
 def _audit_path() -> str:
