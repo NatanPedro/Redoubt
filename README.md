@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.3.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-370%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-388%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -99,6 +99,7 @@ As abas com segredo ganham um **▲** no título, e a janela carrega `[▲ EXPOS
 - **~50 linguagens** com realce via lexers do QScintilla (Python, JS/TS, C/C++, C#, Java, SQL, YAML, HTML, CSS, Markdown, Bash, e muito mais) — auto-detectadas pela extensão ou **forçadas pelo menu *Linguagem*** (inclui PowerShell via Bash; *Auto* e *Texto puro*).
 - **Localizar/Substituir** (`Ctrl+F` / `Ctrl+H`, com regex), **Busca em arquivos** (`Ctrl+Shift+F`, grep recursivo na pasta com resultados clicáveis), **Paleta de comandos** (`Ctrl+Shift+P`, busca fuzzy de qualquer comando) e **Diff** entre arquivos (`Ctrl+Shift+D`, estilo *git*).
 - **Codec — codificar/decodificar** (*Editar ▸ Codificar/Decodificar*): **Base64**, **Base64 URL**, **Hex**, **URL**, **Quoted-printable** e **decode de JWT** — tudo **local**, sem colar segredo em site. Bloqueado em aba oculta/cofre travado e **re-varre a Sentinela após decodar** (uma credencial revelada já fica flagrável).
+- **Operações de linha** (*Editar ▸ Linha*): ordenar, remover duplicadas/linhas em branco, *trim* à direita, MAIÚSC/minúsc — e um **gerador de senha/passphrase** (*Editar ▸ Gerar*) com CSPRNG (`secrets`) e a entropia em bits à mostra.
 - **Tema claro e escuro** (alterna em Preferências, `Ctrl+,`), HUD carbono+âmbar onde a cor é semântica: âmbar = atenção, verde = selado, vermelho = exposto.
 - Abas fecháveis/arrastáveis, *drag & drop*, **encoding** (UTF-8/BOM/UTF-16/Windows-1252/Latin-1) e EOL (CRLF/LF/CR) automáticos, *folding*, *auto-indent*, guias de indentação, casamento de chaves.
 - Preferências persistentes (auto-lock, fonte, largura de tab, tema, restaurar sessão) e aviso ao fechar com alterações não salvas.
@@ -340,7 +341,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **370 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação e o cofre cifrado para destinatário X25519).
+**Pentests adversariais** sobrevividos e **388 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação e o cofre cifrado para destinatário X25519).
 
 > Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**; proteger a chave de destinatário **X25519** com senha (hoje fica local em claro, como a Ed25519).
 

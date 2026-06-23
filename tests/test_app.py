@@ -694,6 +694,26 @@ def test_codec_bloqueado_em_aba_oculta(win, monkeypatch):
     assert ed.text() == "Man"           # bloqueado: nada mudou
 
 
+def test_lineops_ordena_via_apply_transform(win):
+    from notepy import textops
+    ed = win.current_editor()
+    ed.setText("banana\nApple\ncherry\n")
+    ed.selectAll()
+    win._apply_transform(textops.sort_asc, "Ordenar")
+    assert ed.text() == "Apple\nbanana\ncherry\n"
+
+
+def test_inserir_gerado_e_bloqueio_em_oculto(win, monkeypatch):
+    """Inserir um segredo gerado escreve no cursor; numa aba OCULTA fica bloqueado."""
+    ed = win.current_editor()
+    ed.setText("")
+    win._insert_generated("S3nh@Forte")
+    assert ed.text() == "S3nh@Forte"
+    monkeypatch.setattr(ed, "is_gated", lambda: True)
+    win._insert_generated("NAODEVE")
+    assert "NAODEVE" not in ed.text()
+
+
 def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
     """Regressao do red-team: gerenciar uma lista travada (ex.: auto-lock) avisa e fecha, sem levantar."""
     from PyQt6.QtWidgets import QMessageBox

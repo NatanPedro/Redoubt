@@ -103,6 +103,8 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── palette.py           Busca fuzzy da paleta de comandos
     ├── difftool.py          Diff entre arquivos (difflib)
     ├── transforms.py        Codec — Base64/Hex/URL/Quoted-printable + decode de JWT (teto anti-DoS)
+    ├── textops.py           Operações de linha — ordenar/dedup/trim/caixa (estilo Notepad++)
+    ├── passgen.py           Gerador de senha/passphrase (CSPRNG via secrets; entropia honesta)
     ├── lexers.py            Mapeia extensão/rótulo -> lexer do QScintilla (auto + menu Linguagem)
     ├── config.py            QSettings wrapper: auto-lock, fonte, tema, sessão
     │

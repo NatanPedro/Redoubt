@@ -31,8 +31,8 @@ from PyQt6.QtWidgets import (
 )
 
 from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
-               palette, redaction, seal, searchfiles, secrets as secrets_mod, theme,
-               transforms, vault)
+               palette, passgen, redaction, seal, searchfiles, secrets as secrets_mod,
+               textops, theme, transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -625,6 +625,8 @@ class MainWindow(QMainWindow):
         m_edit.addAction(self.act_diff)
         m_edit.addSeparator()
         self._create_codec_menu(m_edit)
+        self._create_lineops_menu(m_edit)
+        self._create_generate_menu(m_edit)
         m_edit.addSeparator()
         m_edit.addAction(self.act_settings)
 
@@ -812,6 +814,104 @@ class MainWindow(QMainWindow):
         row.addWidget(btn)
         lay.addLayout(row)
         dlg.exec()
+
+    # ================================================================== #
+    # Operacoes de linha (Editar ▸ Linha) — reusam o _apply_transform
+    # ================================================================== #
+    def _create_lineops_menu(self, parent_menu) -> None:
+        m = parent_menu.addMenu("Linha")
+        specs = [
+            ("Ordenar (A→Z)", textops.sort_asc),
+            ("Ordenar (Z→A)", textops.sort_desc),
+            ("Ordenar (ignorar caixa)", textops.sort_ci),
+            None,
+            ("Remover duplicadas", textops.remove_duplicates),
+            ("Remover linhas em branco", textops.remove_blank_lines),
+            ("Tirar espaco a direita", textops.trim_trailing),
+            None,
+            ("MAIUSCULAS", textops.to_upper),
+            ("minusculas", textops.to_lower),
+        ]
+        for spec in specs:
+            if spec is None:
+                m.addSeparator()
+                continue
+            label, fn = spec
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda _c=False, f=fn, l=label: self._apply_transform(f, l))
+            m.addAction(act)
+
+    # ================================================================== #
+    # Gerador de senha / passphrase (Editar ▸ Gerar)
+    # ================================================================== #
+    def _create_generate_menu(self, parent_menu) -> None:
+        m = parent_menu.addMenu("Gerar")
+        act_pw = QAction("Senha forte…", self)
+        act_pw.triggered.connect(self._gen_password)
+        m.addAction(act_pw)
+        act_pp = QAction("Passphrase…", self)
+        act_pp.triggered.connect(self._gen_passphrase)
+        m.addAction(act_pp)
+
+    def _gen_password(self) -> None:
+        n, ok = QInputDialog.getInt(
+            self, "Senha forte", "Tamanho (caracteres):",
+            20, passgen.MIN_LEN, passgen.MAX_LEN)
+        if not ok:
+            return
+        value = passgen.gen_password(n, use_symbols=True)
+        self._offer_secret(
+            value, f"Senha de {n} caracteres  ·  ~{passgen.password_bits(n, True)} bits")
+
+    def _gen_passphrase(self) -> None:
+        w, ok = QInputDialog.getInt(
+            self, "Passphrase", "Numero de palavras:",
+            6, passgen.MIN_WORDS, passgen.MAX_WORDS)
+        if not ok:
+            return
+        value = passgen.gen_passphrase(w)
+        self._offer_secret(
+            value, f"Passphrase de {w} palavras  ·  ~{passgen.passphrase_bits(w)} bits")
+
+    def _offer_secret(self, value: str, caption: str) -> None:
+        """Mostra o segredo gerado e oferece inserir no cursor / copiar (so-leitura)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Gerado")
+        dlg.resize(460, 150)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(caption, dlg))
+        field = QLineEdit(value, dlg)
+        field.setReadOnly(True)
+        field.setFont(config.editor_font())
+        field.selectAll()
+        lay.addWidget(field)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        b_ins = QPushButton("Inserir no cursor", dlg)
+        b_cpy = QPushButton("Copiar", dlg)
+        b_close = QPushButton("Fechar", dlg)
+        for b in (b_ins, b_cpy, b_close):
+            row.addWidget(b)
+        lay.addLayout(row)
+        b_ins.clicked.connect(lambda: (self._insert_generated(value), dlg.accept()))
+        b_cpy.clicked.connect(lambda: QApplication.clipboard().setText(value))
+        b_close.clicked.connect(dlg.reject)
+        dlg.exec()
+
+    def _insert_generated(self, value: str) -> None:
+        """Insere o segredo gerado no cursor — bloqueado em aba oculta/cofre travado."""
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_gated():
+            QMessageBox.information(self, APP_NAME, "Revele o conteudo antes de inserir.")
+            return
+        if editor.is_locked():
+            QMessageBox.information(self, APP_NAME, "Destrave o cofre antes de inserir.")
+            return
+        editor.replaceSelectedText(value)   # selecao vazia -> insere no cursor
+        editor.rescan_secrets()
 
     def _create_toolbar(self) -> None:
         tb = self.addToolBar("Principal")

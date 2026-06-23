@@ -28,7 +28,7 @@ O Cofre cresce de simétrico para **assimétrico**: agora você sela um arquivo 
 pública de alguém** (X25519, estilo `age` — ECDH efêmero + HKDF), não só com senha. A **Lista de
 Redação** ensina o Modo Redação a tarjar **os seus** segredos literais (mesmo os que a Sentinela
 não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entrega passou por
-*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 370 testes** verdes.
+*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 388 testes** verdes.
 
 ### Added
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
@@ -73,12 +73,20 @@ não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entreg
   checado antes de processar), decode **estrito** (lixo/binário viram erro — não `""` nem bytes de controle)
   e **surrogate solitário vira erro amigável**, nunca crash. **+58 testes** (`test_transforms.py` +
   integração) → **370 no total**.
+- **Operações de linha (`Editar ▸ Linha`)** — ordenar (A→Z, Z→A, ignorando caixa), remover duplicadas,
+  remover linhas em branco, tirar espaço à direita e MAIÚSCULAS/minúsculas. Núcleo puro
+  `notepy/textops.py`; opera na seleção ou no documento e respeita o mesmo chokepoint (aba oculta /
+  cofre travado) do codec. **+9 testes**.
+- **Gerador de senha / passphrase (`Editar ▸ Gerar`)** — senha aleatória (**CSPRNG** via `secrets`, sem
+  caracteres ambíguos, ≥1 de cada classe) ou passphrase de palavras, com a **entropia em bits exibida**
+  honestamente; insere no cursor ou copia. Núcleo puro `notepy/passgen.py`; inserir respeita o chokepoint
+  (bloqueado em aba oculta / cofre travado). **+9 testes** → **388 no total**.
 
 ### Changed
 - Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `CHANGELOG.md`) e README sincronizados:
   Cofre **RDBT4** + cifrar-para-destinatário X25519 (ADR-5 atualizada, eixos/tabelas/mermaid),
-  identidade de destinatário **separada** da Ed25519, Lista de Redação, Scoop, o menu Linguagem e o
-  codec (MIME Tools + Converter). Badge de testes 272 → **370**.
+  identidade de destinatário **separada** da Ed25519, Lista de Redação, Scoop, o menu Linguagem, o
+  codec (MIME Tools + Converter), operações de linha e o gerador de senha. Badge de testes 272 → **388**.
 
 ### Fixed
 - **Salvar como** agora oferece **PowerShell** (`*.ps1 *.psm1 *.psd1`) e as demais linguagens que o
