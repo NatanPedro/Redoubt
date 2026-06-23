@@ -6,7 +6,7 @@ import html
 import os
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -624,6 +624,8 @@ class MainWindow(QMainWindow):
         m_edit.addAction(self.act_diff)
         m_edit.addAction(self.act_settings)
 
+        self._create_language_menu(bar)
+
         m_sec = bar.addMenu("&Seguranca")
         m_sec.addAction(self.act_redact)
         m_sec.addAction(self.act_next_secret)
@@ -651,6 +653,54 @@ class MainWindow(QMainWindow):
 
         m_help = bar.addMenu("A&juda")
         m_help.addAction(self.act_about)
+
+    def _create_language_menu(self, bar) -> None:
+        """Menu &Linguagem: forca o lexer da aba ativa, sobrepondo a auto-deteccao
+        por extensao. Itens checkaveis e exclusivos; o ✓ acompanha a aba."""
+        from .lexers import LANGUAGE_GROUPS, PLAIN_TEXT_LABEL
+
+        m_lang = bar.addMenu("&Linguagem")
+        self._lang_group = QActionGroup(self)
+        self._lang_group.setExclusive(True)
+        self._lang_actions: dict[object, QAction] = {}   # data (None|rotulo) -> QAction
+
+        def add(label: str, data):
+            act = QAction(label, self, checkable=True)
+            act.setData(data)
+            self._lang_group.addAction(act)
+            m_lang.addAction(act)
+            self._lang_actions[data] = act
+            return act
+
+        add("Auto (pela extensão)", None).setChecked(True)   # None = auto
+        for i, group in enumerate(LANGUAGE_GROUPS):
+            m_lang.addSeparator()
+            for label, _cls in group:
+                add(label, label)
+        m_lang.addSeparator()
+        add(PLAIN_TEXT_LABEL, PLAIN_TEXT_LABEL)              # texto puro forcado
+
+        self._lang_group.triggered.connect(self._on_language_chosen)
+
+    def _on_language_chosen(self, action: QAction) -> None:
+        editor = self.current_editor()
+        if editor is None:
+            return
+        editor.set_language(action.data())   # None = auto; senao rotulo
+        self._update_status()
+
+    def _sync_language_menu(self) -> None:
+        """Reflete o override da aba ativa na checkmark do menu (chamado na troca de aba)."""
+        group = getattr(self, "_lang_group", None)
+        if group is None:
+            return
+        editor = self.current_editor()
+        group.setEnabled(editor is not None)
+        if editor is None:
+            return
+        act = self._lang_actions.get(editor._lang_override) or self._lang_actions.get(None)
+        if act is not None:
+            act.setChecked(True)
 
     def _create_toolbar(self) -> None:
         tb = self.addToolBar("Principal")
@@ -780,6 +830,7 @@ class MainWindow(QMainWindow):
         self._update_gate_bar()
         self._update_status()
         self._update_window_title()
+        self._sync_language_menu()
 
     def _update_gate_bar(self) -> None:
         editor = self.current_editor()

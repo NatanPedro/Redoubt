@@ -28,7 +28,7 @@ O Cofre cresce de simétrico para **assimétrico**: agora você sela um arquivo 
 pública de alguém** (X25519, estilo `age` — ECDH efêmero + HKDF), não só com senha. A **Lista de
 Redação** ensina o Modo Redação a tarjar **os seus** segredos literais (mesmo os que a Sentinela
 não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entrega passou por
-*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 311 testes** verdes.
+*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 312 testes** verdes.
 
 ### Added
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
@@ -57,12 +57,18 @@ não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entreg
   ordem baixa, slot malformado e payload curto são **pulados** (nunca crasham, "slot ruim não é
   fatal"), e abrir cofre de terceiro **não materializa** sua chave (gate read-only). **+16 testes** →
   **310 no total**.
+- **Menu "Linguagem" (forçar o realce)** — novo menu que **sobrepõe** a auto-detecção por extensão:
+  escolha o lexer da aba (Python, C/C++, C#, Java, JS/TS, SQL, YAML, **PowerShell**…) ou *Texto puro*;
+  *Auto (pela extensão)* volta ao padrão. A escolha fica **fixada na aba** (sobrevive a salvar/recarregar),
+  o ✓ acompanha a aba e a paleta (`Ctrl+Shift+P`) também troca a linguagem. PowerShell e Shell/Bash
+  usam o mesmo lexer Bash, mas o estado é por **rótulo único**; R não tem lexer no QScintilla → *Texto
+  puro*. **+1 teste** → **312 no total**.
 
 ### Changed
 - Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `CHANGELOG.md`) e README sincronizados:
   Cofre **RDBT4** + cifrar-para-destinatário X25519 (ADR-5 atualizada, eixos/tabelas/mermaid),
-  identidade de destinatário **separada** da Ed25519, Lista de Redação e Scoop. Badge de testes
-  272 → **311**.
+  identidade de destinatário **separada** da Ed25519, Lista de Redação, Scoop e o menu Linguagem.
+  Badge de testes 272 → **312**.
 
 ### Fixed
 - **Salvar como** agora oferece **PowerShell** (`*.ps1 *.psm1 *.psd1`) e as demais linguagens que o

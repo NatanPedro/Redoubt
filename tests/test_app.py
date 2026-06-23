@@ -606,6 +606,48 @@ def test_salva_e_realca_powershell_e_outros_tipos(win, tmp_path):
     assert ed.path == str(p)
 
 
+def test_menu_linguagem_forca_persiste_e_sincroniza(win, tmp_path):
+    """Menu Linguagem: forcar o lexer sobrepoe a extensao e sobrevive a salvar; voltar
+    para Auto re-detecta; PowerShell e Shell/Bash usam o mesmo lexer mas o estado (e o ✓)
+    sao por rotulo unico."""
+    from PyQt6 import Qsci
+    ed = win.current_editor()
+
+    # .py -> auto detecta Python
+    p = tmp_path / "x.py"
+    ed.setText("print(1)")
+    assert win._write(ed, str(p))
+    assert isinstance(ed.lexer(), Qsci.QsciLexerPython)
+    assert ed._lang_override is None
+
+    # forca C / C++ -> sobrepoe, e salvar (.py) NAO volta pra Python
+    ed.set_language("C / C++")
+    assert isinstance(ed.lexer(), Qsci.QsciLexerCPP)
+    assert win._write(ed, str(p))
+    assert isinstance(ed.lexer(), Qsci.QsciLexerCPP)
+
+    # PowerShell usa Bash, mas guarda o rotulo (nao colide com Shell/Bash)
+    ed.set_language("PowerShell")
+    assert isinstance(ed.lexer(), Qsci.QsciLexerBash)
+    assert ed._lang_override == "PowerShell"
+    assert ed.language_name == "PowerShell"
+
+    # a checkmark do menu reflete o override por rotulo
+    win._sync_language_menu()
+    assert win._lang_actions["PowerShell"].isChecked()
+    assert not win._lang_actions["Shell / Bash"].isChecked()
+
+    # texto puro forcado
+    ed.set_language("Texto puro")
+    assert ed.lexer() is None
+
+    # volta pra Auto -> re-detecta Python pela extensao, e o ✓ vai pra Auto
+    ed.set_language(None)
+    assert isinstance(ed.lexer(), Qsci.QsciLexerPython)
+    win._sync_language_menu()
+    assert win._lang_actions[None].isChecked()
+
+
 def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
     """Regressao do red-team: gerenciar uma lista travada (ex.: auto-lock) avisa e fecha, sem levantar."""
     from PyQt6.QtWidgets import QMessageBox

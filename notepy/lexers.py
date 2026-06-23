@@ -74,23 +74,47 @@ _NAME_LEXER: dict[str, str] = {
 }
 
 
-def lexer_for_path(path: str | None, font, parent=None):
-    """Devolve um lexer configurado para `path`, ou None (texto puro)."""
-    if not path:
-        return None
+# Menu "Linguagem": grupos ordenados de (rotulo, classe-do-lexer | None) para o
+# usuario FORCAR o realce manualmente, sobrepondo a auto-deteccao por extensao.
+# Os rotulos sao UNICOS — a checkmark do menu casa por rotulo. Repare que PowerShell
+# e Shell/Bash compartilham o mesmo QsciLexerBash (o QScintilla nao traz lexer de PS),
+# por isso o estado e guardado por rotulo, nao pela classe.
+LANGUAGE_GROUPS: list[list[tuple[str, str | None]]] = [
+    [("Python", "QsciLexerPython"),
+     ("JavaScript / TypeScript", "QsciLexerJavaScript"),
+     ("JSON", "QsciLexerJSON"),
+     ("HTML", "QsciLexerHTML"), ("XML", "QsciLexerXML"), ("CSS", "QsciLexerCSS")],
+    [("C / C++", "QsciLexerCPP"), ("C#", "QsciLexerCSharp"),
+     ("Java", "QsciLexerJava"), ("D", "QsciLexerD")],
+    [("PowerShell", "QsciLexerBash"), ("Shell / Bash", "QsciLexerBash"),
+     ("Batch", "QsciLexerBatch"), ("Perl", "QsciLexerPerl"),
+     ("Ruby", "QsciLexerRuby"), ("Lua", "QsciLexerLua"), ("TCL", "QsciLexerTCL")],
+    [("SQL", "QsciLexerSQL"), ("YAML", "QsciLexerYAML"),
+     ("INI / Properties", "QsciLexerProperties"),
+     ("Makefile", "QsciLexerMakefile"), ("CMake", "QsciLexerCMake")],
+    [("Markdown", "QsciLexerMarkdown"), ("TeX", "QsciLexerTeX"),
+     ("Diff / Patch", "QsciLexerDiff")],
+    [("Fortran", "QsciLexerFortran"), ("Matlab", "QsciLexerMatlab"),
+     ("Pascal", "QsciLexerPascal"), ("Verilog", "QsciLexerVerilog"),
+     ("VHDL", "QsciLexerVHDL"), ("Assembly", "QsciLexerAsm")],
+]
 
-    base = os.path.basename(path).lower()
-    name = _NAME_LEXER.get(base)
-    if name is None:
-        ext = os.path.splitext(base)[1]
-        name = _EXT_LEXER.get(ext)
-    if name is None:
-        return None
+# Rotulo de texto puro (sem realce) — distinto de "Auto (pela extensao)".
+PLAIN_TEXT_LABEL = "Texto puro"
 
-    lexer_cls = getattr(Qsci, name, None)
+_LABEL_TO_CLASS: dict[str, str | None] = {PLAIN_TEXT_LABEL: None}
+for _grp in LANGUAGE_GROUPS:
+    for _label, _cls in _grp:
+        _LABEL_TO_CLASS[_label] = _cls
+
+
+def make_lexer(class_name: str | None, font, parent=None):
+    """Instancia o lexer pela classe do QScintilla (ou None p/ texto puro)."""
+    if not class_name:
+        return None
+    lexer_cls = getattr(Qsci, class_name, None)
     if lexer_cls is None:  # versão do QScintilla não tem esse lexer
         return None
-
     lexer = lexer_cls(parent)
     # Aplica a fonte monoespaçada a todos os estilos do lexer.
     lexer.setDefaultFont(font)
@@ -99,3 +123,20 @@ def lexer_for_path(path: str | None, font, parent=None):
     except Exception:
         pass
     return lexer
+
+
+def lexer_for_path(path: str | None, font, parent=None):
+    """Devolve um lexer configurado para `path`, ou None (texto puro)."""
+    if not path:
+        return None
+    base = os.path.basename(path).lower()
+    name = _NAME_LEXER.get(base)
+    if name is None:
+        ext = os.path.splitext(base)[1]
+        name = _EXT_LEXER.get(ext)
+    return make_lexer(name, font, parent)
+
+
+def make_lexer_for_label(label: str | None, font, parent=None):
+    """Instancia o lexer escolhido no menu Linguagem (por rotulo de LANGUAGE_GROUPS)."""
+    return make_lexer(_LABEL_TO_CLASS.get(label), font, parent)

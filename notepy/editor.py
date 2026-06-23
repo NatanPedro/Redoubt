@@ -21,7 +21,7 @@ from . import redaction
 from . import secrets as secrets_mod
 from . import theme
 from . import vault
-from .lexers import lexer_for_path
+from .lexers import lexer_for_path, make_lexer_for_label
 
 # Ordem de tentativa para decodificar arquivos. utf-8-sig captura o BOM.
 _ENCODINGS = ("utf-8", "cp1252", "latin-1")
@@ -107,6 +107,9 @@ class CodeEditor(QsciScintilla):
         self.encoding: str = "utf-8"
         self.display_name: str = ""
         self.language_name: str = "Texto"
+        # Menu Linguagem: None = auto pela extensao; senao um rotulo de lexers.LANGUAGE_GROUPS
+        # (inclui "Texto puro"). Sobrepoe a auto-deteccao e sobrevive a salvar/recarregar.
+        self._lang_override: str | None = None
 
         # Estado de seguranca.
         self._secret_matches: list[secrets_mod.Match] = []
@@ -234,14 +237,28 @@ class CodeEditor(QsciScintilla):
     # Linguagem / tema
     # ------------------------------------------------------------------ #
     def apply_lexer_for_path(self, path: str | None) -> None:
-        lexer = lexer_for_path(path, self.font(), self)
+        if self._lang_override is None:                  # auto pela extensao
+            lexer = lexer_for_path(path, self.font(), self)
+            name = lexer.language() if lexer is not None else "Texto"
+        else:                                            # forcado pelo menu Linguagem
+            lexer = make_lexer_for_label(self._lang_override, self.font(), self)
+            name = self._lang_override
+        self._install_lexer(lexer, name)
+
+    def _install_lexer(self, lexer, name: str) -> None:
         self.setLexer(lexer)
         theme.retheme_lexer(lexer)
         if lexer is not None:
             lexer.setFont(self.font())       # forca monospace em TODOS os estilos
         theme.apply_editor_theme(self)       # setLexer reseta margens/caret
         self.setMarginsFont(self.font())
-        self.language_name = lexer.language() if lexer is not None else "Texto"
+        self.language_name = name
+
+    def set_language(self, label: str | None) -> None:
+        """Forca o lexer manualmente (menu Linguagem). label=None volta para auto pela
+        extensao; senao um rotulo de lexers.LANGUAGE_GROUPS (inclui 'Texto puro')."""
+        self._lang_override = label
+        self.apply_lexer_for_path(self.path)
 
     def apply_prefs(self) -> None:
         """Re-aplica fonte e largura de tab das preferencias (em tempo real)."""
