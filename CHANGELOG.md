@@ -28,7 +28,7 @@ O Cofre cresce de simétrico para **assimétrico**: agora você sela um arquivo 
 pública de alguém** (X25519, estilo `age` — ECDH efêmero + HKDF), não só com senha. A **Lista de
 Redação** ensina o Modo Redação a tarjar **os seus** segredos literais (mesmo os que a Sentinela
 não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entrega passou por
-*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 312 testes** verdes.
+*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 370 testes** verdes.
 
 ### Added
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
@@ -63,12 +63,22 @@ não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entreg
   o ✓ acompanha a aba e a paleta (`Ctrl+Shift+P`) também troca a linguagem. PowerShell e Shell/Bash
   usam o mesmo lexer Bash, mas o estado é por **rótulo único**; R não tem lexer no QScintilla → *Texto
   puro*. **+1 teste** → **312 no total**.
+- **Codec — MIME Tools + Converter (`Editar ▸ Codificar/Decodificar`)** — codifica/decodifica **Base64**,
+  **Base64 URL**, **Hexadecimal**, **URL** (percent), **Quoted-printable** e **decodifica JWT** (header +
+  payload), tudo **local** — sem colar segredo em site aleatório. Opera na seleção (ou no documento) e o
+  `Ctrl+Z` desfaz; o JWT abre numa janela **só-leitura** (decodifica, **não verifica a assinatura** — e
+  diz isso). Também disponível pela paleta (`Ctrl+Shift+P`). Núcleo puro `notepy/transforms.py`. Endurecido
+  por *red-team* + confirmação: **bloqueado** em aba oculta / cofre travado (chokepoint), **re-varre a
+  Sentinela após decodar** (uma credencial revelada já fica flagrável/tarjável), **teto anti-DoS** (2 MiB,
+  checado antes de processar), decode **estrito** (lixo/binário viram erro — não `""` nem bytes de controle)
+  e **surrogate solitário vira erro amigável**, nunca crash. **+58 testes** (`test_transforms.py` +
+  integração) → **370 no total**.
 
 ### Changed
 - Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `CHANGELOG.md`) e README sincronizados:
   Cofre **RDBT4** + cifrar-para-destinatário X25519 (ADR-5 atualizada, eixos/tabelas/mermaid),
-  identidade de destinatário **separada** da Ed25519, Lista de Redação, Scoop e o menu Linguagem.
-  Badge de testes 272 → **312**.
+  identidade de destinatário **separada** da Ed25519, Lista de Redação, Scoop, o menu Linguagem e o
+  codec (MIME Tools + Converter). Badge de testes 272 → **370**.
 
 ### Fixed
 - **Salvar como** agora oferece **PowerShell** (`*.ps1 *.psm1 *.psd1`) e as demais linguagens que o

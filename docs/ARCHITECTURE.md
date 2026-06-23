@@ -102,6 +102,8 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── searchfiles.py       Busca em arquivos / grep recursivo na pasta
     ├── palette.py           Busca fuzzy da paleta de comandos
     ├── difftool.py          Diff entre arquivos (difflib)
+    ├── transforms.py        Codec — Base64/Hex/URL/Quoted-printable + decode de JWT (teto anti-DoS)
+    ├── lexers.py            Mapeia extensão/rótulo -> lexer do QScintilla (auto + menu Linguagem)
     ├── config.py            QSettings wrapper: auto-lock, fonte, tema, sessão
     │
     │   ── camada UI (PyQt6) ──

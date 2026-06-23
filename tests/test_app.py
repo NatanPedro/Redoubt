@@ -648,6 +648,52 @@ def test_menu_linguagem_forca_persiste_e_sincroniza(win, tmp_path):
     assert win._lang_actions[None].isChecked()
 
 
+def test_codec_aplica_na_selecao_e_resvarre_segredo(win):
+    """Codec opera na selecao; e decodar re-varre a Sentinela — decodar pode revelar
+    uma credencial, que entao passa a ser flagrada (tarja/clipboard cobrem)."""
+    import base64
+
+    from notepy import transforms
+    ed = win.current_editor()
+
+    # round-trip simples na selecao
+    ed.setText("Man")
+    ed.selectAll()
+    win._apply_transform(transforms.b64_encode, "Base64")
+    assert ed.text() == "TWFu"
+    ed.selectAll()
+    win._apply_transform(transforms.b64_decode, "Base64")
+    assert ed.text() == "Man"
+
+    # decodar uma chave AWS escondida em base64 -> a Sentinela passa a flagra-la
+    chave = "AKIA3FK7XQ2MNP8RTUVW"
+    ed.setText(base64.b64encode(f'aws_key = "{chave}"'.encode()).decode())
+    ed.selectAll()
+    win._apply_transform(transforms.b64_decode, "Base64")
+    assert chave in ed.text()
+    assert ed.secret_matches()          # rescan pos-decode flagrou a credencial revelada
+
+
+def test_codec_invalido_nao_altera_nem_crasha(win):
+    from notepy import transforms
+    ed = win.current_editor()
+    ed.setText("@@@nao-base64@@@")
+    ed.selectAll()
+    win._apply_transform(transforms.b64_decode, "Base64")   # erro -> aviso, texto intacto
+    assert ed.text() == "@@@nao-base64@@@"
+
+
+def test_codec_bloqueado_em_aba_oculta(win, monkeypatch):
+    """Chokepoint: transformar numa aba OCULTA nao revela nem corrompe o conteudo."""
+    from notepy import transforms
+    ed = win.current_editor()
+    ed.setText("Man")
+    ed.selectAll()
+    monkeypatch.setattr(ed, "is_gated", lambda: True)
+    win._apply_transform(transforms.b64_encode, "Base64")
+    assert ed.text() == "Man"           # bloqueado: nada mudou
+
+
 def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
     """Regressao do red-team: gerenciar uma lista travada (ex.: auto-lock) avisa e fecha, sem levantar."""
     from PyQt6.QtWidgets import QMessageBox

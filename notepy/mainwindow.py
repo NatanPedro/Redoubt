@@ -31,7 +31,8 @@ from PyQt6.QtWidgets import (
 )
 
 from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
-               palette, redaction, seal, searchfiles, secrets as secrets_mod, theme, vault)
+               palette, redaction, seal, searchfiles, secrets as secrets_mod, theme,
+               transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
@@ -622,6 +623,9 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         m_edit.addAction(self.act_palette)
         m_edit.addAction(self.act_diff)
+        m_edit.addSeparator()
+        self._create_codec_menu(m_edit)
+        m_edit.addSeparator()
         m_edit.addAction(self.act_settings)
 
         self._create_language_menu(bar)
@@ -701,6 +705,113 @@ class MainWindow(QMainWindow):
         act = self._lang_actions.get(editor._lang_override) or self._lang_actions.get(None)
         if act is not None:
             act.setChecked(True)
+
+    # ================================================================== #
+    # Codec — MIME Tools + Converter (Editar ▸ Codificar/Decodificar)
+    # ================================================================== #
+    def _create_codec_menu(self, parent_menu) -> None:
+        """Submenu de codificar/decodificar. As acoes ficam parenteadas em `self`,
+        entao a paleta (Ctrl+Shift+P) tambem as encontra."""
+        m = parent_menu.addMenu("Codificar / Decodificar")
+        specs = [
+            ("Base64 — codificar", transforms.b64_encode),
+            ("Base64 — decodificar", transforms.b64_decode),
+            ("Base64 URL — codificar", transforms.b64url_encode),
+            ("Base64 URL — decodificar", transforms.b64url_decode),
+            None,
+            ("Hex — texto → hex", transforms.hex_encode),
+            ("Hex — hex → texto", transforms.hex_decode),
+            None,
+            ("URL — codificar", transforms.url_encode),
+            ("URL — decodificar", transforms.url_decode),
+            ("Quoted-printable — codificar", transforms.qp_encode),
+            ("Quoted-printable — decodificar", transforms.qp_decode),
+        ]
+        for spec in specs:
+            if spec is None:
+                m.addSeparator()
+                continue
+            label, fn = spec
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda _checked=False, f=fn, l=label: self._apply_transform(f, l))
+            m.addAction(act)
+        m.addSeparator()
+        act_jwt = QAction("JWT — decodificar (header + payload)", self)
+        act_jwt.triggered.connect(self._show_jwt)
+        m.addAction(act_jwt)
+
+    def _apply_transform(self, func, label: str) -> None:
+        """Aplica um codec na selecao (ou no documento todo). Bloqueado em aba
+        oculta / cofre travado; re-varre a Sentinela depois (decodar pode revelar
+        credencial); erro vira aviso amigavel — nunca crash."""
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_gated():
+            QMessageBox.information(
+                self, APP_NAME, "Revele o conteudo (barra acima) antes de transformar.")
+            return
+        if editor.is_locked():
+            QMessageBox.information(
+                self, APP_NAME, "Destrave o cofre (Ctrl+Shift+U) antes de transformar.")
+            return
+        had_sel = editor.hasSelectedText()
+        source = editor.selectedText() if had_sel else editor.text()
+        if not source:
+            QMessageBox.information(
+                self, APP_NAME, "Nada para transformar — selecione um texto (ou escreva algo).")
+            return
+        try:
+            result = func(source)
+        except transforms.TransformError as exc:
+            QMessageBox.warning(self, APP_NAME, f"{label}: {exc}")
+            return
+        if had_sel:
+            editor.replaceSelectedText(result)
+        else:
+            editor.selectAll()
+            editor.replaceSelectedText(result)
+        editor.rescan_secrets()   # decodar pode revelar credencial -> Sentinela re-varre
+        self.statusBar().showMessage(f"{label}: aplicado.", 2500)
+
+    def _show_jwt(self) -> None:
+        editor = self.current_editor()
+        if editor is None:
+            return
+        if editor.is_gated():
+            QMessageBox.information(self, APP_NAME, "Revele o conteudo antes de decodificar.")
+            return
+        if editor.is_locked():
+            QMessageBox.information(self, APP_NAME, "Destrave o cofre antes de decodificar.")
+            return
+        source = editor.selectedText() if editor.hasSelectedText() else editor.text()
+        try:
+            out = transforms.jwt_decode(source)
+        except transforms.TransformError as exc:
+            QMessageBox.warning(self, APP_NAME, f"JWT: {exc}")
+            return
+        self._show_readonly_text("JWT decodificado", out)
+
+    def _show_readonly_text(self, title: str, text: str) -> None:
+        """Janela so-leitura (usada pelo decode de JWT — uma visao, nao um round-trip)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(520, 420)
+        lay = QVBoxLayout(dlg)
+        view = QTextEdit(dlg)
+        view.setReadOnly(True)
+        view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        view.setPlainText(text)
+        view.setFont(config.editor_font())
+        lay.addWidget(view)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        btn = QPushButton("Fechar", dlg)
+        btn.clicked.connect(dlg.accept)
+        row.addWidget(btn)
+        lay.addLayout(row)
+        dlg.exec()
 
     def _create_toolbar(self) -> None:
         tb = self.addToolBar("Principal")
