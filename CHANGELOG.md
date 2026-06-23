@@ -28,7 +28,7 @@ O Cofre cresce de simétrico para **assimétrico**: agora você sela um arquivo 
 pública de alguém** (X25519, estilo `age` — ECDH efêmero + HKDF), não só com senha. A **Lista de
 Redação** ensina o Modo Redação a tarjar **os seus** segredos literais (mesmo os que a Sentinela
 não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entrega passou por
-*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 310 testes** verdes.
+*red-team* adversarial + rodada(s) de confirmação; a suíte foi de **272 → 311 testes** verdes.
 
 ### Added
 - **Lista de Redação (segredos do usuário a tarjar)** — além do que a Sentinela detecta por
@@ -62,7 +62,15 @@ não pega por padrão), e o **Scoop** instala o Redoubt num comando. Cada entreg
 - Documentação técnica (`SECURITY.md` / `ARCHITECTURE.md` / `CHANGELOG.md`) e README sincronizados:
   Cofre **RDBT4** + cifrar-para-destinatário X25519 (ADR-5 atualizada, eixos/tabelas/mermaid),
   identidade de destinatário **separada** da Ed25519, Lista de Redação e Scoop. Badge de testes
-  272 → **310**.
+  272 → **311**.
+
+### Fixed
+- **Salvar como** agora oferece **PowerShell** (`*.ps1 *.psm1 *.psd1`) e as demais linguagens que o
+  editor já realça (shell/batch, C/C++/C#/Java, SQL, YAML/TOML/INI, Ruby/Perl/Lua…), além de *Todos
+  os arquivos*. Antes o dropdown listava só 5 grupos, então tipos como `.ps1` não eram oferecidos —
+  e, com *Todos os arquivos*, um nome digitado sem extensão saía sem sufixo. O `.ps1` ainda ganha
+  **realce best-effort** via lexer Bash (o QScintilla não traz lexer de PowerShell). O *write* sempre
+  aceitou qualquer extensão — o que faltava era o tipo no diálogo. **+1 teste** → **311 no total**.
 
 ---
 

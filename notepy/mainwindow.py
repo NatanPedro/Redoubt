@@ -60,12 +60,21 @@ class CommandBar(QLineEdit):
         super().keyPressEvent(event)
 
 FILE_FILTER = (
+    # "Todos os arquivos" PRIMEIRO (filtro padrao): com ele ativo, digitar
+    # qualquer nome+extensao grava como esta. Os grupos seguintes existem para
+    # descoberta e para o dialogo nativo auto-completar a extensao (ex.: escolher
+    # "PowerShell" e digitar "deploy" grava "deploy.ps1").
     "Todos os arquivos (*.*)"
-    ";;Python (*.py *.pyw)"
-    ";;Texto (*.txt)"
-    ";;Web (*.html *.htm *.css *.js *.ts)"
-    ";;Dados (*.json *.xml *.yaml *.yml)"
-    ";;Markdown (*.md)"
+    ";;Texto (*.txt *.text *.log)"
+    ";;Python (*.py *.pyw *.pyi)"
+    ";;PowerShell (*.ps1 *.psm1 *.psd1)"
+    ";;Shell / Batch (*.sh *.bash *.zsh *.bat *.cmd)"
+    ";;Web (*.html *.htm *.css *.scss *.js *.mjs *.ts *.jsx *.tsx *.vue)"
+    ";;C / C++ / C# / Java (*.c *.h *.cpp *.hpp *.cc *.cs *.java)"
+    ";;Outros scripts (*.rb *.pl *.lua *.tcl)"
+    ";;Dados / Config (*.json *.xml *.yaml *.yml *.toml *.ini *.cfg *.conf *.env)"
+    ";;SQL (*.sql)"
+    ";;Markdown / Docs (*.md *.markdown *.tex)"
 )
 
 

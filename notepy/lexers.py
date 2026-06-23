@@ -35,6 +35,9 @@ _EXT_LEXER: dict[str, str] = {
     ".d": "QsciLexerD",
     # Scripts / shell
     ".sh": "QsciLexerBash", ".bash": "QsciLexerBash", ".zsh": "QsciLexerBash",
+    # O QScintilla nao traz lexer de PowerShell; o Bash e o mais proximo
+    # (comentario "#", "$variavel" e strings batem) — melhor que texto puro.
+    ".ps1": "QsciLexerBash", ".psm1": "QsciLexerBash", ".psd1": "QsciLexerBash",
     ".bat": "QsciLexerBatch", ".cmd": "QsciLexerBatch",
     ".pl": "QsciLexerPerl", ".pm": "QsciLexerPerl",
     ".rb": "QsciLexerRuby",

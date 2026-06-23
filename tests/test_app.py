@@ -578,6 +578,34 @@ def test_lista_redacao_clipboard_fragmento_curto_mascarado(win, tmp_path, monkey
     redaction.lock()
 
 
+def test_salva_e_realca_powershell_e_outros_tipos(win, tmp_path):
+    """Regressao: o 'Salvar como' precisa oferecer PowerShell e demais linguagens que o
+    editor ja destaca (antes so listava 5 grupos), e .ps1 ganha realce best-effort.
+    O write em si sempre aceitou qualquer extensao — isto trava o filtro e o lexer."""
+    from PyQt6 import Qsci
+    from notepy.lexers import lexer_for_path
+    from notepy.mainwindow import FILE_FILTER
+
+    # 1) o dropdown agora lista PowerShell e mais tipos (nao so Python/Texto/Web/Dados/MD)
+    assert "PowerShell" in FILE_FILTER
+    for pat in ("*.ps1", "*.psm1", "*.sh", "*.sql", "*.c", "*.yaml"):
+        assert pat in FILE_FILTER
+
+    # 2) .ps1 ganha realce best-effort via Bash (QScintilla nao tem lexer de PowerShell);
+    #    nao pode virar texto puro nem crashar.
+    lex = lexer_for_path("deploy.ps1", win.current_editor().font())
+    assert isinstance(lex, Qsci.QsciLexerBash)
+
+    # 3) o write grava .ps1 com o conteudo intacto e adota o caminho
+    ed = win.current_editor()
+    src = "Write-Host 'oi'\n$x = 1\n"
+    ed.setText(src)
+    p = tmp_path / "deploy.ps1"
+    assert win._write(ed, str(p))
+    assert p.read_text(encoding="utf-8") == src
+    assert ed.path == str(p)
+
+
 def test_dialog_lista_travada_nao_crasha(win, monkeypatch):
     """Regressao do red-team: gerenciar uma lista travada (ex.: auto-lock) avisa e fecha, sem levantar."""
     from PyQt6.QtWidgets import QMessageBox
