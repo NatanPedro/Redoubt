@@ -1,12 +1,12 @@
 {
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Editor onde a seguranca e a identidade: vigia segredos, sela arquivos como evidencia e mantem cadeia de custodia. Nada vaza sem voce mandar.",
     "homepage": "https://github.com/NatanPedro/Redoubt",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/NatanPedro/Redoubt/releases/download/v1.2.0/Redoubt.exe",
-            "hash": "7b7285aacda1c7754a52810e07d3355ed09ca4d1c3bb90c5d58cdb431b90aada"
+            "url": "https://github.com/NatanPedro/Redoubt/releases/download/v1.3.0/Redoubt.exe",
+            "hash": "cf405f4bff659f85ef2d9e77d3616ddba116818b73a355e4f08dcbc1da4a3909"
         }
     },
     "bin": "Redoubt.exe",
