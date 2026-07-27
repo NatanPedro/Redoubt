@@ -46,6 +46,18 @@ from .preferences import PreferencesDialog        # noqa: E402
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
 
+def _display_name(name: str, limit: int = 60) -> str:
+    """Nome de arquivo de TERCEIRO para exibir num prompt. O nome vem de fora, entao e conteudo
+    hostil, nao rotulo: caracteres de formatacao (zero-width, RLO/bidi) escondem ou invertem a
+    origem exibida. Tira nao-imprimiveis/Cf, colapsa espacos exoticos e elide."""
+    import unicodedata
+    limpo = "".join(c for c in name if c.isprintable() and unicodedata.category(c) != "Cf")
+    limpo = " ".join(limpo.split())
+    if not limpo:
+        return "(nome ilegivel)"
+    return limpo if len(limpo) <= limit else limpo[:limit - 1] + "…"
+
+
 class CommandBar(QLineEdit):
     """Barra de comando ':' — Esc devolve o foco ao editor."""
 
@@ -545,6 +557,8 @@ class MainWindow(QMainWindow):
                                           SP.SP_DriveHDIcon, None, self.seal_to_recipient)
         self.act_export_recipient = make("Exportar minha &chave de destinatário…",
                                          SP.SP_DialogSaveButton, None, self.export_recipient_key)
+        self.act_protect_recipient = make("Proteger chave de destinatário com se&nha…",
+                                          SP.SP_DialogYesButton, None, self.protect_recipient)
         self.act_lock_now = make("&Travar cofre agora",
                                  SP.SP_DriveHDIcon,
                                  QKeySequence("Ctrl+Shift+K"),
@@ -649,6 +663,7 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_seal)
         m_sec.addAction(self.act_seal_to_recipient)
         m_sec.addAction(self.act_export_recipient)
+        m_sec.addAction(self.act_protect_recipient)
         m_sec.addAction(self.act_lock_now)
         m_sec.addAction(self.act_unlock)
         m_sec.addAction(self.act_unlock_keyfile)
@@ -1248,6 +1263,25 @@ class MainWindow(QMainWindow):
         if editor is None or not (editor.is_vault and editor.is_locked()):
             self.statusBar().showMessage("Nenhum cofre travado nesta aba.", 3000)
             return
+        # Cofre selado PARA VOCE (slot X25519)? Destrava com a SUA chave de destinatario. Sem isto,
+        # uma aba aberta por X25519 virava beco sem saida depois do auto-lock (o dialogo so aceitava
+        # senha/arquivo-chave, que esse cofre nao tem) e a edicao nao salva se perdia.
+        try:
+            # `recipient_exists()` e obrigatorio (mesma guarda read-only do _open_vault): sem ela,
+            # destravar uma aba cujo blob tenha QUALQUER slot X25519 (ex.: cofre de terceiro aberto
+            # por senha-mestra) MATERIALIZARIA uma chave de destinatario sua no disco.
+            if (custody.recipient_exists()
+                    and vault.KIND_X25519 in vault.slot_kinds(editor._locked_blob or b"")):
+                if not custody.recipient_unlocked():
+                    self._unlock_recipient_dialog(os.path.basename(editor.path or "cofre"))
+                if editor.unlock(x25519_private=custody.recipient_private_bytes()):
+                    self._refresh_tab(editor)
+                    self._update_status()
+                    self.statusBar().showMessage(
+                        "Cofre destravado com a sua chave de destinatário.", 3000)
+                    return
+        except Exception:
+            pass                              # best-effort: cai no fluxo da senha-mestra abaixo
         pw, ok = QInputDialog.getText(self, "Destravar cofre", "Senha-mestra:",
                                       QLineEdit.EchoMode.Password)
         if not ok:
@@ -1278,9 +1312,15 @@ class MainWindow(QMainWindow):
         if red:
             redaction.lock()                  # esquece os segredos da lista (estavam em RAM)
             self._rescan_all_editors()        # limpa as tarjas vindas da lista
-        if locked or red:
+        # Chave de destinatario destravada tambem volta a trancar (estava em RAM).
+        rec = custody.recipient_is_protected() and custody.recipient_unlocked()
+        if rec:
+            custody.lock_recipient()
+        if locked or red or rec:
             self._update_status()
-            parts = ([f"{locked} cofre(s)"] if locked else []) + (["lista de redação"] if red else [])
+            parts = (([f"{locked} cofre(s)"] if locked else [])
+                     + (["lista de redação"] if red else [])
+                     + (["chave de destinatário"] if rec else []))
             self.statusBar().showMessage(f"Travado por inatividade: {', '.join(parts)}.", 5000)
 
     # --- Cofre++: multiplos destravadores (senhas / arquivos-chave) ---------- #
@@ -1405,8 +1445,8 @@ class MainWindow(QMainWindow):
                             + ("✓ CONFERE — nao mudou desde que voce assinou.\n\n"
                                if confere else
                                "⚠ NAO CONFERE — conteudo mudou, ou .sig de outro arquivo/chave.\n\n"))
-            except OSError:
-                sig_line = ""
+            except (OSError, ValueError):   # ValueError cobre UnicodeDecodeError: .sig binario/nao-UTF8
+                sig_line = ""               # escapava do slot Qt e ABORTAVA o processo
 
         ok_chain, idx = custody.verify_chain()
         st = custody.audit_stats()
@@ -1417,6 +1457,11 @@ class MainWindow(QMainWindow):
                  "identidade protegida — provavel proteger/desproteger interrompido. Assine algo "
                  "(vai pedir a senha) e o Redoubt remove a copia automaticamente.\n"
                  if custody.identity_has_orphan_pem() else "")
+        if custody.recipient_has_orphan_raw():
+            orfao += ("\n⚠ ATENCAO: ha uma copia EM CLARO da sua chave de destinatario "
+                      "(recipient.x25519) coexistindo com a versao protegida — provavel proteger "
+                      "interrompido. Abra um cofre selado para voce (vai pedir a senha) e o Redoubt "
+                      "remove a copia automaticamente.\n")
         QMessageBox.information(
             self, f"{APP_NAME} — Cadeia de custodia",
             f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
@@ -1470,7 +1515,7 @@ class MainWindow(QMainWindow):
         try:
             with open(path, encoding="utf-8") as fh:
                 anchor = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:    # ValueError cobre JSONDecodeError E UnicodeDecodeError
             QMessageBox.critical(self, APP_NAME, f"Não foi possível ler a âncora:\n{exc}")
             return
         r = custody.check_anchor(anchor)        # default: amarra à identidade LOCAL (anti-forja)
@@ -1569,6 +1614,11 @@ class MainWindow(QMainWindow):
             return
         try:
             custody.protect_identity(pw1)
+        except custody.IdentityClearCopyRemains as exc:
+            # Protegeu de VERDADE (cofre verificado), mas o PEM em claro resistiu. Dizer "nao foi
+            # possivel proteger" aqui seria mentira — e antes disso o rollback destruia a identidade.
+            QMessageBox.warning(self, APP_NAME, f"⚠ Protegida, com pendencia:\n\n{exc}")
+            return
         except Exception as exc:
             QMessageBox.critical(self, APP_NAME, f"Nao foi possivel proteger:\n{exc}")
             return
@@ -1688,7 +1738,7 @@ class MainWindow(QMainWindow):
         try:
             with open(seal_path, encoding="utf-8") as fh:
                 obj = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:    # ValueError cobre JSONDecodeError E UnicodeDecodeError
             QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o selo:\n{exc}")
             return
         # Ancora = a identidade LOCAL (read-only; verifica os SEUS selos). Para selos de
@@ -1983,6 +2033,133 @@ class MainWindow(QMainWindow):
             f"transferência:\n\n{pub}\n\nCompartilhe-a para que selem cofres para você "
             f"(Segurança ▸ Selar para destinatário). A chave PRIVADA fica local e nunca sai.")
 
+    def protect_recipient(self) -> None:
+        """Protege a chave de destinatário X25519 com senha (opt-in) — ou adiciona uma credencial
+        de backup se já protegida. Exportar/selar seguem sem senha; só ABRIR pede."""
+        if custody.recipient_is_protected():
+            cur, ok = QInputDialog.getText(self, "Adicionar credencial",
+                                           "Senha ATUAL da chave de destinatário:",
+                                           QLineEdit.EchoMode.Password)
+            if not ok or not cur:
+                return
+            new, ok = QInputDialog.getText(self, "Adicionar credencial",
+                                           "NOVA senha (rota de backup):",
+                                           QLineEdit.EchoMode.Password)
+            if not ok or not new:
+                return
+            if len(new) < 4:
+                QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
+                return
+            # Confirmacao obrigatoria: esta e justamente a rota ANTI-perda-total; um typo aqui
+            # criaria um destravador inutil e a UI diria que o backup existe.
+            new2, ok = QInputDialog.getText(self, "Adicionar credencial", "Confirme a NOVA senha:",
+                                            QLineEdit.EchoMode.Password)
+            if not ok or new != new2:
+                QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
+                return
+            try:
+                custody.add_recipient_unlocker(passphrase=cur, new_password=new)
+            except vault.VaultError as exc:
+                QMessageBox.warning(self, APP_NAME, f"Nao foi possivel adicionar:\n{exc}")
+                return
+            # So promete o backup depois de PROVAR que a nova credencial abre de fato.
+            if not custody.unlock_recipient(new):
+                QMessageBox.critical(
+                    self, APP_NAME,
+                    "A nova senha foi gravada mas NAO destravou na verificacao — nao confie nela "
+                    "como backup; tente de novo.")
+                return
+            QMessageBox.information(self, APP_NAME,
+                                    "Senha de backup adicionada (e verificada) na sua chave de "
+                                    "destinatário.")
+            return
+
+        pw1, ok = QInputDialog.getText(self, "Proteger chave de destinatário",
+                                       "Crie uma senha para sua chave X25519:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or not pw1:
+            return
+        if len(pw1) < 4:
+            QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
+            return
+        pw2, ok = QInputDialog.getText(self, "Proteger chave de destinatário", "Confirme a senha:",
+                                       QLineEdit.EchoMode.Password)
+        if not ok or pw1 != pw2:
+            QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
+            return
+        try:
+            custody.protect_recipient(pw1)
+        except custody.RecipientClearCopyRemains as exc:
+            # Protegeu de VERDADE (cofre gravado e verificado), mas a copia em claro resistiu.
+            # Dizer "nao foi possivel proteger" aqui seria mentira nas duas pontas.
+            QMessageBox.warning(self, APP_NAME, f"⚠ Protegida, com pendencia:\n\n{exc}")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel proteger:\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_NAME,
+            f"Chave de destinatário ({custody.recipient_fingerprint()}) protegida. A privada "
+            "agora exige senha para ABRIR cofres selados para você (pedida 1x por sessão); "
+            "exportar a sua chave pública e selar para outros seguem sem senha.\n\n"
+            "IMPORTANTE: não há recuperação — esqueceu a senha, perdeu o acesso aos cofres "
+            "selados para você. Considere adicionar uma 2a senha de backup.")
+
+    def _safe_recipient_fingerprint(self) -> str:
+        """Fingerprint da chave de destinatario para EXIBIR; tolera recipient.pub ausente/ilegivel
+        (protegida+travada) — excecao crua aqui derrubaria o slot Qt e o app inteiro."""
+        try:
+            return custody.recipient_fingerprint()
+        except Exception:
+            return "protegida (publica ilegivel)"
+
+    def _warn_recipient_pub_divergent(self) -> None:
+        """Avisa se o unlock encontrou a publica em claro DIVERGINDO da chave real (adulteracao)."""
+        if not custody.recipient_pub_was_divergent():
+            return
+        QMessageBox.warning(
+            self, APP_NAME,
+            "⚠ A sua chave PÚBLICA de destinatário em claro (recipient.pub) estava DIVERGENTE da "
+            "sua chave real — foi corrigida agora.\n\nAlguém pode tê-la adulterado: os cofres que "
+            "você selou \"para você\" nesse período podem ter ido para OUTRA chave, e a pública que "
+            "você exportou pode não ser a sua. Confira o fingerprint "
+            f"({self._safe_recipient_fingerprint()}) com quem recebeu a sua chave.")
+
+    def _unlock_recipient_dialog(self, filename: str | None = None) -> bool:
+        """Pede a credencial da chave de destinatário protegida e destrava por esta sessão.
+
+        `filename` nomeia o ARQUIVO que provocou o pedido: um `.rdbt` de terceiro (com um slot
+        X25519 qualquer) também dispara este prompt, então deixar a origem explícita evita
+        habituação — a senha aqui é a SUA chave, não a do arquivo."""
+        alvo = f"\n\nPedido ao abrir: {_display_name(filename)}" if filename else ""
+        kinds = custody.recipient_unlockers()
+        if vault.KIND_PASSWORD in kinds or not kinds:
+            pw, ok = QInputDialog.getText(
+                self, "Chave de destinatário protegida",
+                f"Senha da SUA chave de destinatário ({self._safe_recipient_fingerprint()}):{alvo}",
+                QLineEdit.EchoMode.Password)
+            if not ok:
+                return False
+            if pw and custody.unlock_recipient(pw):
+                self._warn_recipient_pub_divergent()
+                return True
+            if pw:
+                QMessageBox.warning(self, APP_NAME, "Senha da chave de destinatário incorreta.")
+        if vault.KIND_KEYFILE in kinds:
+            path, _ = QFileDialog.getOpenFileName(self, "Arquivo-chave da chave de destinatário")
+            if path:
+                try:
+                    with open(path, "rb") as fh:
+                        kf = fh.read()
+                except OSError as exc:
+                    QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler:\n{exc}")
+                    return False
+                if custody.unlock_recipient(keyfile=kf):
+                    self._warn_recipient_pub_divergent()
+                    return True
+                QMessageBox.warning(self, APP_NAME, "Arquivo-chave incorreto.")
+        return False
+
     def seal_to_recipient(self) -> None:
         """Sela o conteúdo atual num cofre cifrado PARA a chave pública X25519 de um destinatário
         (e também para você, p/ manter acesso). Salva um .rdbt para enviar."""
@@ -2042,9 +2219,17 @@ class MainWindow(QMainWindow):
         # se ela JÁ existe (read-only: abrir um cofre de terceiro não deve materializar uma chave sua).
         opened = None
         if custody.recipient_exists():
+            # TUDO aqui e best-effort e vive dentro do try: pub ausente/ilegivel, cofre da chave
+            # com lock, chave removida (CustodyError do tripwire) — nada pode escapar deste slot Qt
+            # e derrubar o app; qualquer falha simplesmente cai no fluxo de senha-mestra abaixo.
             try:
+                # Protegida e travada? Só vale pedir a credencial se este cofre TEM um slot X25519 —
+                # senão incomodaríamos por nada num cofre comum (de senha).
+                if not custody.recipient_unlocked():
+                    if vault.KIND_X25519 in vault.slot_kinds(blob):
+                        self._unlock_recipient_dialog(os.path.basename(path))
                 opened = vault.open_vault(blob, x25519_private=custody.recipient_private_bytes())
-            except Exception:                      # best-effort: qualquer falha cai no fluxo de senha
+            except Exception:
                 opened = None
         # 2) Senao, pede a senha-mestra.
         if opened is None:

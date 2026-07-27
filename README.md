@@ -11,7 +11,7 @@
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.3.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-388%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-429%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 
 </div>
 
@@ -68,7 +68,7 @@ Quer esconder segredos que a Sentinela **não** detecta (uma senha memorável, p
 
 `Ctrl+Shift+L` sela a aba como um cofre **`.rdbt`** cifrado com **AES-256-GCM** (chave derivada por **Argon2id**, *memory-hard*; cofres scrypt legados seguem abrindo), *zero-knowledge* (a senha nunca é gravada). Formato **envelope** (estilo LUKS/age): **múltiplas senhas independentes** e/ou um **arquivo-chave** abrem o mesmo cofre. Auto-lock por inatividade, travar/destravar, e o conteúdo **nunca toca o disco em claro**.
 
-**Cifrar para um destinatário (X25519).** Cada instalação tem um par de chaves de destinatário. *Segurança ▸ Exportar minha chave de destinatário* copia a sua **chave pública**; *Segurança ▸ Selar para destinatário* cifra a aba **para a pública de outra pessoa** (estilo `age`) — e também para você, pra manter acesso. Abrir um `.rdbt` selado para você é **automático**: a chave local destrava sem senha. Como no `age`, isso **não autentica o remetente**, e na v1 a chave privada de destinatário fica local em claro (igual à identidade Ed25519 sem proteção).
+**Cifrar para um destinatário (X25519).** Cada instalação tem um par de chaves de destinatário. *Segurança ▸ Exportar minha chave de destinatário* copia a sua **chave pública**; *Segurança ▸ Selar para destinatário* cifra a aba **para a pública de outra pessoa** (estilo `age`) — e também para você, pra manter acesso. Abrir um `.rdbt` selado para você é **automático**: a chave local destrava sem senha. E se quiser fechar o cerco, *Segurança ▸ Proteger chave de destinatário com senha* embrulha a sua privada num Cofre (a pública fica em claro, então exportar e selar seguem sem senha; só **abrir** pede a credencial, 1× por sessão). Como no `age`, isso **não autentica o remetente**.
 
 ### 🔏 Custódia assinada + trilha de auditoria
 
@@ -313,7 +313,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 - **(b) Detecção é best-effort:** existem falsos-positivos (base64 de imagem, JS minificado, um SKU com formato idêntico a chave AWS) e falsos-negativos (formatos de provedor desconhecidos, segredos ofuscados).
 - **(c) Tela × clipboard:** a tarja **na tela** é um indicador visual (o texto real continua no documento); mas, com a redação ligada, o **clipboard é de fato mascarado**. Confidencialidade em repouso é trabalho do **Cofre**.
 - **(d) Custódia assinada:** a chave privada Ed25519 fica **local** — opcionalmente **protegida por senha/arquivo-chave** (*Segurança ▸ Proteger identidade*, embrulhada no mesmo Cofre AES-256-GCM); prova *"veio desta instalação e não mudou"*, desde que a chave não vaze.
-- **(e) Cifrar-para-destinatário (X25519):** como no `age`, **não autentica o remetente** (qualquer um cifra para a sua pública); a privada de destinatário fica **local em claro** na v1 — quem tem a máquina decifra o que selaram pra você (proteger com senha está na visão).
+- **(e) Cifrar-para-destinatário (X25519):** como no `age`, **não autentica o remetente** (qualquer um cifra para a sua pública). A privada de destinatário nasce **local em claro**, mas é **protegível por senha** (*Segurança ▸ Proteger chave de destinatário com senha*) — protegida, só **abrir** um cofre selado para você pede a credencial; exportar a sua chave e selar para outros seguem sem senha.
 - **(f) Tudo é local:** nenhum dado sai da máquina. Sem rede, sem telemetria.
 
 📖 **Leia o modelo de ameaça completo, os números do *red-team* e as garantias em [`docs/SECURITY.md`](docs/SECURITY.md).**
@@ -341,9 +341,9 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **388 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação e o cofre cifrado para destinatário X25519).
+**Pentests adversariais** sobrevividos e **429 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação e o cofre cifrado para destinatário X25519).
 
-> Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**; proteger a chave de destinatário **X25519** com senha (hoje fica local em claro, como a Ed25519).
+> Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
 ---
 

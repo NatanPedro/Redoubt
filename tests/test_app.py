@@ -19,8 +19,9 @@ def _argon_rapido(monkeypatch):
     monkeypatch.setattr(vault, "_DEFAULT_ARGON_T", 1)
     monkeypatch.setattr(vault, "_DEFAULT_ARGON_LANES", 1)
     yield
-    from notepy import redaction
+    from notepy import custody, redaction
     redaction.lock()
+    custody.lock_recipient()          # global de modulo: nao vaza chave destravada entre testes
 
 
 # --------------------------------------------------------------------------- #
@@ -776,3 +777,190 @@ def test_abrir_cofre_de_terceiro_nao_cria_chave(win, tmp_path, monkeypatch):
     monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False)))  # cancela a senha
     win._open_vault(out)
     assert not custody.recipient_exists()                      # read-only: nao criou chave de destinatario sua
+
+
+def test_protege_chave_destinatario_e_reabre_com_senha(win, tmp_path, monkeypatch):
+    """Proteger a chave X25519 pela GUI: o cofre selado p/ você passa a pedir a senha DELA e abre."""
+    import base64
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+
+    pub = base64.b64decode(custody.recipient_public_b64())      # chave ainda em claro
+    out = str(tmp_path / "pra-mim.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.new_vault("conteudo selado", recipient=pub))
+
+    win._inbox += [("senha-x", True), ("senha-x", True)]        # senha + confirmação
+    win.protect_recipient()
+    assert custody.recipient_is_protected()
+    assert not os.path.exists(custody._recipient_path())        # copia em claro sumiu
+    custody.lock_recipient()
+
+    win._inbox.append(("senha-x", True))                        # senha da chave de destinatário
+    win._open_vault(out)
+    assert "conteudo selado" in win.current_editor().text()
+    assert win.current_editor().is_vault
+
+
+def test_cofre_de_senha_nao_pede_a_chave_de_destinatario(win, tmp_path, monkeypatch):
+    """UX: com a chave X25519 protegida e travada, abrir um cofre COMUM (só senha) não deve
+    pedir a senha da chave de destinatário — o cofre nem tem slot X25519."""
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: None))
+
+    win._inbox += [("senha-x", True), ("senha-x", True)]
+    win.protect_recipient()
+    custody.lock_recipient()
+
+    out = str(tmp_path / "comum.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.new_vault("cofre comum", password="pw-mestra"))
+    win._inbox.append(("pw-mestra", True))      # ÚNICO prompt esperado: a senha-mestra
+    win._open_vault(out)
+    assert "cofre comum" in win.current_editor().text()
+
+
+def test_auto_lock_tranca_chave_de_destinatario(win, tmp_path, monkeypatch):
+    """A chave de destinatário destravada volta a trancar por inatividade (estava em RAM)."""
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    win._inbox += [("senha-x", True), ("senha-x", True)]
+    win.protect_recipient()
+    assert custody.recipient_unlocked()          # proteger deixa destravada nesta sessão
+    win._auto_lock_vaults()
+    assert not custody.recipient_unlocked()      # auto-lock esqueceu a privada
+
+
+def test_rt_f5_senha_de_backup_exige_minimo_e_confirmacao(win, tmp_path, monkeypatch):
+    """F5 (red-team): a rota ANTI-perda-total não pode nascer morta — senha curta é recusada e um
+    typo na confirmação não cria um destravador inútil."""
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: None))
+
+    win._inbox += [("senha-x", True), ("senha-x", True)]
+    win.protect_recipient()
+    assert custody.recipient_unlockers().count(0) == 1        # 1 senha até aqui
+
+    win._inbox += [("senha-x", True), ("ab", True)]           # backup curto -> recusado
+    win.protect_recipient()
+    assert custody.recipient_unlockers().count(0) == 1
+
+    win._inbox += [("senha-x", True), ("backup-bom", True), ("backup-typo", True)]
+    win.protect_recipient()                                   # confirmação divergente -> recusado
+    assert custody.recipient_unlockers().count(0) == 1
+    custody.lock_recipient()
+    assert custody.unlock_recipient("backup-bom") is False    # nada foi gravado
+
+    win._inbox += [("senha-x", True), ("backup-bom", True), ("backup-bom", True)]
+    win.protect_recipient()                                   # agora sim
+    assert custody.recipient_unlockers().count(0) == 2
+    custody.lock_recipient()
+    assert custody.unlock_recipient("backup-bom") is True
+
+
+def test_rt_f6_prompt_nomeia_o_arquivo_que_pediu(win, tmp_path, monkeypatch):
+    """F6: um .rdbt de TERCEIRO também dispara o pedido da SUA senha — o prompt tem de dizer
+    qual arquivo provocou, pra não virar hábito de digitar senha às cegas."""
+    from PyQt6.QtWidgets import QInputDialog, QMessageBox
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: None))
+    win._inbox += [("senha-x", True), ("senha-x", True)]
+    win.protect_recipient()
+    custody.lock_recipient()
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    outro = X25519PrivateKey.generate().public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    out = str(tmp_path / "recebido-de-terceiro.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.new_vault("nao e meu", recipient=outro))
+
+    vistos: list[str] = []
+    monkeypatch.setattr(QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: (vistos.append(" ".join(map(str, a))), ("", False))[1]))
+    win._open_vault(out)
+    assert any("recebido-de-terceiro.rdbt" in v for v in vistos)   # o prompt nomeia a origem
+
+
+def test_rt_f9_aba_x25519_destrava_apos_auto_lock(win, tmp_path, monkeypatch):
+    """F9: aba aberta por X25519 + auto-lock era beco sem saída (o diálogo só aceitava senha-mestra,
+    que este cofre não tem) — e a edição não salva morria. Agora destrava com a chave."""
+    import base64
+    from PyQt6.QtWidgets import QMessageBox
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: None))
+
+    pub = base64.b64decode(custody.recipient_public_b64())
+    out = str(tmp_path / "selado.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.new_vault("texto do cofre", recipient=pub))
+    win._open_vault(out)                                  # abre sem senha (chave em claro)
+    ed = win.current_editor()
+    assert "texto do cofre" in ed.text()
+
+    win._auto_lock_vaults()                               # trava a aba por inatividade
+    assert ed.is_locked()
+    win.unlock_current()                                  # destrava com a chave de destinatário
+    assert not ed.is_locked()
+    assert "texto do cofre" in ed.text()
+
+
+def test_rt_f9_unlock_current_nao_materializa_chave_de_terceiro(win, tmp_path, monkeypatch):
+    """F9 residual: destravar uma aba cujo blob tem QUALQUER slot X25519 (cofre de terceiro aberto
+    por senha) NÃO pode materializar uma chave de destinatário sua — a mesma guarda read-only do
+    _open_vault faltava no unlock_current."""
+    from PyQt6.QtWidgets import QMessageBox
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from notepy import custody, vault
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: None))
+    assert not custody.recipient_exists()
+
+    outro = X25519PrivateKey.generate().public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    ck = vault.generate_key()
+    slots = vault.add_recipient(ck, [], outro)                     # slot de terceiro
+    slots = vault.add_unlocker(ck, slots, password="pw-mestra")    # + senha (para eu abrir)
+    out = str(tmp_path / "misto.rdbt")
+    with open(out, "wb") as fh:
+        fh.write(vault.reseal("conteudo misto", ck, slots))
+
+    win._inbox.append(("pw-mestra", True))
+    win._open_vault(out)
+    ed = win.current_editor()
+    assert "conteudo misto" in ed.text()
+    win._auto_lock_vaults()
+    win._inbox.append(("pw-mestra", True))
+    win.unlock_current()
+    assert not ed.is_locked()
+    assert not custody.recipient_exists()          # NADA de chave X25519 materializada
+
+
+def test_rt_f6_nome_de_arquivo_hostil_e_sanitizado():
+    """F6 residual: o nome vem do ATACANTE — zero-width/bidi escondiam ou invertiam a origem."""
+    from notepy.mainwindow import _display_name
+    assert _display_name("​  　") == "(nome ilegivel)"   # tudo invisível
+    assert "‮" not in _display_name("nota‮gpj.rdbt")             # RLO removido
+    assert _display_name("cofre.rdbt") == "cofre.rdbt"                      # normal intacto
+    assert len(_display_name("x" * 200)) <= 60                              # elidido

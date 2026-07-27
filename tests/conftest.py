@@ -6,9 +6,18 @@ para nada bloquear a suite.
 """
 
 import os
+import tempfile
 
 # DEVE vir antes de qualquer import de Qt.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# Isola o diretorio de dados do app (identidade Ed25519, chave de destinatario X25519 e trilha de
+# auditoria, que `custody._data_dir()` deriva de %APPDATA%) num temporario. Sem isto, qualquer teste
+# que toque `custody` sem fazer o monkeypatch por conta propria grava no perfil REAL do usuario — foi
+# assim que a suite inflou o audit.log real e chegou a gerar uma `recipient.x25519` acidental.
+# Feito por ENV no import (nao como fixture autouse): acrescentar uma fixture muda a ordem/timing de
+# setup e isso destrava o crash conhecido do Qt offscreen em theme.apply_app.
+os.environ["APPDATA"] = tempfile.mkdtemp(prefix="redoubt-tests-appdata-")
 
 import pytest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
