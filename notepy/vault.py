@@ -17,7 +17,8 @@ chave efemera de 32 bytes que nao cabe no slot fixo de 80 bytes do RDBT3. Cada s
     [1:3]    len do payload (big-endian, 2 bytes)
     [3:...]  payload:
                senha/keyfile: params(3) + salt(16) + wrap_nonce(12) + CK_embrulhada(48)  = 79
-               X25519:        eph_pubkey(32)            + CK_embrulhada(48)               = 80  (nonce derivado por HKDF)
+               X25519:        eph_pubkey(32)            + CK_embrulhada(48)               = 80
+                              (o nonce do embrulho e derivado por HKDF, nao vai no slot)
 A AAD do embrulho do slot = `kind` + metadata (TUDO menos a CK embrulhada), SEM o prefixo de
 tamanho — entao bate byte-a-byte com a AAD do RDBT3, e um slot fixo-80 legado e re-enquadrado
 para RDBT4 sem reembrulhar (o prefixo de tamanho e autenticado pela AAD do CONTEUDO, anti-strip).
@@ -383,8 +384,8 @@ def open_vault(blob: bytes, *, password: str | None = None,
     chave privada do destinatario). Slots de tipos diferentes convivem no mesmo cofre."""
     if blob[:5] == MAGIC_V1:
         text = _decrypt_v1(blob, password or "")
-        ck = generate_key()                                     # migra em memoria p/ RDBT4
-        return Opened(text, ck, [make_password_slot(ck, password or "")])
+        ck_v1 = generate_key()                                  # migra em memoria p/ RDBT4
+        return Opened(text, ck_v1, [make_password_slot(ck_v1, password or "")])
     magic = blob[:5]
     if magic not in (MAGIC_V2, MAGIC_V3, MAGIC_V4):
         raise NotAVault("nao e um cofre .rdbt (MAGIC ausente)")
@@ -411,12 +412,14 @@ def open_vault(blob: bytes, *, password: str | None = None,
         raise VaultError("custo de KDF agregado excede o orcamento (possivel cofre malicioso)")
 
     # Derivacao EM SERIE (pico de memoria = uma derivacao). Slot que nao abre e PULADO (nao fatal).
-    ck = None
+    ck: bytes | None = None
     for slot in slots:
         if not _matches(slot):
             continue
         try:
             if _base_kind(slot[0]) == KIND_X25519:
+                if x25519_private is None:                     # garantido por _matches; guarda
+                    continue                                    # explicita (nao usamos assert)
                 ck = _open_x25519(slot, x25519_private)
             else:
                 meta = _slot_meta(slot)

@@ -201,7 +201,7 @@ def verify_manifest(manifest: dict, files_dir: str,
             continue
         name = a.get("name")
         expected = a.get("sha256")
-        if not is_safe_name(name):
+        if not isinstance(name, str) or not is_safe_name(name):
             result["artifacts"].append({"name": name, "expected": expected, "actual": None,
                                         "present": False, "ok": False, "unsafe": True})
             all_hashes_ok = False
@@ -345,5 +345,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    import sys
     raise SystemExit(main())

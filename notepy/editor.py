@@ -14,7 +14,6 @@ from PyQt6.Qsci import QsciScintilla
 from PyQt6.QtCore import QEvent, QTimer, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics
-from PyQt6.QtWidgets import QApplication
 
 from . import config
 from . import redaction

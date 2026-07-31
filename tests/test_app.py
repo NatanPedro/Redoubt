@@ -460,11 +460,11 @@ def test_busca_em_arquivos_dialogo_e_abre_no_resultado(win, tmp_path):
 
 def test_paleta_commands_inclui_acoes_e_extras(win):
     labels = [lbl for lbl, _sc, _fn in win.palette_commands()]
-    assert any("Salvar" in l for l in labels)
-    assert any("cofre" in l.lower() for l in labels)
-    assert any("Tema" in l for l in labels)                     # extra: tema claro/escuro
-    assert any("oculto" in l.lower() for l in labels)           # extra: revelar oculto
-    assert not any("Paleta de comandos" in l for l in labels)   # nao se auto-inclui
+    assert any("Salvar" in s for s in labels)
+    assert any("cofre" in s.lower() for s in labels)
+    assert any("Tema" in s for s in labels)                     # extra: tema claro/escuro
+    assert any("oculto" in s.lower() for s in labels)           # extra: revelar oculto
+    assert not any("Paleta de comandos" in s for s in labels)   # nao se auto-inclui
 
 
 def test_paleta_filtra_e_executa(win):

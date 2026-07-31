@@ -40,8 +40,8 @@ _RESTORE_SCAN_LIMIT = 2_000_000
 # Teto de arquivos reabertos por sessao (defesa: "session/paths" vive no registro e
 # pode ser adulterado — sem teto, N caminhos poderiam travar/inundar a inicializacao).
 _MAX_RESTORE = 50
-from .findbar import FindBar
-from .preferences import PreferencesDialog
+from .findbar import FindBar                      # noqa: E402  (apos as constantes acima)
+from .preferences import PreferencesDialog        # noqa: E402
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
@@ -493,7 +493,8 @@ class MainWindow(QMainWindow):
         self.act_save_as = make("Salvar &como…", SP.SP_DialogSaveButton, SK.SaveAs, self.save_file_as)
         # Ctrl+W / Ctrl+Q explicitos: no Windows o StandardKey.Close vira Ctrl+F4
         # e o StandardKey.Quit nao tem tecla — fixamos o que o usuario espera.
-        self.act_close_tab = make("&Fechar aba", SP.SP_DialogCloseButton, QKeySequence("Ctrl+W"), self.close_current_tab)
+        self.act_close_tab = make("&Fechar aba", SP.SP_DialogCloseButton,
+                                  QKeySequence("Ctrl+W"), self.close_current_tab)
         self.act_quit = make("Sai&r", SP.SP_DialogCloseButton, QKeySequence("Ctrl+Q"), self.close)
 
         # Edicao
@@ -679,7 +680,7 @@ class MainWindow(QMainWindow):
             return act
 
         add("Auto (pela extensão)", None).setChecked(True)   # None = auto
-        for i, group in enumerate(LANGUAGE_GROUPS):
+        for group in LANGUAGE_GROUPS:
             m_lang.addSeparator()
             for label, _cls in group:
                 add(label, label)
@@ -736,7 +737,7 @@ class MainWindow(QMainWindow):
             label, fn = spec
             act = QAction(label, self)
             act.triggered.connect(
-                lambda _checked=False, f=fn, l=label: self._apply_transform(f, l))
+                lambda _checked=False, f=fn, lbl=label: self._apply_transform(f, lbl))
             m.addAction(act)
         m.addSeparator()
         act_jwt = QAction("JWT — decodificar (header + payload)", self)
@@ -839,7 +840,7 @@ class MainWindow(QMainWindow):
             label, fn = spec
             act = QAction(label, self)
             act.triggered.connect(
-                lambda _c=False, f=fn, l=label: self._apply_transform(f, l))
+                lambda _c=False, f=fn, lbl=label: self._apply_transform(f, lbl))
             m.addAction(act)
 
     # ================================================================== #
@@ -1157,7 +1158,9 @@ class MainWindow(QMainWindow):
         spans = editor._secret_byte_spans
         lines = [f"{len(matches)} segredo(s) detectado(s):\n"]
         shown = 0
-        for m, (bstart, _blen, _k) in zip(matches, spans):
+        # strict=False de proposito: matches e spans sao paralelos por construcao, mas este e um
+        # slot de UI — se algum dia divergirem, truncar e melhor que derrubar o dialogo de custodia.
+        for m, (bstart, _blen, _k) in zip(matches, spans, strict=False):
             if shown >= 50:
                 lines.append(f"  … e mais {len(matches) - 50}.")
                 break
@@ -1418,7 +1421,8 @@ class MainWindow(QMainWindow):
             self, f"{APP_NAME} — Cadeia de custodia",
             f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
             f"Identidade (fingerprint da chave publica): {self._safe_fingerprint()}\n"
-            f"Trilha de auditoria: {n} evento(s) (seq {st['head_seq']}, {st['signed']} assinado(s)) — {trilha}\n{orfao}\n"
+            f"Trilha de auditoria: {n} evento(s) (seq {st['head_seq']}, "
+            f"{st['signed']} assinado(s)) — {trilha}\n{orfao}\n"
             "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
             "chave publica verifica que o arquivo nao mudou.")
 

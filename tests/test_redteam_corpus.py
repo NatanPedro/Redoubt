@@ -8,7 +8,6 @@ scanner voltasse aos ~46%/55% da v1, isto falha alto).
 import json
 import os
 
-import pytest
 
 from notepy import secrets as s
 

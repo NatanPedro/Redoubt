@@ -245,7 +245,12 @@ def _load_legacy() -> Ed25519PrivateKey | None:
     if not os.path.exists(p):
         return None
     with open(p, "rb") as fh:
-        return serialization.load_pem_private_key(fh.read(), password=None)
+        key = serialization.load_pem_private_key(fh.read(), password=None)
+    # `load_pem_private_key` devolve qualquer tipo de chave. Se o PEM nao for Ed25519 (arquivo
+    # trocado/corrompido), erra AQUI com mensagem clara em vez de falhar depois, no `sign`.
+    if not isinstance(key, Ed25519PrivateKey):
+        raise CustodyError("identity.ed25519 nao contem uma chave Ed25519")
+    return key
 
 
 def _open_protected(passphrase: str | None = None, *,
@@ -542,8 +547,9 @@ def log_event(event: str, detail: str = "", content_hash: str = "",
         "event": event, "detail": detail, "content_hash": content_hash, "prev": prev,
         "seq": len(entries) + 1,
     }
-    entry["hash"] = _entry_hash(entry)
-    entry["sig"] = _try_sign(entry["hash"])
+    h = _entry_hash(entry)
+    entry["hash"] = h
+    entry["sig"] = _try_sign(h)
     with open(_audit_path(), "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
@@ -620,9 +626,11 @@ def check_anchor(anchor: dict, expected_fingerprint: str | None = None) -> dict:
 
     Retorno: sig_ok, fingerprint (DERIVADO da chave), fingerprint_declared_ok, identity_match,
     present, head_match, chain_ok, ok, detail. `ok` exige TODOS. Nunca levanta por ancora malformada."""
-    result = {"sig_ok": False, "fingerprint": None, "fingerprint_declared_ok": False,
-              "identity_match": False, "present": False, "head_match": False,
-              "chain_ok": False, "ok": False, "detail": None}
+    # dict[str, object]: o retorno mistura bool, str e None de proposito (e um relatorio para a UI).
+    result: dict[str, object] = {"sig_ok": False, "fingerprint": None,
+                                 "fingerprint_declared_ok": False, "identity_match": False,
+                                 "present": False, "head_match": False, "chain_ok": False,
+                                 "ok": False, "detail": None}
     try:
         seq = anchor["seq"]
         head_hash = anchor["head_hash"]

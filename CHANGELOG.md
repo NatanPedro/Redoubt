@@ -16,6 +16,30 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Lint e tipos no `pre-push` (`ruff` + `mypy`)** — o hook agora roda `ruff check .` → `mypy` → a
+  suíte, e bloqueia o push se qualquer um reprovar. Configuração em `pyproject.toml`, com escolhas
+  deliberadas: `line-length = 120` (a régua **real** do código, em vez de reescrever 124 linhas para
+  o padrão de 88), regras `E/W/F/B/C4/RUF`, `E702` ignorado (o `a(); b()` compacto é estilo do
+  projeto) e **mypy só nos núcleos puros** — a camada Qt geraria ~100 `union-attr` de stub sem
+  apontar bug real. Se as ferramentas não estiverem instaladas o hook **avisa e segue** (o
+  guarda-corpo obrigatório é a suíte). `requirements-dev.txt` e
+  [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) atualizados.
+
+### Fixed
+- **A busca auto-preenchia seleções com espaço** — o lint (`RUF001`) achou um **`U+2029` (PARAGRAPH
+  SEPARATOR) invisível** no lugar de um espaço em `findbar.py`: a guarda `" " not in sel` nunca era
+  falsa, então `Ctrl+F` com "alpha beta" selecionado preenchia a busca com a frase inteira, contra a
+  intenção de só aceitar **uma palavra**. Corrigido e travado em teste (**+1 teste**).
+- **23 problemas de tipo nos núcleos puros**, achados pelo mypy e corrigidos de verdade (não
+  silenciados): `identity.ed25519` que **não** contenha uma chave Ed25519 agora erra alto na leitura
+  em vez de falhar confuso ao assinar; nome de artefato não-string num manifesto forjado é rejeitado
+  por tipo antes do `path`; `zip()` do dígito verificador do CNPJ passa a ser `strict=True` (os
+  comprimentos batem por construção — se alguém editar os pesos errado queremos o erro, não um DV
+  silencioso); `_require_unlocked()` da Lista de Redação passa a **devolver** os valores já
+  estreitados, tornando o contrato explícito; e `reconfigure` de stdout/stderr virou `getattr`
+  explícito.
+
 Visão (sem data):
 - Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**;
   proteger a chave de destinatário X25519 com senha (hoje fica local em claro, como a Ed25519).

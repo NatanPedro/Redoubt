@@ -1,3 +1,48 @@
+# --------------------------------------------------------------------------- #
+# ruff — lint (roda no hook pre-push, junto da suite)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+# 120 reflete o estilo REAL do codigo (o maior arquivo bate em 122). Preferimos adotar a regua
+# existente a impor uma reescrita de 124 linhas so para agradar o padrao de 88.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["dist", "build", "installer"]
+
+[tool.ruff.lint]
+# E/W (pycodestyle) + F (pyflakes: bugs de verdade) + B (bugbear) + C4 (comprehensions) + RUF.
+# Deliberadamente FORA por enquanto: I (isort) e UP (pyupgrade) — sao 27 correcoes automaticas que
+# mexeriam em arquivos com PR aberto; entram num passo proprio depois do merge.
+select = ["E", "W", "F", "B", "C4", "RUF"]
+ignore = [
+    # `a(); b()` na mesma linha e estilo compacto DELIBERADO aqui (sobretudo nos testes, onde
+    # duas preparacoes triviais na mesma linha leem melhor que duas linhas).
+    "E702",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# QT_QPA_PLATFORM TEM de ser setado antes de qualquer import de Qt — o import fora do topo e o
+# ponto do arquivo, nao um descuido.
+"tests/conftest.py" = ["E402"]
+
+# --------------------------------------------------------------------------- #
+# mypy — checagem de tipos nos NUCLEOS PUROS (sem Qt)
+# --------------------------------------------------------------------------- #
+# Escopo deliberado: os modulos sem Qt, que sao justamente os que carregam a cripto e a logica
+# verificavel. A camada de UI fica de fora por ora — os stubs do PyQt6 devolvem `QStatusBar | None`
+# etc. em toda API, o que gera ~100 falsos positivos de `union-attr` sem apontar bug real.
+# Ampliar para a UI e um passo separado (exigiria asserts/narrowing em dezenas de call sites).
+[tool.mypy]
+python_version = "3.11"
+files = [
+    "notepy/secrets.py", "notepy/redaction.py", "notepy/vault.py", "notepy/custody.py",
+    "notepy/release.py", "notepy/seal.py", "notepy/scan_cli.py", "notepy/searchfiles.py",
+    "notepy/palette.py", "notepy/difftool.py", "notepy/transforms.py", "notepy/textops.py",
+    "notepy/passgen.py",
+]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

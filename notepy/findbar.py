@@ -83,7 +83,7 @@ class FindBar(QWidget):
         ed = self._get_editor()
         if ed is not None and ed.hasSelectedText():
             sel = ed.selectedText()
-            if "\n" not in sel and " " not in sel and sel:
+            if "\n" not in sel and " " not in sel and sel:
                 self.find_edit.setText(sel)
         show_rep = replace
         for w in (self.replace_edit, self.btn_rep, self.btn_repall):

@@ -2,7 +2,6 @@
 # Tudo aqui e FALSO (so para teste). Atalhos: Ctrl+Shift+R tarja os segredos,
 # F8 pula entre eles, Ctrl+Shift+E abre o relatorio.
 
-import hashlib
 
 # ===== BENIGNO: nada abaixo deve ser marcado =====
 def saudacao(nome):

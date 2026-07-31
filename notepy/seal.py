@@ -40,8 +40,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 # Primitivas puras reusadas do release (mesma formula de fingerprint/hash/serializacao):
-from notepy.release import (canonical_payload, derive_fingerprint, is_safe_name,
-                            sha256_file)
+from notepy.release import (canonical_payload, derive_fingerprint, sha256_file)
 
 FORMAT = "RDBT-SEAL1"
 SEAL_SUFFIX = ".rdbt-seal"
@@ -334,5 +333,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    import sys
     raise SystemExit(main())

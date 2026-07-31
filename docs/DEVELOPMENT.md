@@ -152,8 +152,36 @@ no shutdown do interpretador) — *flaky*, não é falha de teste. Por isso `too
 não sair; soma tudo e sai `!= 0` se algo falhar. Use-o quando o `pytest` combinado der esse crash.
 
 `install-hooks.bat` instala um hook **`pre-push`** (em `.git/hooks/`, coexistindo com o
-`pre-commit` anti-segredo) que roda esse runner e **bloqueia o push se a suíte quebrar**. É
-**local** (sem CI de servidor); `git push --no-verify` pula numa emergência.
+`pre-commit` anti-segredo) que roda, **nesta ordem**, `ruff check .` → `mypy` → o runner da suíte,
+e **bloqueia o push** se qualquer um reprovar. É **local** (sem CI de servidor);
+`git push --no-verify` pula numa emergência.
+
+### Lint e tipos (`ruff` + `mypy`)
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .            # lint  (boa parte sai com --fix)
+ruff check . --fix
+mypy                    # tipos (escopo vem do pyproject.toml)
+```
+
+Ambos configurados em [`pyproject.toml`](../pyproject.toml), com escolhas deliberadas:
+
+- **`line-length = 120`** — reflete o estilo real do código (o maior arquivo bate em 122). Preferimos
+  adotar a régua existente a impor uma reescrita de 124 linhas para agradar o padrão de 88.
+- **Regras:** `E`, `W`, `F` (pyflakes: bugs de verdade), `B` (bugbear), `C4`, `RUF`. Fora por ora:
+  `I` (isort) e `UP` (pyupgrade) — são correções automáticas em massa, entram num passo próprio.
+- **`E702` ignorado:** `a(); b()` na mesma linha é estilo compacto deliberado aqui (sobretudo nos
+  testes, onde duas preparações triviais na mesma linha leem melhor que duas linhas).
+- **mypy só nos núcleos puros** (sem Qt) — que são justamente os que carregam a cripto e a lógica
+  verificável. A camada de UI fica de fora: os stubs do PyQt6 devolvem `QStatusBar | None` em toda
+  API e geram ~100 `union-attr` sem apontar bug real. Ampliar é um passo separado.
+- Se `ruff`/`mypy` não estiverem instalados, o hook **avisa e segue** — o guarda-corpo obrigatório
+  é a suíte, e travar o push de quem não instalou as ferramentas seria pior que o aviso.
+
+> O lint já se pagou na estreia: o `RUF001` achou um **`U+2029` (separador de parágrafo) invisível**
+> onde devia haver um espaço, em `findbar.py` — a guarda "só auto-preenche seleção de uma palavra"
+> nunca funcionava. Corrigido e travado em teste.
 
 A suíte vive em `tests/` e cobre **núcleo a núcleo**:
 
