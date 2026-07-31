@@ -17,6 +17,20 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 ### Added
+- **Backup e rotação da identidade** (`tools/backup_identity.py` + núcleo `notepy/idbackup.py`) —
+  a identidade Ed25519 é um arquivo de ~119 bytes que assina **todo** release, selo e âncora, e os
+  verificadores standalone têm a chave pública do autor **embutida**: perdê-la significa nunca mais
+  poder assinar com aquele *fingerprint*, e um release novo com chave nova é indistinguível de
+  falsificação. Agora há um caminho: `make` gera um pacote **cifrado** (`.rdbtbak` — um Cofre
+  AES-256-GCM + Argon2id) com as privadas **Ed25519 e X25519**, e só reporta sucesso depois de
+  **reabrir o pacote e conferir o *fingerprint*** (backup não verificado é só esperança); `check`
+  inspeciona sem restaurar; `restore` devolve as chaves — **recusando** sobrescrever uma identidade
+  existente sem `--force` (mostrando os dois *fingerprints*) e removendo um `identity.rdbt` anterior,
+  que senão faria o app seguir usando a chave **antiga** e a restauração ser silenciosamente inútil.
+  Senha lida do **console** (nunca de `stdin`), material de chave **jamais impresso**, e nada é
+  criado numa instalação sem identidade (read-only). Documentado em
+  [`docs/CUSTODY.md`](docs/CUSTODY.md), incluindo o procedimento de **rotação assinada** — que só é
+  possível **enquanto a chave antiga existe**. **+16 testes**.
 - **Chave de destinatário (X25519) protegível por senha** — fecha a limitação honesta da v1.3.0
   ("a privada de destinatário fica local em claro"). *Segurança ▸ Proteger chave de destinatário
   com senha* embrulha a privada X25519 num Cofre (`recipient.rdbt`, AES-256-GCM + Argon2id) e

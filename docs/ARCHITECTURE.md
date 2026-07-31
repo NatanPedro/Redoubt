@@ -98,6 +98,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria + chave de destinatário X25519
     ├── release.py           Manifesto de release assinado (RDBT-REL1)
     ├── seal.py              Selo de proveniência de arquivo (RDBT-SEAL1)
+    ├── idbackup.py          Backup/restauração da identidade (RDBT-IDBAK1, cifrado + verificado)
     ├── scan_cli.py          CLI da Sentinela + hook git pre-commit
     ├── searchfiles.py       Busca em arquivos / grep recursivo na pasta
     ├── palette.py           Busca fuzzy da paleta de comandos
