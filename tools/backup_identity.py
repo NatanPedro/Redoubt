@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from notepy import custody, idbackup     # noqa: E402  (precisa do sys.path acima)
+from notepy import custody, idbackup     # precisa do sys.path.insert acima
 
 
 def _pedir_senha(confirmar: bool, rotulo: str) -> str:
@@ -45,7 +45,7 @@ def _ler_keyfile(caminho: str | None) -> bytes | None:
         with open(caminho, "rb") as fh:
             return fh.read()
     except OSError as exc:
-        raise SystemExit(f"[ERRO] nao consegui ler o arquivo-chave: {exc}")
+        raise SystemExit(f"[ERRO] nao consegui ler o arquivo-chave: {exc}") from exc
 
 
 def cmd_make(args) -> int:
