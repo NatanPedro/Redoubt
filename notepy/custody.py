@@ -402,7 +402,7 @@ def protect_recipient(passphrase: str | None = None, *, keyfile: bytes | None = 
     try:
         if _x_pub_raw_of(_open_protected_recipient(passphrase, keyfile=keyfile)) != _x_pub_raw_of(key):
             raise vault.VaultError("o cofre da chave de destinatario nao devolveu a mesma chave")
-    except BaseException:
+    except BaseException as exc:
         try:
             _force_remove(_recipient_vault_path())  # unico rollback seguro (pre-destruicao)
         except OSError:
@@ -411,7 +411,7 @@ def protect_recipient(passphrase: str | None = None, *, keyfile: bytes | None = 
             raise vault.VaultError(
                 "o cofre da chave de destinatario foi gravado mas nao pudo ser verificado NEM "
                 "removido — a sua chave em claro continua intacta; feche programas que possam estar "
-                "usando o arquivo (antivirus/sync/backup) e tente de novo")
+                "usando o arquivo (antivirus/sync/backup) e tente de novo") from exc
         raise
 
     # A publica so DEPOIS do cofre verificado, e best-effort: gravada antes, uma falha no cofre
@@ -807,7 +807,7 @@ def protect_identity(passphrase: str | None = None, *, keyfile: bytes | None = N
     try:
         if _pub_b64_of(_open_protected(passphrase, keyfile=keyfile)) != _pub_b64_of(key):
             raise vault.VaultError("o cofre da identidade nao devolveu a mesma chave")
-    except BaseException:
+    except BaseException as exc:
         try:
             _force_remove(_vault_path())       # unico rollback seguro (pre-destruicao)
         except OSError:
@@ -816,7 +816,7 @@ def protect_identity(passphrase: str | None = None, *, keyfile: bytes | None = N
             raise vault.VaultError(
                 "o cofre da identidade foi gravado mas nao pudo ser verificado NEM removido — a sua "
                 "chave em claro continua intacta; feche programas que possam estar usando o arquivo "
-                "(antivirus/sync/backup) e tente de novo")
+                "(antivirus/sync/backup) e tente de novo") from exc
         raise
 
     try:

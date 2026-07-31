@@ -733,7 +733,8 @@ def test_rt_f3_protect_tambem_respeita_o_tripwire(tmp_identity):
         custody.protect_recipient("senha-x")               # nao inventa outra chave
     assert not custody.recipient_is_protected()
     assert not os.path.exists(custody._recipient_path())
-    import base64 as _b64, hashlib as _hl
+    import base64 as _b64
+    import hashlib as _hl
     with open(custody._recipient_pub_path(), encoding="ascii") as fh:
         assert _hl.sha256(_b64.b64decode(fh.read().strip())).hexdigest()[:16] == fp   # pub intacta
 

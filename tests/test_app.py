@@ -960,7 +960,9 @@ def test_rt_f9_unlock_current_nao_materializa_chave_de_terceiro(win, tmp_path, m
 def test_rt_f6_nome_de_arquivo_hostil_e_sanitizado():
     """F6 residual: o nome vem do ATACANTE — zero-width/bidi escondiam ou invertiam a origem."""
     from notepy.mainwindow import _display_name
-    assert _display_name("​  　") == "(nome ilegivel)"   # tudo invisível
+    # Os caracteres invisiveis abaixo SAO o objeto do teste (zero-width, NBSP, figure e
+    # ideographic space); o noqa e legitimo — o RUF001 existe p/ acusa-los em codigo normal.
+    assert _display_name("​  　") == "(nome ilegivel)"   # tudo invisível  # noqa: RUF001
     assert "‮" not in _display_name("nota‮gpj.rdbt")             # RLO removido
     assert _display_name("cofre.rdbt") == "cofre.rdbt"                      # normal intacto
     assert len(_display_name("x" * 200)) <= 60                              # elidido
