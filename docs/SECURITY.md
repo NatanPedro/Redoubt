@@ -677,4 +677,4 @@ python verify_release.py .
 
 ---
 
-*Redoubt v1.0.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*
+*Redoubt v1.3.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*
