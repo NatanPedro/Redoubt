@@ -133,6 +133,10 @@ privadas Ed25519 **e** X25519 dentro. A senha é pedida sem eco, com confirmaç�
 **reaberto e verificado** antes de a ferramenta dizer que existe — um backup não verificado é só
 uma esperança. O material de chave nunca é impresso na tela.
 
+Se a chave de destinatário estiver **protegida por senha** (*Segurança ▸ Proteger chave de
+destinatário com senha*), o `make` pede também a senha **dela** — sem isso ele **recusa** gerar o
+pacote em vez de sair sem a X25519.
+
 Opcional (2º fator, recomendado): `--keyfile CAMINHO` exige **senha + arquivo-chave** para abrir.
 
 Depois:
@@ -151,18 +155,22 @@ python tools/backup_identity.py restore redoubt-identity-....rdbtbak --dir ./tes
 ```
 
 `check` mostra o que há no pacote (formato, data, *fingerprints*) e se bate com a identidade local.
-`restore` grava `identity.ed25519` + `identity.pub` (+ `recipient.x25519`) no diretório de dados
-(ou no `--dir` indicado). Sem argumento, o destino é o `%APPDATA%\Redoubt\Redoubt` desta máquina.
+`restore` grava `identity.ed25519` + `identity.pub` (+ `recipient.x25519` + `recipient.pub`) no
+diretório de dados (ou no `--dir` indicado). Sem argumento, o destino é o `%APPDATA%\Redoubt\Redoubt`
+desta máquina.
 
 Duas proteções deliberadas no `restore`:
 
 - **Recusa sobrescrever** uma identidade existente sem `--force`, mostrando **os dois** *fingerprints*
-  — trocar de identidade sem perceber é justamente o acidente que o backup deveria evitar.
-- Com `--force`, remove um `identity.rdbt` anterior. Sem isso o app continuaria usando a chave
-  **antiga** (a versão protegida vence), e a restauração seria silenciosamente inútil.
+  — trocar de identidade sem perceber é justamente o acidente que o backup deveria evitar. Vale
+  também para uma chave de destinatário (X25519) já existente, quando o pacote traz uma.
+- Com `--force`, remove um `identity.rdbt` e um `recipient.rdbt` anteriores. Sem isso o app
+  continuaria usando as chaves **antigas** (a versão protegida vence), e a restauração seria
+  silenciosamente inútil. A `recipient.pub` é regravada a partir da chave restaurada.
 
-A identidade volta na forma **legada** (chave em claro). Proteja-a de novo em *Segurança ▸ Proteger
-identidade com senha* — é um passo consciente, não automático.
+As chaves voltam na forma **legada** (em claro). Proteja-as de novo em *Segurança ▸ Proteger
+identidade com senha* e *Segurança ▸ Proteger chave de destinatário com senha* — é um passo
+consciente, não automático.
 
 > Interativo por desenho: a senha é lida do **console**, não de `stdin`. Não há como automatizar o
 > backup num script sem expor a credencial — e não deveria haver.

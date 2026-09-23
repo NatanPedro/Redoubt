@@ -16,9 +16,9 @@ def tmp_identity(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _reset_cache():
-    custody.lock_identity()
+    custody.lock_identity(); custody.lock_recipient()
     yield
-    custody.lock_identity()
+    custody.lock_identity(); custody.lock_recipient()
 
 
 @pytest.fixture(autouse=True)
@@ -218,3 +218,89 @@ def test_chave_restaurada_tem_permissao_restrita(tmp_path, monkeypatch):
     pem = b / "identity.ed25519"
     assert pem.is_file() and pem.stat().st_size > 0
     assert (b / "identity.pub").is_file()
+
+
+# --------------------------------------------------------------------------- #
+# Chave de destinatario (X25519) PROTEGIDA
+# --------------------------------------------------------------------------- #
+def _x_protegida(senha="senha-x-forte"):
+    """Identidade em claro + X25519 protegida e TRAVADA (o estado que o app recomenda)."""
+    custody.sign("x")
+    fp_x = custody.recipient_fingerprint()
+    custody.protect_recipient(senha)
+    custody.lock_recipient()
+    assert custody.recipient_is_protected() and not custody.recipient_unlocked()
+    return fp_x
+
+
+def test_coleta_com_x25519_protegida_sem_credencial_erra_em_vez_de_omitir(tmp_identity):
+    """Regressao: antes o backup saia SEM a X25519, em silencio, so porque ela estava protegida."""
+    _x_protegida()
+    with pytest.raises(idbackup.BackupError) as e:
+        idbackup.collect_local()
+    assert "destinatario" in str(e.value)
+
+
+def test_coleta_com_x25519_protegida_e_credencial_inclui_a_chave(tmp_identity):
+    fp_x = _x_protegida()
+    payload = idbackup.collect_local(recipient_passphrase="senha-x-forte")
+    assert payload["x25519_fingerprint"] == fp_x
+    assert len(base64.b64decode(payload["x25519_private"])) == 32
+    assert custody.recipient_is_protected()            # coletar nao desprotege nada no disco
+
+
+def test_coleta_com_credencial_x25519_errada_erra(tmp_identity):
+    _x_protegida()
+    with pytest.raises(idbackup.BackupError):
+        idbackup.collect_local(recipient_passphrase="errada")
+
+
+def test_restore_sobre_x25519_protegida_antiga_faz_a_restaurada_valer(tmp_path, monkeypatch):
+    """Regressao: o recipient.rdbt ANTIGO vencia — o app seguia com a chave velha, a restaurada
+    virava copia em claro orfa e a recipient.pub anunciava o fingerprint errado."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(a))
+    custody.sign("x")
+    fp_x = custody.recipient_fingerprint()
+    payload = idbackup.collect_local()
+
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(b))
+    custody.lock_identity(); custody.lock_recipient()
+    fp_outro = _x_protegida("outra-senha-b")          # B tem OUTRA X25519, protegida
+    assert fp_outro != fp_x
+    escritos = idbackup.restore(payload, str(b), force=True)
+    custody.lock_identity(); custody.lock_recipient()
+    assert any(n.startswith("recipient.rdbt") for n in escritos)
+    assert not custody.recipient_is_protected()        # cofre antigo saiu do caminho
+    assert not custody.recipient_has_orphan_raw()
+    assert custody.recipient_fingerprint() == fp_x     # a restaurada e a que vale
+    assert base64.b64decode(payload["x25519_private"]) == custody.recipient_private_bytes()
+
+
+def test_restore_grava_recipient_pub_da_chave_restaurada(tmp_path, monkeypatch):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(a))
+    custody.sign("x")
+    pub_x = custody.recipient_public_b64()
+    payload = idbackup.collect_local()
+    idbackup.restore(payload, str(b))
+    assert (b / "recipient.pub").read_text(encoding="ascii").strip() == pub_x
+
+
+def test_restore_recusa_sobrescrever_so_a_chave_de_destinatario(tmp_path, monkeypatch):
+    """Diretorio sem Ed25519 mas com OUTRA X25519: substitui-la em silencio perderia os cofres dela."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(a))
+    custody.sign("x")
+    custody.recipient_fingerprint()
+    payload = idbackup.collect_local()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(b))
+    custody.lock_recipient()
+    fp_b = custody.recipient_fingerprint()             # so a X25519 existe em B
+    with pytest.raises(idbackup.BackupError):
+        idbackup.restore(payload, str(b))
+    custody.lock_recipient()
+    assert custody.recipient_fingerprint() == fp_b     # nada foi trocado

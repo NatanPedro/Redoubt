@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from . import custody, vault
 
@@ -65,12 +66,18 @@ def local_identity_exists() -> bool:
 
 
 def collect_local(passphrase: str | None = None, *, keyfile: bytes | None = None,
+                  recipient_passphrase: str | None = None,
+                  recipient_keyfile: bytes | None = None,
                   now: str | None = None) -> dict:
     """Monta o payload de backup a partir da instalacao local.
 
     Inclui a privada Ed25519 (obrigatoria) e a privada X25519 de destinatario (se existir —
     perde-la significa perder o acesso a todo cofre que selaram para voce). Levanta
     BackupError se nao houver identidade, ou se a credencial estiver errada.
+
+    X25519 PROTEGIDA e travada exige `recipient_passphrase`/`recipient_keyfile`: sem eles o
+    backup ERRA em vez de sair sem a chave — quem seguiu a recomendacao de proteger a chave
+    ficaria, em silencio, sem backup justamente dela.
     """
     if not local_identity_exists():
         raise BackupError(
@@ -88,13 +95,22 @@ def collect_local(passphrase: str | None = None, *, keyfile: bytes | None = None
 
     x_raw = x_fp = None
     if custody.recipient_exists():
+        if not custody.recipient_unlocked():
+            if not recipient_passphrase and not recipient_keyfile:
+                raise BackupError(
+                    "a chave de destinatario (X25519) esta protegida: forneca a senha/arquivo-chave "
+                    "dela — sem isso o backup sairia SEM a chave que abre os cofres selados para voce")
+            if not custody.unlock_recipient(recipient_passphrase, keyfile=recipient_keyfile):
+                raise BackupError("credencial da chave de destinatario (X25519) incorreta")
         try:
             x_raw = custody.recipient_private_bytes()
-            x_fp = custody.recipient_fingerprint()
-        except Exception:
-            # Chave de destinatario protegida/ilegivel: seguimos com a Ed25519 (o chamador
-            # avisa). Nunca deixar a falha de uma chave secundaria abortar o backup da principal.
-            x_raw = x_fp = None
+        except custody.CustodyError:
+            # Chave de destinatario ILEGIVEL/corrompida (nao protegida — essa ja foi destravada
+            # acima): seguimos com a Ed25519 e o chamador avisa. Nunca deixar a falha de uma chave
+            # secundaria abortar o backup da principal.
+            x_raw = None
+        if x_raw:
+            x_fp = _fp(X25519PrivateKey.from_private_bytes(x_raw).public_key().public_bytes(*_RAW_PUB))
 
     return {
         "format": FORMAT,
@@ -206,9 +222,13 @@ def _fingerprint_in_dir(data_dir: str) -> str | None:
     return None
 
 
-def _identity_present(data_dir: str) -> bool:
-    return any(os.path.isfile(os.path.join(data_dir, n))
-               for n in ("identity.ed25519", "identity.rdbt", "identity.pub"))
+def _identity_present(data_dir: str, *, with_recipient: bool = False) -> bool:
+    """Ha identidade em `data_dir`? Com `with_recipient`, uma chave de destinatario (em claro ou
+    protegida) tambem conta — restaurar a X25519 por cima dela a substitui, igual a Ed25519."""
+    nomes = ["identity.ed25519", "identity.rdbt", "identity.pub"]
+    if with_recipient:
+        nomes += ["recipient.x25519", "recipient.rdbt"]
+    return any(os.path.isfile(os.path.join(data_dir, n)) for n in nomes)
 
 
 def restore(payload: dict, data_dir: str, *, force: bool = False) -> list[str]:
@@ -219,7 +239,7 @@ def restore(payload: dict, data_dir: str, *, force: bool = False) -> list[str]:
     A mensagem mostra os DOIS fingerprints para a comparacao ser consciente.
     """
     ed_raw, x_raw = payload_keys(payload)
-    if _identity_present(data_dir) and not force:
+    if _identity_present(data_dir, with_recipient=bool(x_raw)) and not force:
         atual = _fingerprint_in_dir(data_dir) or "(ilegivel)"
         raise BackupError(
             f"ja existe uma identidade em {data_dir} (fingerprint {atual}); o backup traz "
@@ -248,7 +268,27 @@ def restore(payload: dict, data_dir: str, *, force: bool = False) -> list[str]:
            (base64.b64encode(ed.public_key().public_bytes(*_RAW_PUB)).decode() + "\n").encode("ascii"),
            False)
     if x_raw:
+        # Mesma armadilha do identity.rdbt, na chave de destinatario: um `recipient.rdbt` ANTIGO
+        # faria `recipient_is_protected()` vencer — o app seguiria com a chave VELHA e a restaurada
+        # viraria "copia em claro orfa". Remove-lo ANTES de gravar: se falhar, nada da X25519 foi
+        # tocado (sem estado misto). A `recipient.pub` e regravada a partir da privada restaurada:
+        # a antiga anunciaria o fingerprint velho (e selar "para voce" iria para a chave errada).
+        velho_x = os.path.join(data_dir, "recipient.rdbt")
+        removeu_x = False
+        if os.path.isfile(velho_x):
+            try:
+                custody._force_remove(velho_x)
+                removeu_x = True
+            except OSError as exc:
+                raise BackupError(
+                    f"a identidade Ed25519 foi restaurada, mas nao consegui remover o cofre da chave "
+                    f"de destinatario anterior ({velho_x}): {exc}. A chave X25519 NAO foi restaurada "
+                    f"— remova-o a mao e repita o restore com --force") from exc
+        x_pub = X25519PrivateKey.from_private_bytes(x_raw).public_key().public_bytes(*_RAW_PUB)
         _grava("recipient.x25519", x_raw, True)
+        _grava("recipient.pub", (base64.b64encode(x_pub).decode() + "\n").encode("ascii"), False)
+        if removeu_x:
+            escritos.append("recipient.rdbt (removido: cofre da chave de destinatario ANTERIOR)")
 
     # A restauracao devolve a forma LEGADA (PEM em claro); proteger de novo e um passo consciente
     # do usuario, no proprio app. Mas um `identity.rdbt` ANTIGO nao pode ficar: `is_protected()`

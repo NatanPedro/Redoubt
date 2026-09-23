@@ -58,14 +58,20 @@ def cmd_make(args) -> int:
     if custody.is_protected():
         print("A identidade local esta PROTEGIDA — informe a credencial dela para ler a chave.")
         atual = _pedir_senha(False, "Senha da identidade")
+    x_senha = None
+    if custody.recipient_exists() and not custody.recipient_unlocked():
+        print("A chave de destinatario (X25519) esta PROTEGIDA — informe a credencial dela para "
+              "inclui-la no backup.")
+        x_senha = _pedir_senha(False, "Senha da chave de destinatario")
     try:
-        payload = idbackup.collect_local(atual, keyfile=keyfile if custody.is_protected() else None)
+        payload = idbackup.collect_local(atual, keyfile=keyfile if custody.is_protected() else None,
+                                         recipient_passphrase=x_senha or None)
     except idbackup.BackupError as exc:
         print(f"[ERRO] {exc}")
         return 1
-    if not payload.get("x25519_private"):
-        print("[AVISO] a chave X25519 de destinatario nao entrou no pacote (ausente, protegida ou "
-              "ilegivel). Perde-la significa perder o acesso aos cofres selados para voce.")
+    if not payload.get("x25519_private") and custody.recipient_exists():
+        print("[AVISO] a chave X25519 de destinatario esta ILEGIVEL e nao entrou no pacote. "
+              "Perde-la significa perder o acesso aos cofres selados para voce.")
 
     print("\nAgora crie a credencial DO BACKUP (pode ser diferente da senha da identidade).")
     print("Ela e zero-knowledge: esquecer = perder o backup. Guarde-a fora desta maquina.")
@@ -149,6 +155,9 @@ def cmd_restore(args) -> int:
     print(idbackup.summary(payload))
     print("\nA identidade voltou na forma LEGADA (chave em claro no disco). Proteja-a de novo no "
           "app: Seguranca > Proteger identidade com senha.")
+    if payload.get("x25519_private"):
+        print("A chave de destinatario (X25519) tambem voltou em claro: Seguranca > Proteger chave "
+              "de destinatario com senha.")
     return 0
 
 

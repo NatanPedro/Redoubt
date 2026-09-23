@@ -30,7 +30,12 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   Senha lida do **console** (nunca de `stdin`), material de chave **jamais impresso**, e nada é
   criado numa instalação sem identidade (read-only). Documentado em
   [`docs/CUSTODY.md`](docs/CUSTODY.md), incluindo o procedimento de **rotação assinada** — que só é
-  possível **enquanto a chave antiga existe**. **+16 testes**.
+  possível **enquanto a chave antiga existe**. Integrado à **X25519 protegida por senha**: com a
+  chave de destinatário protegida, `make` **pede a senha dela** (antes o pacote saía **sem** a X25519,
+  só com um aviso — justamente para quem seguiu a recomendação de protegê-la), e `restore` remove um
+  `recipient.rdbt` anterior e regrava a `recipient.pub` a partir da chave restaurada (senão o cofre
+  antigo vencia, o app seguia com a chave **velha** e anunciava o *fingerprint* errado). Uma X25519
+  existente também exige `--force` para ser substituída. **+22 testes**.
 - **Chave de destinatário (X25519) protegível por senha** — fecha a limitação honesta da v1.3.0
   ("a privada de destinatário fica local em claro"). *Segurança ▸ Proteger chave de destinatário
   com senha* embrulha a privada X25519 num Cofre (`recipient.rdbt`, AES-256-GCM + Argon2id) e
