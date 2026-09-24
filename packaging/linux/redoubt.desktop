@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Redoubt
+GenericName=Secure Text Editor
+GenericName[pt_BR]=Editor de texto seguro
+Comment=Text and code editor that treats every file as evidence
+Comment[pt_BR]=Editor de texto e código que trata cada arquivo como evidência
+Exec=redoubt %F
+Icon=redoubt
+Terminal=false
+StartupNotify=true
+StartupWMClass=Redoubt
+Categories=Utility;TextEditor;Security;
+MimeType=text/plain;application/x-redoubt-vault;
+Keywords=editor;text;code;secret;vault;encryption;signature;
+Keywords[pt_BR]=editor;texto;código;segredo;cofre;criptografia;assinatura;

@@ -1,6 +1,6 @@
 # Redoubt :: CI — o mesmo guarda-corpo do hook pre-push (ruff -> mypy -> suite), so que no
 # servidor: nao da para pular com --no-verify e nao depende da maquina de quem empurrou.
-# Windows porque o produto e Windows (instalador, DPAPI/ACL, caminhos, CRLF).
+# Dois jobs: Windows (o instalador .exe) e Arch Linux (o pacote para Arch, CachyOS e Manjaro).
 name: CI
 
 on:
@@ -56,3 +56,52 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           PYTHONUTF8: "1"
         run: python tools/run_tests.py
+
+  arch:
+    # Linux, com prioridade para as distros baseadas em Arch (CachyOS, Manjaro): o pacote usa so os
+    # repositorios oficiais. Roda como usuario comum: o makepkg recusa root, e como root as
+    # permissoes POSIX (0600/0700, somente-leitura) nem seriam testadas de verdade.
+    name: Arch Linux (suite + selecao primaria X11 + makepkg)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Dependencias (pacman)
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git namcap desktop-file-utils \
+            python python-pyqt6 python-qscintilla-qt6 python-cryptography hicolor-icon-theme \
+            python-pytest xorg-server-xvfb xorg-xauth ttf-dejavu
+
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Usuario sem root
+        run: |
+          useradd -m builder
+          git config --system --add safe.directory "$PWD"
+          chown -R builder .
+
+      - name: Suite (Qt offscreen)
+        run: su builder -c "QT_QPA_PLATFORM=offscreen python tools/run_tests.py"
+
+      - name: Selecao primaria (X11 real via Xvfb)
+        # O offscreen nao tem selecao primaria e PULA esses testes; aqui eles tem de RODAR e passar.
+        run: |
+          su builder -c "QT_QPA_PLATFORM=xcb xvfb-run -a python -m pytest tests/test_app.py \
+            -k selecao_primaria -v -p no:cacheprovider" | tee /tmp/selecao.log
+          grep -q " 2 passed" /tmp/selecao.log
+
+      - name: makepkg (com check) + namcap + instalacao
+        run: |
+          ver=$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)
+          mkdir -p /tmp/pkg
+          git archive --prefix="Redoubt-$ver/" -o "/tmp/pkg/redoubt-$ver.tar.gz" HEAD
+          sed "s|^source=.*|source=(\"redoubt-$ver.tar.gz\")|" packaging/arch/PKGBUILD > /tmp/pkg/PKGBUILD
+          chown -R builder /tmp/pkg
+          su builder -c "cd /tmp/pkg && makepkg -f --noconfirm"
+          namcap /tmp/pkg/PKGBUILD /tmp/pkg/*.pkg.tar.zst
+          pacman -U --noconfirm /tmp/pkg/*.pkg.tar.zst
+          desktop-file-validate /usr/share/applications/redoubt.desktop
+          su builder -c "redoubt-scan --help" >/dev/null

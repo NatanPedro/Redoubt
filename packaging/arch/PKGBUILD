@@ -1,0 +1,61 @@
+# Maintainer: Natan Lopes <https://github.com/NatanPedro>
+#
+# Pacote Arch do Redoubt (Arch, CachyOS, Manjaro, EndeavourOS...). Usa so pacotes dos repositorios
+# oficiais: nada de pip. Publicar no AUR: veja packaging/arch/README.md.
+
+pkgname=redoubt
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='Text/code editor that treats every file as evidence: flags secrets, encrypts and signs'
+arch=('any')
+url='https://github.com/NatanPedro/Redoubt'
+license=('MIT')
+depends=('python' 'python-pyqt6' 'python-qscintilla-qt6' 'python-cryptography' 'hicolor-icon-theme')
+optdepends=('git: hook pre-commit anti-segredo (redoubt-scan --install-hook)')
+checkdepends=('python-pytest' 'git')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# Preenchido no release: `updpkgsums` depois de publicar a tag v$pkgver.
+sha256sums=('SKIP')
+
+_src="Redoubt-$pkgver"
+_lib="/usr/lib/$pkgname"
+
+check() {
+  cd "$_src"
+  # Runner resiliente (isola cada arquivo; tolera o crash conhecido do Qt offscreen no teardown).
+  # O conftest isola XDG_DATA_HOME/XDG_CONFIG_HOME: nada toca as chaves/preferencias de quem compila.
+  QT_QPA_PLATFORM=offscreen python tools/run_tests.py
+}
+
+# Lancador em /usr/bin: o codigo vive em /usr/lib/redoubt (app Python puro, fora do site-packages,
+# entao nao quebra quando o Arch troca a versao do Python).
+_launcher() {  # _launcher <comando> <linha que o script executa>
+  install -d "$pkgdir/usr/bin"
+  printf '#!/bin/sh\n%s\n' "$2" > "$pkgdir/usr/bin/$1"
+  chmod 755 "$pkgdir/usr/bin/$1"
+}
+
+package() {
+  cd "$_src"
+
+  install -d "$pkgdir$_lib"
+  cp -r --no-preserve=ownership notepy assets "$pkgdir$_lib/"
+  install -Dm644 main.py verify_release.py verify_seal.py -t "$pkgdir$_lib/"
+  install -Dm644 tools/backup_identity.py -t "$pkgdir$_lib/tools/"
+  find "$pkgdir$_lib" -name __pycache__ -prune -exec rm -rf {} +
+  python -m compileall -q -f -d "$_lib" "$pkgdir$_lib"
+
+  # Scripts: o Python poe a pasta DO SCRIPT (em /usr/lib) no sys.path, nunca o diretorio atual.
+  _launcher redoubt                 "exec /usr/bin/python $_lib/main.py \"\$@\""
+  _launcher redoubt-backup-identity "exec /usr/bin/python $_lib/tools/backup_identity.py \"\$@\""
+  _launcher redoubt-verify-release  "exec /usr/bin/python $_lib/verify_release.py \"\$@\""
+  _launcher redoubt-verify-seal     "exec /usr/bin/python $_lib/verify_seal.py \"\$@\""
+  # Modulo: `-m` poria o diretorio atual (o repo varrido!) no sys.path; -P impede o sequestro.
+  _launcher redoubt-scan            "PYTHONPATH=$_lib exec /usr/bin/python -P -m notepy.scan_cli \"\$@\""
+
+  install -Dm644 packaging/linux/redoubt.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 packaging/linux/redoubt.xml -t "$pkgdir/usr/share/mime/packages/"
+  install -Dm644 assets/redoubt.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/redoubt.png"
+  install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 README.md CHANGELOG.md docs/*.md -t "$pkgdir/usr/share/doc/$pkgname/"
+}

@@ -1,7 +1,8 @@
 """Backup e restauracao da IDENTIDADE do Redoubt — nucleo puro, sem Qt.
 
-Por que isto existe: a identidade Ed25519 desta instalacao e um arquivo de ~119 bytes em
-`%APPDATA%\\Redoubt\\Redoubt\\identity.ed25519`. E ela que assina o `RELEASE.json` de cada
+Por que isto existe: a identidade Ed25519 desta instalacao e um arquivo de ~119 bytes no
+diretorio de dados (`%APPDATA%\\Redoubt\\Redoubt` no Windows, `~/.local/share/Redoubt/Redoubt` no
+Linux): `identity.ed25519`. E ela que assina o `RELEASE.json` de cada
 release, os selos `.rdbt-seal` e as ancoras da trilha. Os verificadores standalone
 (`verify_release.py` / `verify_seal.py`) tem a chave PUBLICA do autor **embutida**, entao:
 

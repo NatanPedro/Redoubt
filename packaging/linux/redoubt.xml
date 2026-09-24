@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tipo MIME do cofre .rdbt (equivalente a associacao do instalador do Windows).
+     So por EXTENSAO, de proposito: sem <magic>. O backup de identidade (.rdbtbak) tambem e um cofre
+     RDBT e, com deteccao por conteudo, cairia neste tipo e abriria com duplo-clique, mostrando as
+     chaves privadas na tela. E exatamente o que a extensao propria do backup existe para evitar. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-redoubt-vault">
+    <comment>Redoubt encrypted vault</comment>
+    <comment xml:lang="pt_BR">Cofre cifrado do Redoubt</comment>
+    <icon name="redoubt"/>
+    <glob pattern="*.rdbt"/>
+  </mime-type>
+</mime-info>

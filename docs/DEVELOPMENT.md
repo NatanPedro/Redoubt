@@ -1,6 +1,6 @@
 # Guia do Desenvolvedor — Redoubt
 
-> **Redoubt** v1.3.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.4.0 — *editor que trata cada arquivo como evidência.*
 > *Nada vaza sem você mandar.*
 
 Este documento explica como configurar o ambiente, **rodar**, **testar** e
@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (452 testes); o conftest força offscreen
+pytest                  # roda tudo (460 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -158,7 +158,8 @@ e **bloqueia o push** se qualquer um reprovar. `git push --no-verify` pula numa 
 O mesmo trio roda no **CI** ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)): GitHub
 Actions em **Windows**, com **Python 3.11 e 3.14**, a cada push no `main` e na `homologacao` e em todo PR. O hook é a
 checagem rápida local; o CI é o guarda que não dá para pular com `--no-verify` nem depende da
-máquina de quem empurrou.
+máquina de quem empurrou. Um segundo job roda em **Arch Linux** (container, usuário sem root): a
+suíte, a seleção primária num X11 real e o pacote (`makepkg` + `namcap` + instalação). Veja a §5.5.
 
 ### Lint e tipos (`ruff` + `mypy`)
 
@@ -371,6 +372,32 @@ a âncora embutida. Binário re-assinado com outra chave é rejeitado.
 > verificador; a assinatura sozinha, sem âncora, não prova autoria (a pubkey viaja no
 > payload).
 
+### 5.5 Pacote Linux (Arch, CachyOS, Manjaro) — `packaging/arch/PKGBUILD`
+
+O pacote Linux usa só os repositórios oficiais do Arch e instala o código em `/usr/lib/redoubt`,
+com lançadores em `/usr/bin`. O `.desktop` e o tipo MIME `.rdbt` ficam em `packaging/linux/`. O
+passo a passo de build, instalação e publicação no AUR está em
+[`packaging/arch/README.md`](../packaging/arch/README.md).
+
+**Testar no Linux a partir do Windows** (Docker Desktop): a suíte roda num container `archlinux`
+com usuário comum, porque como root as permissões POSIX nem são testadas. As partes que só existem
+no Linux são pastas `0700`, arquivos `0600`, `chmod` e **seleção primária**. A seleção primária
+precisa de um X11 de verdade (`QT_QPA_PLATFORM=xcb` com `xvfb-run`): no `offscreen` esses testes
+são **pulados**. O job `arch` do CI faz exatamente isso, incluindo `makepkg` com `check()`,
+`namcap` e instalação. As mesmas imagens existem para `manjarolinux/base` e `cachyos/cachyos`; use
+`pacman -Syu` (nunca `-Sy` sozinho, que faz atualização parcial e quebra a glibc da imagem).
+
+Pegadinhas de portabilidade que já morderam:
+
+- `os.chmod(p, stat.S_IWRITE)` limpa o somente-leitura no Windows, mas no POSIX **define** o modo
+  `0200` (sem leitura). Use `custody._make_writable`.
+- `open(..., "wb")` cria com o `umask` (`0644`): arquivo com segredo passa por
+  `custody._atomic_write`, que cria `0600`.
+- `python -m` põe o **diretório atual** no `sys.path`: qualquer coisa que rode dentro de um repo
+  alheio (o hook!) precisa de `python -P`.
+- O clipboard tem **dois modos** no Linux (`Clipboard` e `Selection`): o que mascara um tem de
+  mascarar o outro.
+
 ---
 
 ## 6. Estrutura de pastas
@@ -391,12 +418,13 @@ Notepad/                       # pasta do projeto (nome historico)
 ├── assets/                    # icone .ico e recursos embutidos no .exe
 ├── installer/                 # redoubt.iss (script do Inno Setup)
 ├── scoop/                     # redoubt.json (manifesto Scoop)
+├── packaging/                 # arch/PKGBUILD + .SRCINFO (AUR), linux/redoubt.desktop + redoubt.xml (MIME)
 ├── tools/                     # gen_icon.py, run_tests.py, make_scoop_manifest.py, hooks/pre-push
 ├── docs/
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # 452 testes (pytest, offscreen)
+├── tests/                     # 460 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
 │   └── test_*.py              # 20 arquivos: secrets, vault, custody, idbackup,
@@ -405,7 +433,7 @@ Notepad/                       # pasta do projeto (nome historico)
 │                              #   findbar, transforms, textops, passgen,
 │                              #   redteam_corpus
 └── notepy/                    # o pacote Python (nome historico; produto = Redoubt)
-    ├── __init__.py            # APP_NAME / APP_VERSION (1.3.0) / APP_TAGLINE
+    ├── __init__.py            # APP_NAME / APP_VERSION (1.4.0) / APP_TAGLINE
     │
     │   # --- NUCLEOS PUROS (sem Qt; testaveis isolados) ---
     ├── secrets.py             # Sentinela de Segredos (5 camadas)
@@ -630,5 +658,5 @@ Qt), o que facilita testá-los isolados. Regras ao estendê-los:
 
 ---
 
-> **Redoubt** v1.3.0 — Python · PyQt6 · QScintilla · cryptography
+> **Redoubt** v1.4.0 — Python · PyQt6 · QScintilla · cryptography
 > *Nada vaza sem você mandar.*

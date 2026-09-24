@@ -6,3 +6,6 @@ tools/hooks/pre-push text eol=lf
 # Batch do Windows PRECISA de CRLF: o cmd.exe lê .bat por offset de byte assumindo CRLF;
 # com LF ele "come" os primeiros caracteres de cada linha.
 *.bat text eol=crlf
+
+# Empacotamento Linux (PKGBUILD, .desktop, MIME) roda em bash/makepkg: LF sempre.
+packaging/** text eol=lf

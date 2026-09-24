@@ -205,12 +205,15 @@ def _hook_body() -> str:
         py = py.lower().replace("pythonw", "python")
     root_sh = root.replace("\\", "/")
     py_sh = py.replace("\\", "/")
+    # -P (Python 3.11+): NAO poe o diretorio atual no sys.path. O hook roda DENTRO do repo, e o
+    # `python -m` colocaria a raiz dele na frente do PYTHONPATH: um repo com uma pasta `notepy/`
+    # propria sequestrava o hook e executava o codigo dele a cada commit.
     return (
         "#!/bin/sh\n"
         f"# Redoubt :: Sentinela anti-segredo (pre-commit)  [{HOOK_MARKER}]\n"
         "# Bloqueia o commit se houver credencial no stage.\n"
         "# Bypass pontual: git commit --no-verify\n"
-        f'PYTHONPATH="{root_sh}" "{py_sh}" -m notepy.scan_cli --staged\n'
+        f'PYTHONPATH="{root_sh}" "{py_sh}" -P -m notepy.scan_cli --staged\n'
     )
 
 

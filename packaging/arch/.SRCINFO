@@ -1,0 +1,19 @@
+pkgbase = redoubt
+	pkgdesc = Text/code editor that treats every file as evidence: flags secrets, encrypts and signs
+	pkgver = 1.4.0
+	pkgrel = 1
+	url = https://github.com/NatanPedro/Redoubt
+	arch = any
+	license = MIT
+	checkdepends = python-pytest
+	checkdepends = git
+	depends = python
+	depends = python-pyqt6
+	depends = python-qscintilla-qt6
+	depends = python-cryptography
+	depends = hicolor-icon-theme
+	optdepends = git: hook pre-commit anti-segredo (redoubt-scan --install-hook)
+	source = redoubt-1.4.0.tar.gz::https://github.com/NatanPedro/Redoubt/archive/refs/tags/v1.4.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = redoubt

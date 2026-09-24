@@ -1,6 +1,6 @@
 # Arquitetura do Redoubt
 
-> **Redoubt** v1.3.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.4.0 — *editor que trata cada arquivo como evidência.*
 > Tagline: **"Nada vaza sem você mandar."**
 
 Este documento descreve **como o Redoubt é montado por dentro**: as camadas, os
@@ -45,7 +45,7 @@ Quatro defesas locais sustentam a tagline *"nada vaza sem você mandar"*:
 > **Nota sobre o nome do pacote.** O produto se chama **Redoubt**, mas o pacote
 > Python preserva o nome histórico **`notepy/`** e a pasta do projeto se chama
 > `Notepad`. A identidade vive em `notepy/__init__.py`
-> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.3.0"`). Para renomear o app inteiro,
+> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.4.0"`). Para renomear o app inteiro,
 > basta trocar essa constante.
 
 ### As duas camadas
@@ -191,7 +191,7 @@ python main.py [arquivo1 arquivo2 ...]
 
 ### `notepy/__init__.py` — identidade
 
-Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.3.0"` e
+Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.4.0"` e
 `APP_TAGLINE = "Nada vaza sem você mandar."`. É o ponto único de verdade sobre
 nome/versão do produto; todos os outros módulos importam daqui.
 
