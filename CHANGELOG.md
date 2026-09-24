@@ -17,6 +17,11 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 ### Added
+- **CI no GitHub Actions** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) — o mesmo
+  trio do hook `pre-push` (`ruff check .` → `mypy` → `tools/run_tests.py`), agora no servidor: roda
+  em **Windows** com **Python 3.11 e 3.14** a cada push no `main` e na `homologacao` e em todo PR, e não dá para pular
+  com `--no-verify`. Permissão mínima (`contents: read`), checkout sem credencial persistida. Badge
+  de CI no README.
 - **Backup e rotação da identidade** (`tools/backup_identity.py` + núcleo `notepy/idbackup.py`) —
   a identidade Ed25519 é um arquivo de ~119 bytes que assina **todo** release, selo e âncora, e os
   verificadores standalone têm a chave pública do autor **embutida**: perdê-la significa nunca mais
