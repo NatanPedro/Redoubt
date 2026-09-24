@@ -966,3 +966,48 @@ def test_rt_f6_nome_de_arquivo_hostil_e_sanitizado():
     assert "‮" not in _display_name("nota‮gpj.rdbt")             # RLO removido
     assert _display_name("cofre.rdbt") == "cofre.rdbt"                      # normal intacto
     assert len(_display_name("x" * 200)) <= 60                              # elidido
+
+
+# --------------------------------------------------------------------------- #
+# Selecao PRIMARIA (Linux X11/Wayland): o 2o clipboard, preenchido so de selecionar
+# --------------------------------------------------------------------------- #
+def _selecao_suportada() -> bool:
+    app = QApplication.instance() or QApplication([])
+    return app.clipboard().supportsSelection()
+
+
+_selecao = pytest.mark.skipif(not _selecao_suportada(),
+                              reason="plataforma sem selecao primaria (Windows/macOS/offscreen)")
+
+
+def _redigido(win, texto='token = AKIA3FK7XQ2MNP8RTUVW'):
+    ed = win.current_editor()
+    ed.setText(texto)
+    ed.set_redaction(True)
+    ed._rescan_secrets()
+    return ed
+
+
+@_selecao
+def test_selecao_primaria_mascarada_na_redacao(win):
+    from PyQt6.QtGui import QClipboard
+    _redigido(win)
+    cb, sel = QApplication.clipboard(), QClipboard.Mode.Selection
+    cb.setText("AKIA3FK7XQ2MNP8RTUVW", sel); win._sanitize_clipboard(sel)
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in cb.text(sel)
+    cb.setText("texto comum de outro app", sel); win._sanitize_clipboard(sel)
+    assert cb.text(sel) == "texto comum de outro app"      # alheio intacto
+
+
+@_selecao
+def test_selecao_primaria_via_mouse_nao_entrega_segredo_ao_botao_do_meio(win, qapp):
+    """Regressao Linux: o Scintilla poe a SELECAO na selecao primaria; o botao do meio colava o
+    segredo em claro em qualquer app, mesmo com a Redacao ligada."""
+    from PyQt6.QtGui import QClipboard
+    ed = _redigido(win)
+    win.show(); qapp.processEvents()
+    ini = ed.text().index("AKIA")
+    ed.setSelection(0, ini, 0, ini + len("AKIA3FK7XQ2MNP8RTUVW"))   # como um arrasto do mouse
+    for _ in range(20):
+        qapp.processEvents()
+    assert "AKIA3FK7XQ2MNP8RTUVW" not in QApplication.clipboard().text(QClipboard.Mode.Selection)

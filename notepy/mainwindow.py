@@ -6,7 +6,7 @@ import html
 import os
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -423,12 +423,18 @@ class MainWindow(QMainWindow):
         # Redacao do clipboard na CAMADA do clipboard: pega TODOS os caminhos de
         # copia (inclusive os nativos do Scintilla — SCI_COPY/COPYRANGE/retangular/
         # Ctrl+Insert/Shift+Del), que furavam o override por metodo.
+        # No Linux (X11/Wayland) ha um SEGUNDO clipboard: a selecao PRIMARIA, que o Scintilla
+        # preenche so de SELECIONAR o texto (e o botao do meio cola em qualquer app). Sem vigiar
+        # ela tambem, destacar um segredo com o mouse o entregava em claro, com a Redacao ligada.
+        # No Windows/macOS nao ha selecao primaria: o sinal simplesmente nunca dispara.
         self._clip_guard = False
-        QApplication.clipboard().dataChanged.connect(self._sanitize_clipboard)
+        cb = QApplication.clipboard()
+        cb.dataChanged.connect(self._sanitize_clipboard)
+        cb.selectionChanged.connect(lambda: self._sanitize_clipboard(QClipboard.Mode.Selection))
 
         self.new_file()
 
-    def _sanitize_clipboard(self) -> None:
+    def _sanitize_clipboard(self, mode: QClipboard.Mode = QClipboard.Mode.Clipboard) -> None:
         if self._clip_guard:
             return
         # Reune os segredos de TODAS as abas em redacao — nao so a focada. Senao
@@ -449,7 +455,7 @@ class MainWindow(QMainWindow):
         if not snippets:
             return
         cb = QApplication.clipboard()
-        txt = cb.text()
+        txt = cb.text(mode)
         if not txt:
             return
         new = txt
@@ -467,8 +473,10 @@ class MainWindow(QMainWindow):
                 new = txt.replace(stripped, "●" * len(stripped))
         if new != txt:
             self._clip_guard = True
-            cb.setText(new)
-            self._clip_guard = False
+            try:
+                cb.setText(new, mode)
+            finally:
+                self._clip_guard = False
 
     def _touch_idle(self) -> None:
         if config.get("auto_lock_min") > 0:      # so reinicia se auto-lock ativo
@@ -1837,8 +1845,12 @@ class MainWindow(QMainWindow):
             editor.setText("")
             editor.SendScintilla(editor.SCI_EMPTYUNDOBUFFER)   # Ctrl+Z nao reconstroi o segredo
             cb = QApplication.clipboard()
-            if content and cb.text() and cb.text() in content:
-                cb.clear()                                      # tira o segredo do clipboard
+            modes = [QClipboard.Mode.Clipboard]
+            if cb.supportsSelection():                          # Linux: a selecao primaria tambem
+                modes.append(QClipboard.Mode.Selection)
+            for mode in modes:
+                if content and cb.text(mode) and cb.text(mode) in content:
+                    cb.clear(mode)                              # tira o segredo do clipboard
         except Exception:
             pass
         self._audit("queimou", editor)             # registra o evento (sem conteudo)

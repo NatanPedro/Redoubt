@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import stat
+import sys
 from datetime import datetime, timezone
 
 from cryptography.exceptions import InvalidSignature
@@ -71,11 +72,30 @@ class IdentityClearCopyRemains(Exception):
     isso nao herda de VaultError: a UI nao deve dizer "nao foi possivel proteger")."""
 
 
+def _data_base() -> str:
+    """Raiz dos dados por-usuario, pela convencao de cada sistema:
+    Windows `%APPDATA%`; Linux/BSD `$XDG_DATA_HOME` (padrao `~/.local/share`); macOS
+    `~/Library/Application Support`. Antes o fallback fora do Windows era a propria HOME, e as
+    chaves privadas iam parar em `~/Redoubt/Redoubt` a vista de qualquer `ls`."""
+    if sys.platform == "win32":
+        return os.environ.get("APPDATA") or os.path.expanduser("~")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support")
+    xdg = os.environ.get("XDG_DATA_HOME", "")
+    return xdg if os.path.isabs(xdg) else os.path.expanduser("~/.local/share")   # spec XDG: so absoluto
+
+
 def _data_dir() -> str:
-    """Diretorio por-usuario p/ a identidade e a trilha (monkeypatchavel em testes)."""
-    base = os.environ.get("APPDATA") or os.path.expanduser("~")
-    d = os.path.join(base, _ORG, _APP)
-    os.makedirs(d, exist_ok=True)
+    """Diretorio por-usuario p/ a identidade e a trilha (monkeypatchavel em testes).
+    No POSIX a pasta e 0700: guarda chaves PRIVADAS, nenhum outro usuario da maquina entra."""
+    d = os.path.join(_data_base(), _ORG, _APP)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if os.name == "posix":
+        try:
+            if stat.S_IMODE(os.stat(d).st_mode) != 0o700:
+                os.chmod(d, 0o700)          # pasta pre-existente com modo frouxo (umask/copia)
+        except OSError:
+            pass
     return d
 
 
@@ -519,7 +539,13 @@ def _atomic_write(path: str, data: bytes) -> None:
     Se algo falhar, remove o temp para nao deixar copia orfa (possivelmente sensivel) em disco."""
     tmp = path + ".tmp"
     try:
-        with open(tmp, "wb") as fh:
+        # 0600 ja na CRIACAO (no POSIX o `open` usaria o umask, tipicamente 0644: a privada X25519
+        # e o PEM ficavam legiveis por outros usuarios ate o chmod — e a X25519 nem tinha chmod).
+        # O os.replace preserva o modo do temporario. No Windows o modo so afeta o somente-leitura.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+        if sys.platform != "win32":
+            os.fchmod(fd, 0o600)            # temp pre-existente: O_CREAT nao troca o modo dele
+        with os.fdopen(fd, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
@@ -533,6 +559,20 @@ def _atomic_write(path: str, data: bytes) -> None:
         raise
 
 
+def _make_writable(path: str) -> None:
+    """Limpa o "somente-leitura" SEM tirar a leitura (best-effort, nunca levanta).
+
+    No Windows o `chmod` so mexe no atributo somente-leitura, e `chmod(S_IWRITE)` basta. No POSIX
+    a mesma chamada DEFINE o modo como 0200: o arquivo perdia a LEITURA. Um cofre cujo remove
+    falhasse ficava ilegivel (a identidade trancada para o proprio dono) e o wipe do
+    `_secure_remove` falhava calado, deixando a chave inteira no residuo. Aqui so SOMAMOS os bits
+    de leitura/escrita do dono ao modo atual."""
+    try:
+        os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
 def _secure_remove(path: str) -> None:
     """Sobrescreve o conteudo (best-effort), TRUNCA e remove. Em SSD/COW o overwrite nao garante
     apagamento fisico, mas reduz a janela de recuperacao da chave em claro. Propaga OSError
@@ -543,11 +583,8 @@ def _secure_remove(path: str) -> None:
     X25519 VALIDA e DIFERENTE — uma isca que o carregador adotaria em silencio (trocando a sua
     identidade) e que o curador nunca removeria, por parecer "chave de outra pessoa". Zerado, o
     residuo nao e chave nenhuma: o carregador erra alto e o curador limpa."""
-    try:
-        os.chmod(path, stat.S_IWRITE)   # limpa "somente-leitura" (senao o remove falha no Windows
-    except OSError:                     # e a limpeza da copia em claro falharia em silencio)
-        pass
-    try:
+    _make_writable(path)                # limpa "somente-leitura" (senao o remove falha no Windows
+    try:                                # e a limpeza da copia em claro falharia em silencio)
         size = os.path.getsize(path)
         with open(path, "r+b") as fh:
             fh.write(os.urandom(size))
@@ -564,10 +601,7 @@ def _secure_remove(path: str) -> None:
 def _force_remove(path: str) -> None:
     """Remove SEM sobrescrever (para arquivos CIFRADOS, como os cofres: nao ha plaintext a apagar).
     Limpa o atributo somente-leitura antes — senao o `+R` fazia a remocao falhar sempre."""
-    try:
-        os.chmod(path, stat.S_IWRITE)
-    except OSError:
-        pass
+    _make_writable(path)
     os.remove(path)
 
 

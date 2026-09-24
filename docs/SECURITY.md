@@ -339,6 +339,15 @@ O Redoubt trata cada arquivo como **evidência** (`notepy/custody.py`, núcleo p
 depende de `cryptography`). Verificar com `Ctrl+Shift+H`; assinar/exportar `.sig` com
 `Ctrl+Shift+G`.
 
+### Onde ficam as chaves (e quem pode lê-las)
+
+Tudo o que é da instalação (identidade, chave de destinatário, trilha, Lista de Redação) fica no
+**diretório de dados**: `%APPDATA%\Redoubt\Redoubt` no Windows, `$XDG_DATA_HOME/Redoubt/Redoubt`
+(padrão `~/.local/share/Redoubt/Redoubt`) no Linux e `~/Library/Application Support/Redoubt/Redoubt`
+no macOS. No POSIX a pasta é **`0700`** e todo arquivo nasce **`0600`**, já na criação (antes da
+v1.4.0 os arquivos seguiam o `umask`, tipicamente `0644`, e a privada X25519 em claro ficava legível
+por outros usuários da máquina). No Windows vale a ACL do perfil do usuário.
+
 ### Identidade Ed25519 por instalação
 
 - Um par de chaves **Ed25519** é gerado por instalação. A **pública** é exportável
@@ -443,6 +452,10 @@ A CLI `notepy/scan_cli.py` (núcleo puro, reusa `secrets.scan`) — instalável 
 - Arquivo **> 2 MB** não é varrido (só avisado).
 - **Bypass**: `git commit --no-verify`; **whitelist** por linha: `redoubt:allow`.
 - **Não é** um gate obrigatório de CI/CD — é uma rede local na hora do commit.
+- **Código do próprio repositório não roda no hook.** O hook executa `python -P -m notepy.scan_cli`
+  dentro do repo; o `-P` impede que o diretório atual entre no `sys.path`. Sem ele (até a v1.3.0),
+  um repo com uma pasta `notepy/` própria **sequestrava** o hook a cada commit. Hooks instalados
+  antes da v1.4.0 precisam ser **reinstalados** (`--install-hook`) para receber a correção.
 
 ---
 
@@ -498,6 +511,12 @@ texto) e, **com a redação ligada**, **mascara o clipboard**.
   `SCI_COPYRANGE`, seleção retangular, `Ctrl+Insert`, `Shift+Del`) e substitui um segredo
   por `●` — inclusive cópias **parciais** (≥ 6 caracteres de um segredo detectado, ≥ 2 de um
   segredo **registrado** na Lista de Redação). Reúne os segredos de **todas** as abas em redação.
+- **Seleção primária (Linux).** No X11/Wayland há um **segundo clipboard**: o Scintilla preenche a
+  seleção primária só de **selecionar** o texto, e o botão do meio cola em qualquer app. O mesmo
+  sanitizador escuta `QClipboard.selectionChanged` e mascara a seleção primária com as mesmas
+  regras; a Burn Note limpa os dois. No Windows e no macOS não há seleção primária e o sinal nunca
+  dispara. (Antes da v1.4.0, selecionar um segredo com o mouse o entregava em claro ao botão do
+  meio; o teste que trava isso roda num X11 real no CI.)
 
 ### Lista de Redação (segredos do usuário)
 
@@ -523,6 +542,9 @@ enquanto ele está aberto (anti-crash).
   repouso é o **Cofre** (seção 5).
 - O clipboard só mascara o que foi **DETECTADO** — um segredo sem padrão escapa, e cópia
   parcial **< 6 caracteres** não é mascarada (piso de projeto).
+- **Gerenciadores de clipboard com histórico** (Klipper, CopyQ, GPaste, o histórico do Windows)
+  podem registrar o texto **no instante** entre a cópia e o mascaramento. Com a Redação ligada,
+  desative o histórico ou exclua o Redoubt dele.
 
 ---
 
@@ -700,4 +722,4 @@ python verify_release.py .
 
 ---
 
-*Redoubt v1.3.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*
+*Redoubt v1.4.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*

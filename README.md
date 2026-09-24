@@ -10,8 +10,9 @@
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.11.0-41CD52?logo=qt&logoColor=white)](https://pypi.org/project/PyQt6/)
 [![QScintilla](https://img.shields.io/badge/QScintilla-2.14.1-2D2D2D)](https://pypi.org/project/PyQt6-QScintilla/)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
-[![Status](https://img.shields.io/badge/status-v1.3.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-452%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Status](https://img.shields.io/badge/status-v1.4.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
+[![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux-5B6EE1)](#como-instalar)
+[![Testes](https://img.shields.io/badge/testes-460%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 [![CI](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml)
 
 </div>
@@ -20,7 +21,7 @@
 
 ## O que é o Redoubt
 
-O **Redoubt** é um editor de texto e código desktop, leve, escrito em Python puro com PyQt6 e QScintilla — o mesmo motor Scintilla que move o Notepad++. Edita ~50 linguagens com realce de sintaxe, abas, *drag & drop* e detecção de encoding.
+O **Redoubt** é um editor de texto e código desktop para **Windows e Linux**, leve, escrito em Python puro com PyQt6 e QScintilla — o mesmo motor Scintilla que move o Notepad++. Edita ~50 linguagens com realce de sintaxe, abas, *drag & drop* e detecção de encoding.
 
 Mas o Redoubt nasceu com uma identidade que o separa de qualquer outro editor: **segurança não é um plugin, é o eixo.** Enquanto você digita, uma **Sentinela de Segredos** varre o conteúdo em busca de credenciais, chaves de API, tokens, PII brasileira e cartões de crédito — e avisa **antes** que algo escape numa captura de tela, num *commit* ou num *paste* no chat de suporte.
 
@@ -119,6 +120,30 @@ scoop install https://raw.githubusercontent.com/NatanPedro/Redoubt/main/scoop/re
 
 Atualizar depois: `scoop update redoubt`. Para conferir também a **assinatura** do binário (não só o hash), rode o `verify_release.py` — veja [Verificar o download](#verificar-o-download-release-assinado).
 
+### Linux — Arch, CachyOS, Manjaro (AUR)
+
+O pacote usa só os repositórios oficiais (`python-pyqt6`, `python-qscintilla-qt6`, `python-cryptography`), sem `pip`, e foi testado em **Arch, CachyOS e Manjaro**. Com um *AUR helper*:
+
+```bash
+paru -S redoubt
+```
+
+(ou `yay -S redoubt`; no Manjaro, também pelo **Pamac** com o AUR habilitado.)
+
+Para compilar direto deste repositório, sem o AUR:
+
+```bash
+git clone https://github.com/NatanPedro/Redoubt.git
+cd Redoubt/packaging/arch
+makepkg -si
+```
+
+O pacote instala o comando `redoubt`, a entrada no menu de aplicativos, o tipo de arquivo `.rdbt` (duplo-clique abre o cofre, no KDE e no GNOME) e as ferramentas de linha de comando `redoubt-scan`, `redoubt-backup-identity`, `redoubt-verify-release` e `redoubt-verify-seal`. Detalhes e publicação no AUR em [`packaging/arch/README.md`](packaging/arch/README.md).
+
+### Linux — outras distros (a partir do código)
+
+Instale PyQt6, QScintilla para Qt 6 e `cryptography` pelos pacotes da distro (ex.: Debian/Ubuntu `python3-pyqt6 python3-pyqt6.qsci python3-cryptography`; Fedora `python3-pyqt6 python3-qscintilla-qt6 python3-cryptography`) ou pelo `pip` num `venv`, e rode `python3 main.py`. Os dados ficam em `~/.local/share/Redoubt/Redoubt` (permissão `0700`) e as preferências em `~/.config/Redoubt/Redoubt.conf`.
+
 ### A partir do código (Python 3.11+)
 
 **Pré-requisito:** Python 3.11+.
@@ -146,7 +171,7 @@ Você também pode abrir arquivos direto pela linha de comando (ou via "Abrir co
 python main.py caminho/arquivo1.py outro/arquivo.env
 ```
 
-No Windows, **`run.bat`** abre o app **sem janela de console** (usa `pythonw`) e repassa quaisquer arquivos arrastados sobre ele.
+No Windows, **`run.bat`** abre o app **sem janela de console** (usa `pythonw`) e repassa quaisquer arquivos arrastados sobre ele. No Linux, instalado pelo pacote, é só `redoubt arquivo…` (ou pelo menu de aplicativos).
 
 ---
 
@@ -203,7 +228,7 @@ Saída esperada:
 Chave de confiança (fingerprint): 4e391f28930f3b6e
 Assinatura confere com a chave do autor: SIM
 Artefatos:
-  [OK] Redoubt-Setup-1.3.0.exe
+  [OK] Redoubt-Setup-1.4.0.exe
   [OK] Redoubt.exe
 
 Veredito: INTEGRO E AUTENTICO
@@ -274,7 +299,8 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
 ├── CONTRIBUTING.md          Como contribuir
 ├── LICENSE                  Licença MIT
 ├── assets/                  redoubt.ico / redoubt.png (ícone do app)
-├── tools/                   gen_icon.py (regenera o ícone)
+├── tools/                   gen_icon.py (regenera o ícone), run_tests.py, backup_identity.py
+├── packaging/               Pacotes Linux: arch/PKGBUILD (AUR), linux/redoubt.desktop + tipo MIME .rdbt
 ├── dist/                    Redoubt.exe (gerado pelo build, ignorado no git)
 ├── docs/                    Documentação detalhada
 │   ├── ARCHITECTURE.md      Módulos, fluxo de dados e decisões (ADRs)
@@ -316,6 +342,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 - **(d) Custódia assinada:** a chave privada Ed25519 fica **local** — opcionalmente **protegida por senha/arquivo-chave** (*Segurança ▸ Proteger identidade*, embrulhada no mesmo Cofre AES-256-GCM); prova *"veio desta instalação e não mudou"*, desde que a chave não vaze.
 - **(e) Cifrar-para-destinatário (X25519):** como no `age`, **não autentica o remetente** (qualquer um cifra para a sua pública). A privada de destinatário nasce **local em claro**, mas é **protegível por senha** (*Segurança ▸ Proteger chave de destinatário com senha*) — protegida, só **abrir** um cofre selado para você pede a credencial; exportar a sua chave e selar para outros seguem sem senha.
 - **(f) Tudo é local:** nenhum dado sai da máquina. Sem rede, sem telemetria.
+- **(g) Linux:** o Modo Redação mascara também a **seleção primária** (o 2º clipboard do X11/Wayland, que o botão do meio cola). As chaves ficam em `~/.local/share/Redoubt/Redoubt`, pasta `0700` com arquivos `0600`. Capturas de tela do compositor Wayland/X11 e gerenciadores de clipboard com histórico continuam fora do alcance do app.
 
 📖 **Leia o modelo de ameaça completo, os números do *red-team* e as garantias em [`docs/SECURITY.md`](docs/SECURITY.md).**
 
@@ -340,9 +367,9 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 ## Status
 
-O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
+O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop e AUR (Linux)**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **452 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível e o backup da identidade). Lint, tipos e a suíte rodam no **CI** (GitHub Actions, Windows, Python 3.11 e 3.14) a cada push e PR.
+**Pentests adversariais** sobrevividos e **460 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível, o backup da identidade e o suporte a Linux). O **CI** (GitHub Actions) roda a cada push e PR em dois ambientes: Windows (Python 3.11 e 3.14: lint, tipos e suíte) e Arch Linux (suíte, seleção primária num X11 real, `makepkg` com `check()`, `namcap` e instalação do pacote).
 
 > Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
@@ -356,7 +383,7 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para os termos com
 
 <div align="center">
 
-**Redoubt** · v1.3.0 · *Python · PyQt6 · QScintilla*
+**Redoubt** · v1.4.0 · *Python · PyQt6 · QScintilla*
 
 *Nada vaza sem você mandar.*
 

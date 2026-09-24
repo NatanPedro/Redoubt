@@ -967,3 +967,66 @@ def test_rt_audit_log_nao_utf8_nao_derruba(tmp_identity):
     assert len(entradas) >= 1                              # a linha suja e descartada
     assert custody.verify_chain()[0]                       # e a cadeia segue verificavel
     assert custody.audit_stats()["total"] >= 1
+
+
+# --------------------------------------------------------------------------- #
+# Portabilidade: pasta de dados, permissoes e somente-leitura (Linux/POSIX)
+# --------------------------------------------------------------------------- #
+_posix = pytest.mark.skipif(os.name != "posix", reason="permissoes POSIX")
+
+
+def test_data_base_segue_a_convencao_de_cada_sistema(tmp_path, monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+    assert custody._data_base() == str(tmp_path / "roaming")
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    assert custody._data_base() == str(tmp_path / "xdg")
+    monkeypatch.setenv("XDG_DATA_HOME", "relativo/nao/vale")            # spec XDG: so absoluto
+    assert custody._data_base() == os.path.expanduser("~/.local/share")
+    monkeypatch.delenv("XDG_DATA_HOME")
+    assert custody._data_base() == os.path.expanduser("~/.local/share")   # nunca a HOME crua
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert custody._data_base() == os.path.expanduser("~/Library/Application Support")
+
+
+@_posix
+def test_pasta_de_dados_e_0700_mesmo_se_ja_existia_frouxa(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    frouxa = tmp_path / "Redoubt" / "Redoubt"
+    frouxa.mkdir(parents=True, mode=0o755)
+    os.chmod(frouxa, 0o755)
+    d = custody._data_dir()
+    assert d == str(frouxa)
+    assert os.stat(d).st_mode & 0o777 == 0o700
+
+
+@_posix
+def test_escrita_atomica_cria_arquivo_0600(tmp_path):
+    alvo = tmp_path / "segredo.bin"
+    custody._atomic_write(str(alvo), b"x" * 32)
+    assert os.stat(alvo).st_mode & 0o777 == 0o600
+
+
+@_posix
+def test_chave_x25519_em_claro_nao_fica_legivel_por_outros(tmp_identity):
+    """Regressao: a privada X25519 era gravada com o umask (0644) e nunca recebia chmod."""
+    custody.recipient_fingerprint()                        # gera a chave em claro
+    assert os.stat(custody._recipient_path()).st_mode & 0o077 == 0
+
+
+def test_make_writable_limpa_somente_leitura_sem_tirar_a_leitura(tmp_path):
+    """Regressao Linux: chmod(S_IWRITE) no POSIX DEFINE o modo 0200 — o arquivo perdia a leitura.
+    Um cofre cujo remove falhasse ficava ilegivel, e o wipe do _secure_remove falhava calado."""
+    import stat as _stat
+    p = tmp_path / "cofre.rdbt"
+    p.write_bytes(b"conteudo")
+    os.chmod(p, _stat.S_IREAD)                             # somente-leitura
+    custody._make_writable(str(p))
+    with open(p, "r+b") as fh:                             # le E escreve
+        assert fh.read() == b"conteudo"
+    if os.name == "posix":
+        assert os.stat(p).st_mode & 0o600 == 0o600

@@ -32,11 +32,16 @@ def main() -> int:
         except Exception:
             pass
 
-    app = QApplication(sys.argv)
+    # argv[0] vira o nome da INSTANCIA no WM_CLASS do X11 ("main.py" por padrao): com "redoubt" a
+    # janela casa com o redoubt.desktop e a dock/barra agrupa no icone certo (GNOME/KDE em X11).
+    app = QApplication(["redoubt", *sys.argv[1:]])
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
+    # Linux: liga a janela ao redoubt.desktop instalado. No Wayland e isso que da o icone e o
+    # agrupamento certos na barra de tarefas (o compositor ignora o icone definido pela janela).
+    app.setDesktopFileName("redoubt")
 
-    icon = QIcon(asset_path("redoubt.ico"))
+    icon = QIcon(asset_path("redoubt.ico" if sys.platform == "win32" else "redoubt.png"))
     if not icon.isNull():
         app.setWindowIcon(icon)
 
