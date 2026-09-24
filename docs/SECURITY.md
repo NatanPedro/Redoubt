@@ -476,7 +476,9 @@ A CLI `notepy/scan_cli.py` (núcleo puro, reusa `secrets.scan`) — instalável 
 
 O verificador **standalone** `verify_release.py` (na raiz; só Python + `cryptography`,
 não precisa instalar o app) **embute a chave pública do autor** (*fingerprint* oficial
-**`4e391f28930f3b6e`**) e valida contra ela:
+**`6b38433243e8f7e7`** desde a v1.4.0) e valida contra ela. A chave anterior, `4e391f28930f3b6e`, está
+**aposentada**: o verificador ainda a aceita, mas só para os releases até a v1.3.0 e para selos
+feitos até 2026-09-24, e informa quando foi ela que assinou (veja `docs/CUSTODY.md`):
 
 ```bash
 python verify_release.py .

@@ -472,7 +472,8 @@ cripto; ela chama `vault`/`custody`/`release`/`scan_cli` e traduz o resultado.
 
 A identidade Ed25519 é **uma só**: a mesma chave que a Custódia usa para assinar
 arquivos assina o `RELEASE.json`. O fingerprint oficial do autor é
-`4e391f28930f3b6e`. A chave **X25519 de destinatário** (cifrar-para-destinatário) é
+`6b38433243e8f7e7` desde a v1.4.0. A chave anterior, `4e391f28930f3b6e`, foi aposentada em
+2026-09-24 e só vale para os releases até a v1.3.0 (veja `docs/CUSTODY.md`). A chave **X25519 de destinatário** (cifrar-para-destinatário) é
 **separada** da Ed25519 — assinar (autoria) e receber-cifrado (confidencialidade) são
 eixos distintos, então comprometer uma não compromete a outra.
 
@@ -582,7 +583,7 @@ nada (qualquer um recalcula) — a prova é a **assinatura**.
 ### O Release assinado — prova do próprio download
 
 `release.py` + `verify_release.py` (standalone na raiz, embute a pubkey do autor
-`4e391f28930f3b6e`). Gera `SHA256SUMS` + `RELEASE.json` (**RDBT-REL1**):
+`6b38433243e8f7e7` e a lista de chaves aposentadas). Gera `SHA256SUMS` + `RELEASE.json` (**RDBT-REL1**):
 `signed_payload` (string JSON canônica) + assinatura Ed25519 sobre **essa
 string**. O verificador checa a assinatura sobre a string e só então parseia
 (zero divergência gerador/verificador); o fingerprint é sempre **derivado** da

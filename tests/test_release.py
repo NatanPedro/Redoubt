@@ -293,3 +293,64 @@ def test_standalone_fingerprint_derivado(ident, tmp_path):
     vr = _load_standalone()
     assert vr.fingerprint_of(custody.public_key_b64()) == custody.fingerprint()
     assert vr.AUTHOR_FINGERPRINT == vr.fingerprint_of(vr.AUTHOR_PUBKEY_B64)
+
+
+# --------------------------------------------------------------------------- #
+# Troca da chave do autor (v1.4.0): a chave anterior fica APOSENTADA
+# --------------------------------------------------------------------------- #
+_FIXTURE_130 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
+                            "release-1.3.0.RELEASE.json")   # manifesto OFICIAL publicado da v1.3.0
+
+
+def test_manifesto_oficial_da_130_segue_autentico_pela_chave_aposentada(tmp_path):
+    """Os releases antigos continuam verificaveis depois da troca de chave."""
+    vr = _load_standalone()
+    ok, lines = vr.verify_dir(str(tmp_path), manifest_path=_FIXTURE_130)
+    texto = "\n".join(lines)
+    assert "Assinatura confere com a chave do autor: SIM" in texto
+    assert "4e391f28930f3b6e" in texto and "aposentada" in texto
+    assert ok is False                                   # binarios ausentes: integridade falha
+
+
+def test_chave_aposentada_so_vale_ate_a_versao_que_assinou(ident, tmp_path, monkeypatch):
+    vr = _load_standalone()
+    monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (
+        {"pubkey": custody.public_key_b64(), "fingerprint": custody.fingerprint(),
+         "retired": "2026-09-24", "max_version": "1.3.0"},))
+    dist = _make_dist(tmp_path, {"Redoubt.exe": b"x"})
+    for version, esperado in (("1.3.0", True), ("1.2.9", True), ("1.4.0", False),
+                              ("1.3.1", False), ("1.3.0-rc1", False), ("", False)):
+        with open(os.path.join(dist, "RELEASE.json"), "w", encoding="utf-8") as fh:
+            json.dump(_manifest(dist, ["Redoubt.exe"], version=version), fh)
+        ok, lines = vr.verify_dir(dist)
+        assert ok is esperado, (version, lines)
+        if not esperado:
+            assert any("APOSENTADA" in ln for ln in lines)
+
+
+def test_pubkey_explicita_e_a_unica_ancora(ident, tmp_path, monkeypatch):
+    """Com --pubkey, vale so a chave informada: nem a do autor nem as aposentadas entram."""
+    vr = _load_standalone()
+    monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (
+        {"pubkey": custody.public_key_b64(), "fingerprint": custody.fingerprint(),
+         "retired": "2026-09-24", "max_version": "1.3.0"},))
+    dist = _make_dist(tmp_path, {"Redoubt.exe": b"x"})
+    with open(os.path.join(dist, "RELEASE.json"), "w", encoding="utf-8") as fh:
+        json.dump(_manifest(dist, ["Redoubt.exe"], version="1.0.0"), fh)
+    ok, _ = vr.verify_dir(dist, trust_pubkey=vr.AUTHOR_PUBKEY_B64)
+    assert ok is False
+
+
+def test_chaves_do_autor_coerentes_nos_dois_verificadores():
+    vr = _load_standalone()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location("verify_seal_standalone",
+                                                  os.path.join(root, "verify_seal.py"))
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+    assert vr.AUTHOR_PUBKEY_B64 == vs.AUTHOR_PUBKEY_B64
+    assert vr.AUTHOR_FINGERPRINT == vs.AUTHOR_FINGERPRINT
+    assert [k["pubkey"] for k in vr.RETIRED_AUTHOR_KEYS] == [k["pubkey"] for k in vs.RETIRED_AUTHOR_KEYS]
+    for k in vr.RETIRED_AUTHOR_KEYS + vs.RETIRED_AUTHOR_KEYS:
+        assert k["fingerprint"] == vr.fingerprint_of(k["pubkey"])
+    assert vr.AUTHOR_PUBKEY_B64 not in [k["pubkey"] for k in vr.RETIRED_AUTHOR_KEYS]

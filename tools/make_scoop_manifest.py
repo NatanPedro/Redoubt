@@ -51,7 +51,7 @@ def main() -> int:
             "Redoubt instalado. O Scoop ja conferiu o SHA-256 do binario.",
             "Para verificar tambem a ASSINATURA (opcional, recomendado): baixe verify_release.py,",
             "RELEASE.json e SHA256SUMS do release e rode  python verify_release.py  na mesma pasta.",
-            "Fingerprint oficial do autor: 4e391f28930f3b6e",
+            "Fingerprint oficial do autor: 6b38433243e8f7e7",
         ],
     }
 

@@ -1,0 +1,7 @@
+{
+  "_about": "Manifesto de release do Redoubt. INTEGRIDADE: 'signature' assina 'signed_payload'. AUTENTICIDADE: confira que o fingerprint impresso bate com o publicado no repositorio oficial. Use verify_release.py.",
+  "format": "RDBT-REL1",
+  "algorithm": "ed25519",
+  "signed_payload": "{\"artifacts\":[{\"name\":\"Redoubt-Setup-1.3.0.exe\",\"sha256\":\"aa0e8e89af9936fef074fa6fff119fefb6e69a9e1f96a8d0d252c6e4c81ab410\",\"size\":42781674},{\"name\":\"Redoubt.exe\",\"sha256\":\"cf405f4bff659f85ef2d9e77d3616ddba116818b73a355e4f08dcbc1da4a3909\",\"size\":41209434}],\"date\":\"2026-06-24\",\"fingerprint\":\"4e391f28930f3b6e\",\"product\":\"Redoubt\",\"public_key\":\"RZZBbCP6irycPMcBLFs5raHw5gONJOU5LMYZwGawrBA=\",\"version\":\"1.3.0\"}",
+  "signature": "FBbzZEBAe/NTpxXYOlkDLhkJ9XySN3c31XpBv7GSI9PMv0nNJAyBuNOIBJIfdtsZshiEM4ippPwRDAf5RR/dDQ=="
+}
