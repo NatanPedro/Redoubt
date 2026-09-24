@@ -18,6 +18,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Feito por ENV no import (nao como fixture autouse): acrescentar uma fixture muda a ordem/timing de
 # setup e isso destrava o crash conhecido do Qt offscreen em theme.apply_app.
 os.environ["APPDATA"] = tempfile.mkdtemp(prefix="redoubt-tests-appdata-")
+# No Linux/BSD a mesma pasta vem do XDG: `_data_dir()` usa $XDG_DATA_HOME, e o QSettings grava as
+# preferencias em $XDG_CONFIG_HOME/Redoubt/Redoubt.conf. Sem isolar os dois, rodar a suite (ex.: o
+# check() do PKGBUILD, na maquina de quem instala) mexeria nas chaves e preferencias REAIS.
+os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgdata-")
+os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgconfig-")
 
 import pytest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox

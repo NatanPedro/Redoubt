@@ -1,6 +1,7 @@
 """Preferencias do Redoubt, persistidas via QSettings (entre sessoes).
 
-No Windows isso vai parar no registro (HKCU\\Software\\Redoubt\\Redoubt).
+No Windows isso vai parar no registro (HKCU\\Software\\Redoubt\\Redoubt); no Linux, em
+$XDG_CONFIG_HOME/Redoubt/Redoubt.conf (padrao ~/.config/Redoubt/Redoubt.conf).
 Cada chave tem um default em DEFAULTS; os getters fazem a coercao de tipo.
 """
 
@@ -20,9 +21,11 @@ DEFAULTS = {
     "theme": "dark",          # 'dark' (carbono) | 'light' (claro)
 }
 
-# Preferencia de fontes monoespacadas (a 1a instalada vence).
-_MONO_PREFS = ("JetBrains Mono", "Cascadia Mono", "Cascadia Code",
-               "Consolas", "DejaVu Sans Mono", "Courier New")
+# Preferencia de fontes monoespacadas (a 1a instalada vence). Windows primeiro; depois as que as
+# distros Linux trazem por padrao (Arch/CachyOS/Manjaro: Noto, DejaVu, Liberation, Hack).
+_MONO_PREFS = ("JetBrains Mono", "Cascadia Mono", "Cascadia Code", "Consolas",
+               "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", "Hack",
+               "Ubuntu Mono", "Courier New")
 
 
 # Limites sãos para os valores inteiros. Os spinboxes da tela de Preferencias
