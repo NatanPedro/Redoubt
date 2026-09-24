@@ -104,6 +104,28 @@ o fingerprint derivado da chave bata com o **esperado** (por padrão, a identida
 > fingerprint da âncora** com o que você conhece do autor, obtido fora da máquina. A âncora que
 > **você** guardou sempre detecta o reset pela divergência de `head_hash`/`seq`.
 
+## Troca da chave do autor (2026-09-24)
+
+A identidade que assinava os releases até a v1.3.0 (`4e391f28930f3b6e`) **se perdeu**: vivia só
+no disco da máquina do autor, que foi destruído, e não havia backup. A chave não vazou; ela
+simplesmente deixou de existir. Na prática, é o cenário descrito na seção abaixo: sem a chave
+antiga, **não dá para fazer a rotação assinada** (a chave antiga atestando a nova).
+
+O que foi feito:
+
+- **Chave nova:** `6b38433243e8f7e7` (pública `jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs=`).
+  Assina a partir da v1.4.0. Diferente da anterior, fica **protegida por senha** e com **backup
+  cifrado** (`tools/backup_identity.py make`, ou `redoubt-backup-identity` no Linux) guardado fora
+  da máquina.
+- **Chave antiga aposentada, não revogada:** o `verify_release.py` e o `verify_seal.py` mantêm
+  a `4e391f28930f3b6e` em `RETIRED_AUTHOR_KEYS`, aceita **só** para o que ela já assinou:
+  releases até a v1.3.0 e selos com `sealed_at` até 2026-09-24. Um manifesto de versão posterior
+  (ou um selo mais novo) assinado por ela é recusado, e a saída sempre diz qual chave assinou.
+- **Âncora de confiança da troca:** como não há assinatura da chave antiga sobre a nova, quem
+  garante a troca é o **repositório oficial** (github.com/NatanPedro/Redoubt): o fingerprint novo
+  foi publicado por commit revisado em PR, no CHANGELOG, no README e nas notas do release v1.4.0.
+  Confira o fingerprint por esse canal.
+
 ## Backup e rotação da identidade
 
 Esta é a parte que quase todo projeto solo descobre tarde. A identidade é **um arquivo de ~119

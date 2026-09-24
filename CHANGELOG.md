@@ -30,7 +30,9 @@ chaves privadas gravadas **legíveis por outros usuários**) e uma que valia em 
 anti-segredo podia ser **sequestrado** por um repositório malicioso. Todas corrigidas e travadas em
 teste. A release também fecha a limitação honesta da v1.3.0 (a chave X25519 agora é protegível
 por senha), corrige um caminho de **perda irrecuperável da identidade Ed25519** e ganha backup da
-identidade e CI. A suíte foi de **388 → 460 testes** verdes.
+identidade e CI. A chave que assina os releases também mudou: a anterior se perdeu com a máquina
+do autor, e a nova (`6b38433243e8f7e7`) passa a assinar a partir desta versão. A suíte foi de
+**388 → 466 testes** verdes.
 
 ### Added
 - **Suporte a Linux, com pacote para Arch/CachyOS/Manjaro** ([`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD),
@@ -124,6 +126,15 @@ identidade e CI. A suíte foi de **388 → 460 testes** verdes.
   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) atualizados.
 
 ### Security
+- **🔑 Nova chave do autor: `6b38433243e8f7e7`** (pública `jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs=`).
+  A chave que assinava os releases até a v1.3.0, `4e391f28930f3b6e`, se perdeu com a máquina que a
+  guardava (disco destruído, sem backup): não vazou, só deixou de existir, e por isso não houve
+  rotação assinada. Ela fica **aposentada, não revogada**: o `verify_release.py` e o `verify_seal.py`
+  a mantêm em `RETIRED_AUTHOR_KEYS`, aceita **só** para releases até a v1.3.0 e selos até
+  2026-09-24, e a saída diz qual chave assinou. A v1.4.0 e as próximas são assinadas pela chave
+  nova, publicada neste repositório. Confira o fingerprint por aqui. O manifesto oficial da v1.3.0
+  virou fixture de teste (continua autêntico com o verificador novo). Detalhes em
+  [`docs/CUSTODY.md`](docs/CUSTODY.md).
 - **🔴 Linux: selecionar um segredo com o mouse o entregava em claro, com o Modo Redação ligado.**
   No X11/Wayland existe um **segundo clipboard**, a seleção primária: o Scintilla a preenche só de
   **selecionar** o texto, e o botão do meio cola em qualquer app. A Redação vigiava só o clipboard
