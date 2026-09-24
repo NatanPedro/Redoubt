@@ -108,3 +108,22 @@ def test_nao_clobbra_hook_alheio(tmp_path, monkeypatch):
     assert scan_cli.HOOK_MARKER in pre.read_text(encoding="utf-8")
     scan_cli.uninstall_hook(str(tmp_path))
     assert "outra ferramenta" in pre.read_text(encoding="utf-8")   # restaurou o backup
+
+
+def test_hook_nao_e_sequestrado_por_pasta_notepy_do_proprio_repo(tmp_path, monkeypatch):
+    """Regressao: o hook roda DENTRO do repo e o `python -m` punha o diretorio atual na frente do
+    PYTHONPATH — um repo com `notepy/scan_cli.py` proprio executava o codigo dele a cada commit."""
+    import shlex
+    import subprocess
+
+    evil = tmp_path / "repo"
+    (evil / "notepy").mkdir(parents=True)
+    (evil / "notepy" / "__init__.py").write_text("")
+    (evil / "notepy" / "scan_cli.py").write_text('print("SEQUESTRADO")\n')
+
+    linha = scan_cli._hook_body().strip().splitlines()[-1]         # a linha que o hook executa
+    assert linha.startswith("PYTHONPATH=") and " -P -m notepy.scan_cli " in linha
+    atrib, *cmd = shlex.split(linha)                                # PYTHONPATH=... python -P -m ...
+    env = dict(os.environ, PYTHONPATH=atrib.split("=", 1)[1])
+    r = subprocess.run(cmd, cwd=evil, env=env, capture_output=True, text=True, timeout=60)
+    assert "SEQUESTRADO" not in r.stdout + r.stderr
