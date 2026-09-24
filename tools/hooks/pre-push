@@ -4,8 +4,9 @@
 # Coexiste com o pre-commit anti-segredo (arquivos distintos).
 # Emergencia (pular a checagem):  git push --no-verify
 #
-# ruff/mypy AUSENTES nao bloqueiam: o guarda-corpo obrigatorio e a suite. Sem servidor de CI,
-# travar o push de quem ainda nao instalou as ferramentas seria pior que avisar alto.
+# ruff/mypy AUSENTES nao bloqueiam: o guarda-corpo obrigatorio e a suite, e o CI
+# (.github/workflows/ci.yml) roda as tres checagens de qualquer forma. Travar o push de quem
+# ainda nao instalou as ferramentas seria pior que avisar alto.
 # Instale com:  pip install -r requirements-dev.txt
 root="$(git rev-parse --show-toplevel)"
 
