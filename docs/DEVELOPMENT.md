@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (460 testes); o conftest força offscreen
+pytest                  # roda tudo (466 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -355,7 +355,8 @@ python -m notepy.release verify dist [--expect-fingerprint ...] [--expect-pubkey
 ### 5.4 Verificar o release — `verify_release.py` (standalone)
 
 Na **raiz** do projeto há um verificador independente do pacote, `verify_release.py`,
-que **embute a chave pública do autor** (fingerprint oficial `4e391f28930f3b6e`):
+que **embute a chave pública do autor** (fingerprint oficial `6b38433243e8f7e7`; a anterior,
+`4e391f28930f3b6e`, fica em `RETIRED_AUTHOR_KEYS`, válida só até a v1.3.0):
 
 ```powershell
 python verify_release.py dist
@@ -424,7 +425,7 @@ Notepad/                       # pasta do projeto (nome historico)
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # 460 testes (pytest, offscreen)
+├── tests/                     # 466 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
 │   └── test_*.py              # 20 arquivos: secrets, vault, custody, idbackup,
@@ -612,7 +613,9 @@ Qt), o que facilita testá-los isolados. Regras ao estendê-los:
   string** `signed_payload` e **só então** parseia (zero divergência). Se mudar o
   payload, mude os **dois** em sincronia e rode `test_release.py`. O fingerprint é
   sempre **derivado** da chave (`sha256(pubkey)[:16]`); o `verify_release.py` embute a
-  âncora `4e391f28930f3b6e`.
+  âncora `6b38433243e8f7e7` (e as chaves aposentadas em `RETIRED_AUTHOR_KEYS`). Trocar a chave do autor
+  exige atualizar os **dois** verificadores (`verify_release.py` e `verify_seal.py`) juntos; o
+  `test_release.py` confere que eles concordam.
 
 > **Não prometa o que o código não faz.** Cofre = confidencialidade em repouso;
 > Custódia = integridade/autenticidade (chave opcionalmente protegida); ocultar

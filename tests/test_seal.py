@@ -437,3 +437,36 @@ def test_cli_make_oserror_nao_crasha(ident, tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert rc == 2 and "falha de IO" in out
     assert not os.path.exists(f + seal.SEAL_SUFFIX)    # nao deixou selo parcial
+
+
+# --------------------------------------------------------------------------- #
+# Troca da chave do autor (v1.4.0): a chave anterior fica APOSENTADA
+# --------------------------------------------------------------------------- #
+def test_chave_aposentada_so_vale_para_selos_anteriores(ident, tmp_path, monkeypatch):
+    vr = _load_standalone()
+    monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (
+        {"pubkey": custody.public_key_b64(), "fingerprint": custody.fingerprint(),
+         "retired": "2026-09-24"},))
+    f = _file(tmp_path)
+    for quando, esperado in (("2026-06-15T00:00:00+00:00", True), ("2026-09-24T23:59:59+00:00", True),
+                             ("2026-09-25T00:00:00+00:00", False), ("ontem", False)):
+        with open(f + ".rdbt-seal", "w", encoding="utf-8") as fh:
+            json.dump(_seal(f, sealed_at=quando), fh)
+        ok, lines = vr.verify_file(f)
+        assert ok is esperado, (quando, lines)
+        if not esperado:
+            assert any("APOSENTADA" in ln for ln in lines)
+        else:
+            assert any("aposentada" in ln for ln in lines)
+
+
+def test_selo_pubkey_explicita_e_a_unica_ancora(ident, tmp_path, monkeypatch):
+    vr = _load_standalone()
+    monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (
+        {"pubkey": custody.public_key_b64(), "fingerprint": custody.fingerprint(),
+         "retired": "2026-09-24"},))
+    f = _file(tmp_path)
+    with open(f + ".rdbt-seal", "w", encoding="utf-8") as fh:
+        json.dump(_seal(f), fh)
+    ok, _ = vr.verify_file(f, trust_pubkey=vr.AUTHOR_PUBKEY_B64)
+    assert ok is False

@@ -12,7 +12,7 @@
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.4.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
 [![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux-5B6EE1)](#como-instalar)
-[![Testes](https://img.shields.io/badge/testes-460%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-466%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 [![CI](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml)
 
 </div>
@@ -225,7 +225,7 @@ python verify_release.py .
 Saída esperada:
 
 ```text
-Chave de confiança (fingerprint): 4e391f28930f3b6e
+Chave de confiança (fingerprint): 6b38433243e8f7e7
 Assinatura confere com a chave do autor: SIM
 Artefatos:
   [OK] Redoubt-Setup-1.4.0.exe
@@ -238,13 +238,19 @@ O `verify_release.py` **embute a chave pública do autor** e valida a assinatura
 ela — então um binário adulterado e re-assinado com outra chave é **rejeitado** (a
 assinatura não confere com a âncora), e o `RELEASE.json` falha se qualquer hash não bater.
 
-> **Fingerprint oficial:** `4e391f28930f3b6e`
-> **Chave pública (Ed25519, base64):** `RZZBbCP6irycPMcBLFs5raHw5gONJOU5LMYZwGawrBA=`
+> **Fingerprint oficial (desde a v1.4.0):** `6b38433243e8f7e7`
+> **Chave pública (Ed25519, base64):** `jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs=`
+>
+> **Chave anterior, aposentada em 2026-09-24:** `4e391f28930f3b6e` (assinou os releases até a
+> v1.3.0). Ela se perdeu junto com a máquina que a guardava, cujo disco foi destruído: não vazou,
+> apenas deixou de existir. O verificador continua aceitando essa chave **só** para os releases
+> até a v1.3.0 (e para selos feitos até 2026-09-24), e mostra quando foi ela que assinou.
+> Detalhes em [`docs/CUSTODY.md`](docs/CUSTODY.md#troca-da-chave-do-autor-2026-09-24).
 >
 > Confirme que o fingerprint impresso bate com este. **Modelo de confiança (honesto):** a
 > assinatura prova integridade + que o release veio desta chave, que chega pelo mesmo
-> repositório que você já confia. A chave privada é local e sem senha — quem tiver a
-> máquina do autor pode assinar como ele. Para verificar um release de **outra** pessoa:
+> repositório que você já confia. A chave privada é local — quem tiver a máquina do autor, com
+> a senha da identidade, pode assinar como ele. Para verificar um release de **outra** pessoa:
 > `python verify_release.py <dir> --pubkey <chave-base64>`.
 
 ---
@@ -369,7 +375,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop e AUR (Linux)**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **460 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível, o backup da identidade e o suporte a Linux). O **CI** (GitHub Actions) roda a cada push e PR em dois ambientes: Windows (Python 3.11 e 3.14: lint, tipos e suíte) e Arch Linux (suíte, seleção primária num X11 real, `makepkg` com `check()`, `namcap` e instalação do pacote).
+**Pentests adversariais** sobrevividos e **466 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível, o backup da identidade e o suporte a Linux). O **CI** (GitHub Actions) roda a cada push e PR em dois ambientes: Windows (Python 3.11 e 3.14: lint, tipos e suíte) e Arch Linux (suíte, seleção primária num X11 real, `makepkg` com `check()`, `namcap` e instalação do pacote).
 
 > Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
