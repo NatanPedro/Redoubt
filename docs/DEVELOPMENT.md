@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (388 testes); o conftest força offscreen
+pytest                  # roda tudo (452 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -153,8 +153,12 @@ não sair; soma tudo e sai `!= 0` se algo falhar. Use-o quando o `pytest` combin
 
 `install-hooks.bat` instala um hook **`pre-push`** (em `.git/hooks/`, coexistindo com o
 `pre-commit` anti-segredo) que roda, **nesta ordem**, `ruff check .` → `mypy` → o runner da suíte,
-e **bloqueia o push** se qualquer um reprovar. É **local** (sem CI de servidor);
-`git push --no-verify` pula numa emergência.
+e **bloqueia o push** se qualquer um reprovar. `git push --no-verify` pula numa emergência.
+
+O mesmo trio roda no **CI** ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)): GitHub
+Actions em **Windows**, com **Python 3.11 e 3.14**, a cada push no `main` e na `homologacao` e em todo PR. O hook é a
+checagem rápida local; o CI é o guarda que não dá para pular com `--no-verify` nem depende da
+máquina de quem empurrou.
 
 ### Lint e tipos (`ruff` + `mypy`)
 
@@ -392,13 +396,14 @@ Notepad/                       # pasta do projeto (nome historico)
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # 388 testes (pytest, offscreen)
+├── tests/                     # 452 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
-│   └── test_*.py              # 19 arquivos: secrets, vault, custody, release,
-│                              #   seal, redaction, scan_cli, app, searchfiles,
-│                              #   palette, difftool, config, theme, findbar,
-│                              #   transforms, textops, passgen, redteam_corpus
+│   └── test_*.py              # 20 arquivos: secrets, vault, custody, idbackup,
+│                              #   release, seal, redaction, scan_cli, app,
+│                              #   searchfiles, palette, difftool, config, theme,
+│                              #   findbar, transforms, textops, passgen,
+│                              #   redteam_corpus
 └── notepy/                    # o pacote Python (nome historico; produto = Redoubt)
     ├── __init__.py            # APP_NAME / APP_VERSION (1.3.0) / APP_TAGLINE
     │
