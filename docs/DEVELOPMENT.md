@@ -1,6 +1,6 @@
 # Guia do Desenvolvedor — Redoubt
 
-> **Redoubt** v1.0.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.3.0 — *editor que trata cada arquivo como evidência.*
 > *Nada vaza sem você mandar.*
 
 Este documento explica como configurar o ambiente, **rodar**, **testar** e
@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (294 testes); o conftest força offscreen
+pytest                  # roda tudo (388 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -152,8 +152,36 @@ no shutdown do interpretador) — *flaky*, não é falha de teste. Por isso `too
 não sair; soma tudo e sai `!= 0` se algo falhar. Use-o quando o `pytest` combinado der esse crash.
 
 `install-hooks.bat` instala um hook **`pre-push`** (em `.git/hooks/`, coexistindo com o
-`pre-commit` anti-segredo) que roda esse runner e **bloqueia o push se a suíte quebrar**. É
-**local** (sem CI de servidor); `git push --no-verify` pula numa emergência.
+`pre-commit` anti-segredo) que roda, **nesta ordem**, `ruff check .` → `mypy` → o runner da suíte,
+e **bloqueia o push** se qualquer um reprovar. É **local** (sem CI de servidor);
+`git push --no-verify` pula numa emergência.
+
+### Lint e tipos (`ruff` + `mypy`)
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .            # lint  (boa parte sai com --fix)
+ruff check . --fix
+mypy                    # tipos (escopo vem do pyproject.toml)
+```
+
+Ambos configurados em [`pyproject.toml`](../pyproject.toml), com escolhas deliberadas:
+
+- **`line-length = 120`** — reflete o estilo real do código (o maior arquivo bate em 122). Preferimos
+  adotar a régua existente a impor uma reescrita de 124 linhas para agradar o padrão de 88.
+- **Regras:** `E`, `W`, `F` (pyflakes: bugs de verdade), `B` (bugbear), `C4`, `RUF`. Fora por ora:
+  `I` (isort) e `UP` (pyupgrade) — são correções automáticas em massa, entram num passo próprio.
+- **`E702` ignorado:** `a(); b()` na mesma linha é estilo compacto deliberado aqui (sobretudo nos
+  testes, onde duas preparações triviais na mesma linha leem melhor que duas linhas).
+- **mypy só nos núcleos puros** (sem Qt) — que são justamente os que carregam a cripto e a lógica
+  verificável. A camada de UI fica de fora: os stubs do PyQt6 devolvem `QStatusBar | None` em toda
+  API e geram ~100 `union-attr` sem apontar bug real. Ampliar é um passo separado.
+- Se `ruff`/`mypy` não estiverem instalados, o hook **avisa e segue** — o guarda-corpo obrigatório
+  é a suíte, e travar o push de quem não instalou as ferramentas seria pior que o aviso.
+
+> O lint já se pagou na estreia: o `RUF001` achou um **`U+2029` (separador de parágrafo) invisível**
+> onde devia haver um espaço, em `findbar.py` — a guarda "só auto-preenche seleção de uma palavra"
+> nunca funcionava. Corrigido e travado em teste.
 
 A suíte vive em `tests/` e cobre **núcleo a núcleo**:
 
@@ -161,12 +189,14 @@ A suíte vive em `tests/` e cobre **núcleo a núcleo**:
 | --- | --- |
 | `test_secrets.py` | Sentinela: verdadeiros/falsos-positivos, validadores (CPF/CNPJ/Luhn), resistência a *placeholder-poison*, exclusão de hash, teto `MAX_MATCHES`. |
 | `test_redteam_corpus.py` | Roda o corpus adversarial (`tests/fixtures/redteam_corpus.json`) e exige piso de **recall/precisão** — pega regressão grande do scanner. Marcado `slow`. |
-| `test_vault.py` | Cofre RDBT3 (Argon2id por slot): round-trip, senha errada → `WrongPassword`, adulteração de ciphertext/salt/nonce/slot, *bomba* de KDF + **teto de custo agregado** (anti-DoS), anti-downgrade, slot ruim pulado, múltiplos slots, **retrocompat scrypt RDBT2/RDBT1**. |
+| `test_vault.py` | Cofre RDBT4 (envelope: senha/arquivo-chave Argon2id + destinatário X25519): round-trip, senha errada → `WrongPassword`, adulteração de ciphertext/salt/nonce/slot, *bomba* de KDF + **teto de custo agregado** (anti-DoS), anti-downgrade, slot ruim pulado, múltiplos slots, **retrocompat RDBT3/RDBT2/RDBT1** (scrypt legado). |
 | `test_custody.py` | Identidade Ed25519, assinar/verificar, hash-chain append-only (`verify_chain`), proteger/desproteger a identidade com o Cofre (escrita atômica + wipe + rollback), âncora anti-reset. |
 | `test_release.py` | Manifesto RDBT-REL1: assinatura sobre o `signed_payload`, hashes batem, fingerprint derivado da chave, rejeição de re-assinatura com outra chave / âncora divergente. |
 | `test_seal.py` | Selo de proveniência RDBT-SEAL1: round-trip, conteúdo adulterado, **anti-substituição** (selo de outro arquivo), re-assinatura forjada rejeitada, `name` inerte (sem traversal), leitura blindada a `OSError`, verificador standalone (`verify_seal.py`). |
 | `test_redaction.py` | Lista de Redação: round-trip cifrado, senha errada, **comprimento mínimo + teto de spans** (anti-DoS), `find_in` literal, `_decode` robusto. Integração de UI (em `test_app.py`): tarja no editor, byte-spans com unicode, cópia parcial no clipboard, gerenciador travado sem crash. |
 | `test_scan_cli.py` | CLI da Sentinela e hook git: `--staged`, `--install-hook` (backup de hook alheio), decodificação UTF-16/32 e NUL, *fail-closed*, whitelist `redoubt:allow`, relatório nunca imprime o segredo. |
+| `test_transforms.py` | Codec (Base64/Base64-URL/Hex/URL/Quoted-printable + decode de JWT): round-trip, decode estrito (lixo/binário → erro), teto anti-DoS de 2 MiB, surrogate solitário → `TransformError`. |
+| `test_textops.py`, `test_passgen.py` | Operações de linha (ordenar/dedup/trim/caixa) e gerador de senha/passphrase (≥ 1 de cada classe, sem ambíguos, entropia em bits). |
 | `test_searchfiles.py`, `test_palette.py`, `test_difftool.py`, `test_config.py`, `test_theme.py`, `test_findbar.py` | Núcleos puros de busca, paleta fuzzy, diff, wrapper de QSettings, paletas/QSS/retheme e a barra Localizar/Substituir. |
 | `test_app.py` | Integração de UI: selar/lock/unlock cofre, redação do clipboard, burn, encoding/BOM, mapa de exposição, restauração com conteúdo oculto. Usa a fixture `win`. |
 
@@ -345,6 +375,7 @@ a âncora embutida. Binário re-assinado com outra chave é rejeitado.
 Notepad/                       # pasta do projeto (nome historico)
 ├── main.py                    # ponto de entrada: aplica tema, abre argv
 ├── verify_release.py          # verificador standalone (embute a pubkey do autor)
+├── verify_seal.py             # verificador standalone de selo .rdbt-seal
 ├── run.bat                    # inicia sem console (pythonw) + drag&drop
 ├── build.bat                  # empacota dist\Redoubt.exe (PyInstaller --onefile)
 ├── build-installer.bat        # instalador (Inno Setup) + release.make assinado
@@ -355,29 +386,36 @@ Notepad/                       # pasta do projeto (nome historico)
 ├── README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE
 ├── assets/                    # icone .ico e recursos embutidos no .exe
 ├── installer/                 # redoubt.iss (script do Inno Setup)
-├── tools/                     # gen_icon.py (gera o icone via pillow)
+├── scoop/                     # redoubt.json (manifesto Scoop)
+├── tools/                     # gen_icon.py, run_tests.py, make_scoop_manifest.py, hooks/pre-push
 ├── docs/
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # ~212 testes (pytest, offscreen)
+├── tests/                     # 388 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
-│   └── test_*.py              # 14 arquivos: secrets, vault, custody, release,
-│                              #   scan_cli, app, searchfiles, palette, difftool,
-│                              #   config, theme, findbar, redteam_corpus
+│   └── test_*.py              # 19 arquivos: secrets, vault, custody, release,
+│                              #   seal, redaction, scan_cli, app, searchfiles,
+│                              #   palette, difftool, config, theme, findbar,
+│                              #   transforms, textops, passgen, redteam_corpus
 └── notepy/                    # o pacote Python (nome historico; produto = Redoubt)
-    ├── __init__.py            # APP_NAME / APP_VERSION (1.0.0) / APP_TAGLINE
+    ├── __init__.py            # APP_NAME / APP_VERSION (1.3.0) / APP_TAGLINE
     │
     │   # --- NUCLEOS PUROS (sem Qt; testaveis isolados) ---
     ├── secrets.py             # Sentinela de Segredos (5 camadas)
-    ├── vault.py               # Cofre .rdbt RDBT2 (AES-256-GCM + scrypt)   [cryptography]
+    ├── vault.py               # Cofre++ .rdbt RDBT4 (AES-GCM + Argon2id/X25519) [cryptography]
+    ├── redaction.py           # Lista de Redacao (literais cifrados)       [cryptography]
     ├── custody.py             # Identidade Ed25519 + hash-chain            [cryptography]
     ├── release.py             # Manifesto RDBT-REL1 assinado               [cryptography]
+    ├── seal.py                # Selo de proveniencia RDBT-SEAL1            [cryptography]
     ├── scan_cli.py            # CLI da Sentinela + hook git pre-commit
     ├── searchfiles.py         # busca em arquivos (grep)
     ├── palette.py             # paleta de comandos (fuzzy)
     ├── difftool.py            # diff
+    ├── transforms.py          # codec Base64/Hex/URL/QP + decode de JWT
+    ├── textops.py             # operacoes de linha (ordenar/dedup/trim/caixa)
+    ├── passgen.py             # gerador de senha/passphrase (CSPRNG)
     ├── config.py              # wrapper de QSettings + save/load_session
     ├── theme.py               # paletas, QSS, retheme de lexers
     ├── lexers.py              # mapa extensao/nome -> lexer QScintilla
@@ -587,5 +625,5 @@ Qt), o que facilita testá-los isolados. Regras ao estendê-los:
 
 ---
 
-> **Redoubt** v1.0.0 — Python · PyQt6 · QScintilla · cryptography
+> **Redoubt** v1.3.0 — Python · PyQt6 · QScintilla · cryptography
 > *Nada vaza sem você mandar.*

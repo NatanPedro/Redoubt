@@ -147,10 +147,12 @@ def _valid_cnpj(d: str) -> bool:
     if len(d) != 14 or len(set(d)) == 1:
         return False
     w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-    w2 = [6] + w1
+    w2 = [6, *w1]
 
     def check(slice_: str, weights: list[int]) -> int:
-        r = sum(int(c) * w for c, w in zip(slice_, weights)) % 11
+        # strict=True: os comprimentos batem por construcao (12/12 e 13/13, com len(d)==14
+        # garantido acima); se alguem editar os pesos errado, queremos o erro, nao um DV silencioso.
+        r = sum(int(c) * w for c, w in zip(slice_, weights, strict=True)) % 11
         return 0 if r < 2 else 11 - r
 
     return check(d[:12], w1) == int(d[12]) and check(d[:13], w2) == int(d[13])

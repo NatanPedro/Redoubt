@@ -291,8 +291,25 @@ senha (e só se ela **já existe**: abrir um cofre de terceiro não materializa 
 
 - **Como no `age`, NÃO autentica o remetente** — qualquer um pode cifrar para a sua pública. A confidencialidade do que
   foi selado **para você** depende só da sua **chave privada**.
-- **Limitação honesta (v1):** a privada X25519 fica **local em claro** (como a Ed25519 sem proteção) — quem tem a máquina
-  decifra o que selaram pra você. Protegê-la com senha está na visão.
+- **Proteção da privada (opt-in).** Por padrão a privada fica **local em claro** (`recipient.x25519`) — quem tem a máquina
+  decifra o que selaram pra você. *Segurança ▸ Proteger chave de destinatário com senha* embrulha-a num **Cofre**
+  (`recipient.rdbt`, AES-256-GCM + Argon2id) e apaga a cópia em claro (com **rollback** se a remoção falhar). A **pública**
+  permanece em claro (`recipient.pub`), então **exportar** e **selar para outros** seguem sem senha; só **abrir** um cofre
+  selado para você pede a credencial — **1× por sessão**, esquecida no **auto-lock**, e pedida apenas quando o cofre tem de
+  fato um slot X25519. Aceita **credencial de backup** (2º destravador) — recomendado: *zero-knowledge*, esquecer a senha
+  significa **perder o acesso** aos cofres selados para você.
+- **Prioridade no erro: a chave nunca se perde.** Se a cópia em claro não puder ser removida (lock de antivírus/sync), o
+  Redoubt **mantém o cofre** — que só é gravado depois de **verificar que devolve a chave** — e erra alto
+  (`RecipientClearCopyRemains`): o resíduo em claro fica **detectável** (aviso em *Verificar custódia*, incluindo o `.tmp`
+  de uma escrita interrompida) e é **removido no próximo destravamento**. O inverso (apagar o cofre para "não deixar estado
+  misto") era pior: destruía a única cópia boa. *Desproteger* segue a mesma regra — remove o cofre **sem sobrescrevê-lo** e
+  nunca apaga a cópia em claro se o cofre resistir.
+- **Limitação que permanece:** protegida, a privada só é útil com a credencial — mas enquanto **destravada** ela vive em
+  **RAM** (o Python não garante zerá-la; travar solta a referência, não zera as cópias). E a **pública em claro** é o ponto
+  de confiança do fluxo travado: quem adultera `recipient.pub` faz você **publicar/selar para a chave dele**. Destravar
+  **compara e re-grava** a pública a partir da chave real (e **avisa** que ela estava divergente), mas a janela existe
+  **até o primeiro destravamento da sessão** — antes dele, exportar/selar confiam na pública em claro. Confirme o
+  **fingerprint** por um canal separado com quem recebe a sua chave (mesmo padrão, e mesma limitação, da identidade Ed25519).
 
 ### Garantias
 
@@ -333,9 +350,15 @@ depende de `cryptography`). Verificar com `Ctrl+Shift+H`; assinar/exportar `.sig
   privada num **Cofre RDBT2** (`identity.rdbt`, senha **+** arquivo-chave, multi-slot) e
   **apaga o PEM em claro**. A pública continua em claro, então *fingerprint* e
   *verificação* **não** pedem senha — só **assinar** pede (lazy, com cache de 1× por
-  sessão). Proteger/desproteger faz **escrita atômica + wipe + rollback**, com
-  *binding* pública↔chave e **auto-cura** de PEM órfão se cofre e PEM coexistirem após
-  uma interrupção abrupta.
+  sessão). Proteger/desproteger faz **escrita atômica + wipe**, com *binding* pública↔chave e
+  **auto-cura** de PEM órfão se cofre e PEM coexistirem após uma interrupção abrupta.
+- **Prioridade no erro: a identidade nunca se perde.** O cofre é **verificado** antes de o PEM em claro
+  ser destruído; se a remoção do PEM falhar (lock de antivírus/sync), o cofre **permanece** e o
+  Redoubt erra alto (`IdentityClearCopyRemains`), com o resíduo **detectado** (aviso em *Verificar
+  custódia*) e **removido ao assinar** (que pede a senha). *Desproteger* remove o cofre **sem
+  sobrescrevê-lo** e nunca apaga o PEM se o cofre resistir. O oposto — apagar o cofre para "não deixar
+  estado misto" — **destruía a identidade** no modo de falha real do Windows, junto com a trilha de
+  custódia que ela assina.
 
 ### Trilha de auditoria (hash-chain append-only)
 
@@ -573,7 +596,7 @@ O Redoubt mira o **vazamento acidental** de material sensível por humanos, e a
 | Defesa | Eixo | Garante | NÃO garante |
 | --- | --- | --- | --- |
 | **Sentinela** | Detecção | Aponta credencial/PII de formato conhecido ou alta entropia, local, com validação real onde dá (CPF/CNPJ/Luhn) | Best-effort: segredo sem padrão/ofuscado escapa; há FP. `LIMPO` = "nada detectado", não "sem segredo" |
-| **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM (KDF **Argon2id**, **RDBT4**), zero-knowledge, multi-destravador (senha/arquivo-chave/**destinatário X25519**); disco sempre cifrado | Não prova autoria; não autentica o remetente (X25519); não recupera senha; privada X25519 local em claro; resíduo em RAM enquanto destravado |
+| **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM (KDF **Argon2id**, **RDBT4**), zero-knowledge, multi-destravador (senha/arquivo-chave/**destinatário X25519**); disco sempre cifrado; privada X25519 **protegível por senha** | Não prova autoria; não autentica o remetente (X25519); não recupera senha; privada X25519 em claro **se não protegida**; resíduo em RAM enquanto destravado |
 | **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha + âncora detectam adulteração e reset | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina/forja como você |
 | **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >2 MB não varrido |
 | **Release assinado** | Integridade + autenticidade do download | Integridade + autenticidade contra a âncora embutida | Assinatura sozinha não prova autoria (pubkey viaja no payload); chave local sem senha por padrão |
@@ -677,4 +700,4 @@ python verify_release.py .
 
 ---
 
-*Redoubt v1.0.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*
+*Redoubt v1.3.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*

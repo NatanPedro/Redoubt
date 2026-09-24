@@ -1,14 +1,43 @@
 #!/bin/sh
-# Redoubt :: hook git pre-push — roda a suite de testes e BLOQUEIA o push se algo quebrar.
+# Redoubt :: hook git pre-push — LINT + TIPOS + SUITE. Bloqueia o push se algo quebrar.
 # Instale com  install-hooks.bat  (copia este arquivo para .git/hooks/pre-push).
 # Coexiste com o pre-commit anti-segredo (arquivos distintos).
 # Emergencia (pular a checagem):  git push --no-verify
+#
+# ruff/mypy AUSENTES nao bloqueiam: o guarda-corpo obrigatorio e a suite. Sem servidor de CI,
+# travar o push de quem ainda nao instalou as ferramentas seria pior que avisar alto.
+# Instale com:  pip install -r requirements-dev.txt
 root="$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] ruff (lint)..."
+if command -v ruff >/dev/null 2>&1; then
+    if ! (cd "$root" && ruff check .); then
+        echo ""
+        echo "[pre-push] BLOQUEADO: o ruff reprovou. Boa parte sai com 'ruff check . --fix';"
+        echo "           em emergencia, 'git push --no-verify'."
+        exit 1
+    fi
+else
+    echo "[pre-push] AVISO: ruff nao instalado — lint PULADO (pip install -r requirements-dev.txt)"
+fi
+
+echo "[pre-push] mypy (tipos nos nucleos puros)..."
+if command -v mypy >/dev/null 2>&1; then
+    if ! (cd "$root" && mypy); then
+        echo ""
+        echo "[pre-push] BLOQUEADO: o mypy reprovou (escopo e config em pyproject.toml)."
+        echo "           Corrija ou use 'git push --no-verify'."
+        exit 1
+    fi
+else
+    echo "[pre-push] AVISO: mypy nao instalado — checagem de tipos PULADA"
+fi
+
 echo "[pre-push] rodando a suite do Redoubt antes de empurrar (--no-verify pula)..."
 if ! python "$root/tools/run_tests.py"; then
     echo ""
     echo "[pre-push] BLOQUEADO: a suite falhou. Corrija os testes ou use 'git push --no-verify'."
     exit 1
 fi
-echo "[pre-push] suite verde — seguindo com o push."
+echo "[pre-push] lint + tipos + suite verdes — seguindo com o push."
 exit 0

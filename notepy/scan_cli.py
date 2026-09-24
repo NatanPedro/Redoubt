@@ -32,7 +32,7 @@ from dataclasses import dataclass
 # garantindo que a raiz do Redoubt esteja no sys.path.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from notepy import secrets as secrets_mod  # noqa: E402
+from notepy import secrets as secrets_mod
 
 ALLOW_MARKER = "redoubt:allow"
 HOOK_MARKER = "redoubt-hook"          # identifica um hook nosso ja instalado
@@ -276,9 +276,14 @@ def main(argv: list[str] | None = None) -> int:
     # Saida robusta: o relatorio usa ● … —; num console legado (cp1252, comum no
     # git-bash) um print desses estouraria UnicodeEncodeError no meio do hook.
     for stream in (sys.stdout, sys.stderr):
+        # `reconfigure` so existe em TextIOWrapper (stdout pode ter sido trocado por outro objeto);
+        # via getattr o caso "nao tem" fica explicito, e o try cobre o stream ja destacado.
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
+            reconfigure(encoding="utf-8", errors="replace")
+        except ValueError:
             pass
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--install-hook" in argv:

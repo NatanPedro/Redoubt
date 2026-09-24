@@ -14,7 +14,6 @@ from PyQt6.Qsci import QsciScintilla
 from PyQt6.QtCore import QEvent, QTimer, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics
-from PyQt6.QtWidgets import QApplication
 
 from . import config
 from . import redaction
@@ -523,12 +522,15 @@ class CodeEditor(QsciScintilla):
         self.setReadOnly(True)
         self.setModified(False)
 
-    def unlock(self, password: str | None = None, keyfile: bytes | None = None) -> bool:
-        """Destrava com senha OU arquivo-chave; restaura conteudo + a chave/slots em
-        memoria (p/ re-selar preservando destravadores). Pode levantar WrongPassword."""
+    def unlock(self, password: str | None = None, keyfile: bytes | None = None,
+               x25519_private: bytes | None = None) -> bool:
+        """Destrava com senha, arquivo-chave OU a chave de destinatario X25519 (cofre selado para
+        voce); restaura conteudo + a chave/slots em memoria (p/ re-selar preservando destravadores).
+        Pode levantar WrongPassword."""
         if not self._locked or self._locked_blob is None:
             return False
-        opened = vault.open_vault(self._locked_blob, password=password, keyfile=keyfile)
+        opened = vault.open_vault(self._locked_blob, password=password, keyfile=keyfile,
+                                  x25519_private=x25519_private)
         self.setReadOnly(False)
         self.setText(opened.text)
         self.SendScintilla(QsciScintilla.SCI_EMPTYUNDOBUFFER)   # nao deixa desfazer p/ o banner travado

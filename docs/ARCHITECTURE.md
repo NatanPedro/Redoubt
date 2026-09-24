@@ -1,6 +1,6 @@
 # Arquitetura do Redoubt
 
-> **Redoubt** v1.0.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.3.0 — *editor que trata cada arquivo como evidência.*
 > Tagline: **"Nada vaza sem você mandar."**
 
 Este documento descreve **como o Redoubt é montado por dentro**: as camadas, os
@@ -45,7 +45,7 @@ Quatro defesas locais sustentam a tagline *"nada vaza sem você mandar"*:
 > **Nota sobre o nome do pacote.** O produto se chama **Redoubt**, mas o pacote
 > Python preserva o nome histórico **`notepy/`** e a pasta do projeto se chama
 > `Notepad`. A identidade vive em `notepy/__init__.py`
-> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.0.0"`). Para renomear o app inteiro,
+> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.3.0"`). Para renomear o app inteiro,
 > basta trocar essa constante.
 
 ### As duas camadas
@@ -98,6 +98,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria + chave de destinatário X25519
     ├── release.py           Manifesto de release assinado (RDBT-REL1)
     ├── seal.py              Selo de proveniência de arquivo (RDBT-SEAL1)
+    ├── idbackup.py          Backup/restauração da identidade (RDBT-IDBAK1, cifrado + verificado)
     ├── scan_cli.py          CLI da Sentinela + hook git pre-commit
     ├── searchfiles.py       Busca em arquivos / grep recursivo na pasta
     ├── palette.py           Busca fuzzy da paleta de comandos
@@ -113,7 +114,6 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── mainwindow.py        MainWindow: abas, menus, barra :, selo, orquestração dos núcleos
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
     ├── preferences.py       Diálogo de Preferências (Ctrl+,)
-    ├── lexers.py            extensão de arquivo → lexer QScintilla (~50 linguagens)
     └── theme.py             paletas dark/light, QSS e re-tematização dos lexers
 ```
 
@@ -191,7 +191,7 @@ python main.py [arquivo1 arquivo2 ...]
 
 ### `notepy/__init__.py` — identidade
 
-Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.0.0"` e
+Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.3.0"` e
 `APP_TAGLINE = "Nada vaza sem você mandar."`. É o ponto único de verdade sobre
 nome/versão do produto; todos os outros módulos importam daqui.
 
@@ -234,11 +234,15 @@ entrada inclui o hash da anterior — adulterar um evento passado quebra a cadei
 (`verify_chain`). Por padrão a chave privada é PEM local **sem senha**
 (`identity.ed25519`); opcionalmente (opt-in *Proteger identidade*) a privada é
 embrulhada num Cofre RDBT2 (`identity.rdbt`) e o PEM é apagado. Mantém também um **par
-X25519 de destinatário** **separado** (`recipient.x25519`, raw local em claro), usado
+X25519 de destinatário** **separado** (`recipient.x25519`, raw local), usado
 pelo Cofre para *cifrar-para-destinatário*: `recipient_public_b64` /
 `recipient_fingerprint` / `recipient_private_bytes` / `recipient_exists` — criado sob
 demanda e **nunca regenerado** sobre um arquivo existente (corrompido → erro, não
-sobrescreve). Detalhado na
+sobrescreve). Esse par é **protegível por senha** pelo mesmo padrão da Ed25519
+(`protect_recipient` / `unprotect_recipient` / `unlock_recipient` / `lock_recipient` /
+`add_recipient_unlocker`): a privada vai para um Cofre (`recipient.rdbt`) e a **pública fica
+em claro** (`recipient.pub`), então exportar/selar não pedem senha — só **abrir** pede
+(`RecipientLocked`), 1× por sessão e esquecida no auto-lock. Detalhado na
 [seção 6](#a-custódia-assinada--integridade--autenticidade) e na
 [ADR-7](#adr-7--identidade-protegida-opt-in).
 
@@ -545,9 +549,9 @@ cifrado.
 
 **Não garante:** não protege integridade/autoria de quem cifrou (isso é a
 Custódia); **não autentica o remetente** num slot X25519 (qualquer um cifra para a sua
-pública, como no `age`); não recupera senha esquecida; a privada X25519 fica **local em
-claro** na v1 (quem tem a máquina decifra o que selaram pra você); não elimina resíduo
-de plaintext em RAM/swap enquanto destravado.
+pública, como no `age`); não recupera senha esquecida; a privada X25519 nasce **local em
+claro** (quem tem a máquina decifra o que selaram pra você) — mas é **protegível por senha**
+(opt-in); não elimina resíduo de plaintext em RAM/swap enquanto destravado.
 
 ### A Custódia assinada — integridade + autenticidade
 
@@ -562,7 +566,10 @@ fingerprint/verificação não. Guarda ainda — **separado** da Ed25519 — um 
 de destinatário** (`recipient.x25519`, raw local) que o Cofre usa para
 *cifrar-para-destinatário*: criado sob demanda, **nunca regenerado** sobre arquivo
 existente (corrompido → erro, jamais sobrescreve), e abrir um cofre de terceiro **não**
-materializa uma chave sua.
+materializa uma chave sua. Esse par também é **protegível por senha** (opt-in, mesmo
+padrão: Cofre `recipient.rdbt` + wipe + rollback + auto-cura de órfão), com a **pública em
+claro** (`recipient.pub`) para exportar/selar sem senha — só **abrir** pede, 1× por sessão
+e esquecido no auto-lock.
 
 **Garante:** prova *"veio desta instalação e não mudou desde que assinei"*, desde
 que a chave não vaze. Protegida: a privada só é útil com a credencial
@@ -699,9 +706,10 @@ baixa é **pulado**; `reseal` re-cifra sem re-derivar. Lê/migra RDBT1.
 **Consequências.** Múltiplas senhas/arquivos-chave **e** destinatários X25519 abrem o
 mesmo cofre; rotação trivial e *cifrar-para-destinatário* estilo `age`. Tudo sem
 dependência nova (X25519/HKDF vêm do `cryptography`). Retrocompatibilidade total com
-cofres e identidades antigos. Custo: o slot X25519 **não autentica o remetente** e a
-privada de destinatário fica **local em claro** na v1 (ver [ADR-7](#adr-7--identidade-protegida-opt-in)
-e a [seção 6](#o-cofre--confidencialidade-em-repouso)).
+cofres e identidades antigos. Custo: o slot X25519 **não autentica o remetente**; a privada
+de destinatário nasce **em claro**, mas é **protegível por senha** (opt-in, pelo mesmo Cofre —
+ver [ADR-7](#adr-7--identidade-protegida-opt-in) e a
+[seção 6](#o-cofre--confidencialidade-em-repouso)).
 
 ### ADR-6 — Release assinado pela string canônica + âncora de pubkey
 
@@ -717,17 +725,24 @@ fingerprint é **sempre derivado** (`sha256(pubkey)[:16]`); `verify_release.py`
 âncora (binário re-assinado com outra chave é rejeitado). Limite honesto: a
 âncora chega pelo mesmo canal/repositório que você já confia.
 
-### ADR-7 — Identidade protegida opt-in
+### ADR-7 — Chaves privadas protegidas opt-in (Ed25519 e X25519)
 
 **Contexto.** Por padrão a chave privada Ed25519 é PEM local **sem senha** —
 quem tem a máquina assina como o autor. Forçar senha em todo uso atritaria o fluxo
-normal de custódia.
+normal de custódia. A privada **X25519 de destinatário** (v1.3.0) nasceu com o mesmo
+problema, e pior: quem tem a máquina **decifra** tudo que selaram para você.
 **Decisão.** Manter o padrão sem senha (uso pessoal), com **opt-in** *Proteger
 identidade*: embrulha a privada num Cofre RDBT2 (`identity.rdbt`, senha +
 arquivo-chave, multi-slot) e apaga o PEM; a pública fica em claro
 (`identity.pub`). Só **assinar** pede a credencial (lazy + cache de sessão);
 fingerprint/verificação não. Proteger/desproteger é atômico (wipe + rollback) com
-auto-cura de PEM órfão.
-**Consequências.** O usuário escolhe o trade-off conveniência×proteção da chave.
-Protegida, a privada é zero-knowledge; o fingerprint da identidade é preservado na
-transição.
+auto-cura de PEM órfão. **A chave X25519 reusa exatamente esse padrão** (*Proteger chave de
+destinatário com senha* → `recipient.rdbt` + `recipient.pub`): a assimetria útil é que só
+**abrir** um cofre selado para você pede a credencial — **exportar a sua pública e selar para
+outros não pedem**, porque dependem apenas da pública em claro. A credencial é pedida somente
+quando o cofre tem de fato um slot X25519, e a sessão destravada é **esquecida no auto-lock**.
+**Consequências.** O usuário escolhe o trade-off conveniência×proteção de **cada** chave.
+Protegida, a privada é zero-knowledge; o fingerprint é preservado na transição (nenhum cofre
+já selado para você perde acesso). O custo é a **pública em claro** ser o ponto de confiança
+no estado travado — adulterá-la faz você selar para a chave do atacante; destravar re-grava a
+pública a partir da chave real, re-amarrando o par.

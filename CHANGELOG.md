@@ -16,9 +16,110 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Backup e rotação da identidade** (`tools/backup_identity.py` + núcleo `notepy/idbackup.py`) —
+  a identidade Ed25519 é um arquivo de ~119 bytes que assina **todo** release, selo e âncora, e os
+  verificadores standalone têm a chave pública do autor **embutida**: perdê-la significa nunca mais
+  poder assinar com aquele *fingerprint*, e um release novo com chave nova é indistinguível de
+  falsificação. Agora há um caminho: `make` gera um pacote **cifrado** (`.rdbtbak` — um Cofre
+  AES-256-GCM + Argon2id) com as privadas **Ed25519 e X25519**, e só reporta sucesso depois de
+  **reabrir o pacote e conferir o *fingerprint*** (backup não verificado é só esperança); `check`
+  inspeciona sem restaurar; `restore` devolve as chaves — **recusando** sobrescrever uma identidade
+  existente sem `--force` (mostrando os dois *fingerprints*) e removendo um `identity.rdbt` anterior,
+  que senão faria o app seguir usando a chave **antiga** e a restauração ser silenciosamente inútil.
+  Senha lida do **console** (nunca de `stdin`), material de chave **jamais impresso**, e nada é
+  criado numa instalação sem identidade (read-only). Documentado em
+  [`docs/CUSTODY.md`](docs/CUSTODY.md), incluindo o procedimento de **rotação assinada** — que só é
+  possível **enquanto a chave antiga existe**. Integrado à **X25519 protegida por senha**: com a
+  chave de destinatário protegida, `make` **pede a senha dela** (antes o pacote saía **sem** a X25519,
+  só com um aviso — justamente para quem seguiu a recomendação de protegê-la), e `restore` remove um
+  `recipient.rdbt` anterior e regrava a `recipient.pub` a partir da chave restaurada (senão o cofre
+  antigo vencia, o app seguia com a chave **velha** e anunciava o *fingerprint* errado). Uma X25519
+  existente também exige `--force` para ser substituída. **+22 testes**.
+- **Chave de destinatário (X25519) protegível por senha** — fecha a limitação honesta da v1.3.0
+  ("a privada de destinatário fica local em claro"). *Segurança ▸ Proteger chave de destinatário
+  com senha* embrulha a privada X25519 num Cofre (`recipient.rdbt`, AES-256-GCM + Argon2id) e
+  **remove a cópia em claro** — só depois de **verificar que o cofre devolve a chave**. A
+  **pública** continua em claro (`recipient.pub`),
+  então **exportar a sua chave e selar para outros seguem sem senha**: só **abrir** um cofre selado
+  para você pede a credencial — e **apenas** quando o cofre realmente tem um slot X25519 (cofre
+  comum de senha não incomoda). Destravada **1× por sessão** e **esquecida no auto-lock**, como a
+  Lista de Redação. Também aceita **senha de backup** (2º destravador, agora com mínimo +
+  confirmação + **verificação** de que abre mesmo) e *desproteger*; preserva o **fingerprint**
+  (nenhum cofre já selado para você perde acesso), e uma cópia em claro órfã de proteção
+  interrompida é **detectada** (aviso na custódia) e **apagada ao destravar** (só se for a mesma
+  chave).
+
+  Endurecido por **duas rodadas** de *red-team* + confirmação (a 1ª refutou o primeiro desenho e
+  achou 10 falhas; a 2ª cobriu o redesenho). O que ficou:
+  - **A chave nunca se perde.** Proteger agora **verifica que o cofre devolve a chave** antes de
+    destruir a cópia em claro; se a remoção da cópia falhar, o cofre **permanece** (era o oposto: o
+    rollback apagava o cofre depois de sobrescrever a cópia em claro e a chave ficava
+    **irrecuperável**). *Desproteger* remove o cofre **sem sobrescrevê-lo** e nunca apaga a cópia em
+    claro se o cofre resistir — fechando um caminho de **perda total** da identidade.
+  - **Nunca "protegida" em silêncio com a privada em claro:** sobra de cópia levanta
+    `RecipientClearCopyRemains`, é **detectada** (`recipient_has_orphan_raw`, agora incluindo o
+    resíduo `.tmp`, que guardava os 32 bytes em claro e passava invisível), avisada na custódia e
+    **curada** no próximo destravamento — inclusive com o atributo *somente-leitura*, que antes fazia
+    a limpeza falhar calada.
+  - **Nenhuma exceção crua em slot Qt:** `recipient.pub`/cofre ilegíveis (lock de AV, byte
+    não-ASCII) **abortavam o processo** e levavam o trabalho não salvo.
+  - **Tripwire anti-regeneração:** perder o `recipient.rdbt` erra alto em vez de gerar outra chave e
+    trocar sua identidade em silêncio (o *proteger* também respeita a trava agora).
+  - **`recipient.pub` adulterada é detectada** no destravamento (quem troca a pública faz você selar
+    para a chave dele), a privada **nunca toca o disco em claro** ao proteger de zero, aba aberta por
+    X25519 **destrava após o auto-lock** (era beco sem saída que perdia edição), o prompt **nomeia e
+    sanitiza** o arquivo que pediu a senha, e a senha de backup só é prometida depois de **provar**
+    que abre.
+
+  **+41 testes** → **430 no total** (com o +1 do lint).
+- **Lint e tipos no `pre-push` (`ruff` + `mypy`)** — o hook agora roda `ruff check .` → `mypy` → a
+  suíte, e bloqueia o push se qualquer um reprovar. Configuração em `pyproject.toml`, com escolhas
+  deliberadas: `line-length = 120` (a régua **real** do código, em vez de reescrever 124 linhas para
+  o padrão de 88), regras `E/W/F/B/C4/RUF`, `E702` ignorado (o `a(); b()` compacto é estilo do
+  projeto) e **mypy só nos núcleos puros** — a camada Qt geraria ~100 `union-attr` de stub sem
+  apontar bug real. Se as ferramentas não estiverem instaladas o hook **avisa e segue** (o
+  guarda-corpo obrigatório é a suíte). `requirements-dev.txt` e
+  [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) atualizados.
+
+### Fixed
+- **🔴 Proteger/desproteger a identidade Ed25519 podia DESTRUÍ-LA (irrecuperável).** Bug
+  pré-existente que o *red-team* desta rodada encontrou ao verificar o gêmeo X25519 — e alcançável
+  pelo menu *Segurança ▸ Proteger identidade com senha*, ou seja, exatamente no passo de
+  endurecimento que o app recomenda. No modo de falha real do Windows (o *wipe* passa, o `remove` é
+  bloqueado por antivírus/sync), o *rollback* apagava o **cofre** depois de já ter sobrescrito o
+  **PEM**: sobrava nada — identidade perdida, `identity.pub` ainda anunciando o fingerprint antigo, a
+  trilha de auditoria parando de gravar **em silêncio** e *Verificar custódia* derrubando o processo.
+  O *desproteger* tinha o espelho: sobrescrevia o cofre e depois apagava o PEM (**perda total**).
+  Agora a identidade segue a mesma regra da X25519: **verifica o cofre antes de destruir a cópia em
+  claro**, nunca apaga o cofre depois do *wipe* (erra com `IdentityClearCopyRemains`, resíduo
+  detectado e curado no próximo destravamento) e remove o cofre **sem sobrescrevê-lo**. Comprovado
+  com *lock* real do sistema: a identidade **sobrevive** e o fingerprint é preservado.
+- **Processo abortava (perdendo trabalho não salvo) com arquivo não-UTF8.** Um único byte inválido no
+  `audit.log` — ou num `.sig`, âncora `.json` ou `.rdbt-seal` — levantava `UnicodeDecodeError`, que
+  não é `OSError` e escapava dos leitores dentro de um *slot* Qt. *Verificar custódia* (`Ctrl+Shift+H`)
+  virava um botão de matar o app, justamente onde os avisos de resíduo aparecem.
+- **Testes não escrevem mais no perfil real do usuário** — `tests/conftest.py` isola o diretório de
+  dados do app (identidade Ed25519, chave X25519 e trilha) num temporário. Antes, qualquer teste que
+  tocasse `custody` sem *monkeypatch* próprio gravava em `%APPDATA%\Redoubt` — foi assim que o
+  `audit.log` real inflou (500 KB) e uma `recipient.x25519` chegou a ser criada por engano. Os *mocks*
+  de falha também passaram a simular o modo **real** (*wipe* ok, `remove` bloqueado) — no modo antigo
+  a suíte ficava verde enquanto a identidade era destruível.
+- **A busca auto-preenchia seleções com espaço** — o lint (`RUF001`) achou um **`U+2029` (PARAGRAPH
+  SEPARATOR) invisível** no lugar de um espaço em `findbar.py`: a guarda `" " not in sel` nunca era
+  falsa, então `Ctrl+F` com "alpha beta" selecionado preenchia a busca com a frase inteira, contra a
+  intenção de só aceitar **uma palavra**. Corrigido e travado em teste (**+1 teste**).
+- **23 problemas de tipo nos núcleos puros**, achados pelo mypy e corrigidos de verdade (não
+  silenciados): `identity.ed25519` que **não** contenha uma chave Ed25519 agora erra alto na leitura
+  em vez de falhar confuso ao assinar; nome de artefato não-string num manifesto forjado é rejeitado
+  por tipo antes do `path`; `zip()` do dígito verificador do CNPJ passa a ser `strict=True` (os
+  comprimentos batem por construção — se alguém editar os pesos errado queremos o erro, não um DV
+  silencioso); `_require_unlocked()` da Lista de Redação passa a **devolver** os valores já
+  estreitados, tornando o contrato explícito; e `reconfigure` de stdout/stderr virou `getattr`
+  explícito.
+
 Visão (sem data):
-- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**;
-  proteger a chave de destinatário X25519 com senha (hoje fica local em claro, como a Ed25519).
+- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
 ---
 

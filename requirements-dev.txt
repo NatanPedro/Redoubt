@@ -1,4 +1,10 @@
 # Ferramentas de desenvolvimento/build (NAO sao necessarias para rodar o app).
+#
+# O hook pre-push roda, nesta ordem: `ruff check .` -> `mypy` -> a suite (tools/run_tests.py).
+# Se ruff/mypy nao estiverem instalados o hook AVISA e segue — o guarda-corpo obrigatorio e a
+# suite. Regras, escopo e line-length das duas ferramentas ficam em pyproject.toml.
 pytest>=7             # suite de testes (pytest)
+ruff>=0.13            # lint (E/W/F/B/C4/RUF)
+mypy>=1.11            # tipos nos nucleos puros (sem Qt)
 pyinstaller>=6        # empacota o .exe (build.bat)
 pillow>=10            # gera o icone (tools/gen_icon.py)

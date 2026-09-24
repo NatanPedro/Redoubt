@@ -86,3 +86,22 @@ def test_replace_all_ancora_nao_trava(win):
     fb.find_edit.setText("^")
     fb.replace_edit.setText("> ")
     fb.replace_all()                     # so precisa RETORNAR, sem hang
+
+
+def test_open_find_preenche_so_selecao_de_uma_palavra(win):
+    """Regressao (achada pelo ruff/RUF001): a guarda "sem espaco" tinha um U+2029 (PARAGRAPH
+    SEPARATOR) no lugar do espaco — invisivel no codigo —, entao `" " not in sel` nunca era falso
+    e uma selecao com espacos tambem era auto-preenchida na busca."""
+    ed = win.current_editor()
+    fb = win.find_bar
+    ed.setText("alpha beta")
+
+    ed.setSelection(0, 0, 0, 5)          # "alpha": palavra unica -> preenche
+    fb.find_edit.setText("")
+    fb.open_find()
+    assert fb.find_edit.text() == "alpha"
+
+    ed.setSelection(0, 0, 0, 10)         # "alpha beta": tem espaco -> NAO preenche
+    fb.find_edit.setText("")
+    fb.open_find()
+    assert fb.find_edit.text() == ""

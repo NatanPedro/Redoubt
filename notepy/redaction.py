@@ -97,9 +97,12 @@ def init_new(password: str | None = None, *, keyfile: bytes | None = None) -> No
     _slots = vault.add_unlocker(_key, [], password=password, keyfile=keyfile)
 
 
-def _require_unlocked() -> None:
+def _require_unlocked() -> tuple[list[str], bytes, list[bytes]]:
+    """Exige a lista destravada e DEVOLVE (entries, key, slots) — devolver, em vez de so validar,
+    deixa o contrato explicito para quem le e dispensa o `# type: ignore` em cada uso."""
     if _entries is None or _key is None or _slots is None:
         raise vault.VaultError("lista de redacao travada")
+    return _entries, _key, _slots
 
 
 def entries() -> list[str]:
@@ -110,25 +113,25 @@ def entries() -> list[str]:
 def add(secret: str) -> bool:
     """Adiciona um segredo literal a lista (em memoria). Devolve False se curto/longo/duplicado/cheio.
     Exige >= _MIN_LEN: um literal de 1-3 chars nao e credencial e geraria spans em massa (DoS)."""
-    _require_unlocked()
-    if not (_MIN_LEN <= len(secret) <= _MAX_LEN) or secret in _entries or len(_entries) >= _MAX_ENTRIES:
+    lista, _k, _s = _require_unlocked()
+    if not (_MIN_LEN <= len(secret) <= _MAX_LEN) or secret in lista or len(lista) >= _MAX_ENTRIES:
         return False
-    _entries.append(secret)
+    lista.append(secret)          # mesma lista do cache (mutacao in-place, como antes)
     return True
 
 
 def remove(secret: str) -> bool:
-    _require_unlocked()
-    if secret in _entries:
-        _entries.remove(secret)
+    lista, _k, _s = _require_unlocked()
+    if secret in lista:
+        lista.remove(secret)
         return True
     return False
 
 
 def save() -> None:
     """Persiste a lista CIFRADA (re-sela com a chave/slots em cache — nao pede senha de novo)."""
-    _require_unlocked()
-    blob = vault.reseal(json.dumps(_entries, ensure_ascii=False), _key, _slots)
+    lista, chave, slots = _require_unlocked()
+    blob = vault.reseal(json.dumps(lista, ensure_ascii=False), chave, slots)
     custody._atomic_write(_path(), blob)
 
 
