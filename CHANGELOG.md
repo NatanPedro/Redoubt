@@ -16,7 +16,43 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+Visão (sem data):
+- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
+
+---
+
+## [1.4.0] - 2026-09-24 — Linux (Arch, CachyOS, Manjaro) + chaves que não se perdem 🐧🔐
+
+O Redoubt chega ao **Linux**, com pacote para as distros baseadas em Arch testado em **Arch,
+CachyOS e Manjaro**. Trazer o app para uma plataforma nova expôs três falhas que só existiam lá
+(a **seleção primária** furando o Modo Redação, cofres ficando **ilegíveis** para o próprio dono e
+chaves privadas gravadas **legíveis por outros usuários**) e uma que valia em todo sistema: o hook
+anti-segredo podia ser **sequestrado** por um repositório malicioso. Todas corrigidas e travadas em
+teste. A release também fecha a limitação honesta da v1.3.0 (a chave X25519 agora é protegível
+por senha), corrige um caminho de **perda irrecuperável da identidade Ed25519** e ganha backup da
+identidade e CI. A suíte foi de **388 → 460 testes** verdes.
+
 ### Added
+- **Suporte a Linux, com pacote para Arch/CachyOS/Manjaro** ([`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD),
+  pronto para o AUR). Usa só os repositórios oficiais (`python-pyqt6`, `python-qscintilla-qt6`,
+  `python-cryptography`), sem `pip`; o código fica em `/usr/lib/redoubt`, fora do `site-packages`,
+  e não quebra quando o Arch troca a versão do Python. Instala o comando `redoubt`, a entrada no
+  menu (`redoubt.desktop`), o tipo MIME `application/x-redoubt-vault` para `*.rdbt` (duplo-clique
+  abre o cofre no KDE e no GNOME; o backup `.rdbtbak` fica **de fora de propósito**, sem detecção
+  por conteúdo, para não abrir as chaves privadas na tela) e as CLIs `redoubt-scan`,
+  `redoubt-backup-identity`, `redoubt-verify-release` e `redoubt-verify-seal`. O `check()` roda a
+  suíte inteira. Validado em containers de **Arch, CachyOS e Manjaro**: `makepkg`, `namcap`,
+  `pacman -U`, `desktop-file-validate`, tipo MIME no Qt e no GIO e o app abrindo em X11.
+- **Dados no lugar certo em cada sistema** — Linux/BSD em `$XDG_DATA_HOME` (padrão
+  `~/.local/share/Redoubt/Redoubt`), macOS em `~/Library/Application Support`; Windows segue em
+  `%APPDATA%`. Antes, fora do Windows, as chaves privadas iam parar em `~/Redoubt/Redoubt`.
+- **Integração com o desktop Linux** — `setDesktopFileName("redoubt")` (ícone e agrupamento certos
+  no Wayland) e `WM_CLASS` `redoubt`/`Redoubt` no X11 (era `main.py`); ícone PNG fora do Windows;
+  fontes monoespaçadas das distros (Noto Sans Mono, Liberation Mono, Hack, Ubuntu Mono) na lista de
+  preferência.
+- **Job de Arch Linux no CI** — container `archlinux`, usuário sem root: suíte, testes da seleção
+  primária num **X11 real** (Xvfb; falha se forem pulados), `makepkg` com `check()`, `namcap`,
+  instalação e `desktop-file-validate`.
 - **CI no GitHub Actions** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) — o mesmo
   trio do hook `pre-push` (`ruff check .` → `mypy` → `tools/run_tests.py`), agora no servidor: roda
   em **Windows** com **Python 3.11 e 3.14** a cada push no `main` e na `homologacao` e em todo PR, e não dá para pular
@@ -87,7 +123,30 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   guarda-corpo obrigatório é a suíte). `requirements-dev.txt` e
   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) atualizados.
 
+### Security
+- **🔴 Linux: selecionar um segredo com o mouse o entregava em claro, com o Modo Redação ligado.**
+  No X11/Wayland existe um **segundo clipboard**, a seleção primária: o Scintilla a preenche só de
+  **selecionar** o texto, e o botão do meio cola em qualquer app. A Redação vigiava só o clipboard
+  normal. Agora mascara as duas (`QClipboard.selectionChanged`), e a Burn Note limpa as duas.
+  Reproduzido e travado em teste num X11 real (o teste falha no código anterior).
+- **🔴 O hook pre-commit podia ser sequestrado pelo repositório que ele protege** (todo sistema). O
+  hook roda `python -m notepy.scan_cli` **dentro** do repo, e o `python -m` põe o diretório atual na
+  frente do `PYTHONPATH`: um repo com uma pasta `notepy/` própria executava o código dele a cada
+  `git commit`. Agora o hook usa `python -P` (não põe o diretório atual no `sys.path`), assim como o
+  `redoubt-scan` do pacote Linux. **Reinstale o hook** nos repos protegidos
+  (`python -m notepy.scan_cli --install-hook <repo>`) para receber a correção.
+- **Linux: chaves privadas eram gravadas legíveis por outros usuários.** A escrita atômica usava o
+  `umask` (tipicamente `0644`), e a privada X25519 nem recebia `chmod` depois. Agora todo arquivo
+  nasce `0600` e a pasta de dados é `0700` (e é apertada se já existia frouxa).
+
 ### Fixed
+- **Linux: um cofre cujo remove falhasse ficava ILEGÍVEL para o próprio dono.** Para limpar o
+  "somente-leitura", o código chamava `chmod(S_IWRITE)`: no Windows isso só mexe nesse atributo,
+  mas no POSIX **define** o modo `0200`, sem leitura. A identidade protegida ficava trancada, e o
+  *wipe* do `_secure_remove` falhava calado, deixando a chave inteira no resíduo. Agora só soma os
+  bits de leitura/escrita do dono.
+- **Testes isolam também o XDG** (`XDG_DATA_HOME`/`XDG_CONFIG_HOME`): rodar a suíte no Linux (ex.:
+  o `check()` do pacote) não toca as chaves nem as preferências reais de quem compila.
 - **🔴 Proteger/desproteger a identidade Ed25519 podia DESTRUÍ-LA (irrecuperável).** Bug
   pré-existente que o *red-team* desta rodada encontrou ao verificar o gêmeo X25519 — e alcançável
   pelo menu *Segurança ▸ Proteger identidade com senha*, ou seja, exatamente no passo de
@@ -122,9 +181,6 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   silencioso); `_require_unlocked()` da Lista de Redação passa a **devolver** os valores já
   estreitados, tornando o contrato explícito; e `reconfigure` de stdout/stderr virou `getattr`
   explícito.
-
-Visão (sem data):
-- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
 ---
 
@@ -822,5 +878,6 @@ Base do editor de texto/codigo, antes da virada de seguranca.
   por linha de comando (suporta "Abrir com…").
 
 [Nao lancado]: #nao-lancado
+[1.4.0]: #140---2026-09-24
 [0.2.0]: #020---redoubt
 [0.1.0]: #010

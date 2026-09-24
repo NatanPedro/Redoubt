@@ -8,7 +8,10 @@ prova de adulteração.
 
 ## Identidade (Ed25519)
 
-Na primeira vez, o Redoubt gera um **par de chaves Ed25519** desta instalação:
+Na primeira vez, o Redoubt gera um **par de chaves Ed25519** desta instalação. Os caminhos abaixo
+estão no formato do Windows (`%APPDATA%\Redoubt\Redoubt`); no Linux o mesmo diretório de dados é
+`~/.local/share/Redoubt/Redoubt` (ou `$XDG_DATA_HOME/Redoubt/Redoubt`), pasta `0700` com arquivos
+`0600`.
 
 - Chave **privada**: `%APPDATA%\Redoubt\Redoubt\identity.ed25519` (PEM, local). Por padrão fica
   **sem senha**; em **Segurança ▸ Proteger identidade com senha** ela é embrulhada num Cofre
@@ -156,8 +159,9 @@ python tools/backup_identity.py restore redoubt-identity-....rdbtbak --dir ./tes
 
 `check` mostra o que há no pacote (formato, data, *fingerprints*) e se bate com a identidade local.
 `restore` grava `identity.ed25519` + `identity.pub` (+ `recipient.x25519` + `recipient.pub`) no
-diretório de dados (ou no `--dir` indicado). Sem argumento, o destino é o `%APPDATA%\Redoubt\Redoubt`
-desta máquina.
+diretório de dados (ou no `--dir` indicado). Sem argumento, o destino é o diretório de dados desta
+máquina (`%APPDATA%\Redoubt\Redoubt` no Windows, `~/.local/share/Redoubt/Redoubt` no Linux). No
+Linux, pelo pacote, o comando é `redoubt-backup-identity` no lugar de `python tools/backup_identity.py`.
 
 Duas proteções deliberadas no `restore`:
 
