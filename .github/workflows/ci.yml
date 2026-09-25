@@ -100,8 +100,21 @@ jobs:
           git archive --prefix="Redoubt-$ver/" -o "/tmp/pkg/redoubt-$ver.tar.gz" HEAD
           sed "s|^source=.*|source=(\"redoubt-$ver.tar.gz\")|" packaging/arch/PKGBUILD > /tmp/pkg/PKGBUILD
           chown -R builder /tmp/pkg
-          su builder -c "cd /tmp/pkg && makepkg -f --noconfirm"
+          # Tarball da arvore ATUAL: o hash nao e o da tag publicada, entao pula so a checagem de hash.
+          su builder -c "cd /tmp/pkg && makepkg -f --noconfirm --skipchecksums"
           namcap /tmp/pkg/PKGBUILD /tmp/pkg/*.pkg.tar.zst
           pacman -U --noconfirm /tmp/pkg/*.pkg.tar.zst
           desktop-file-validate /usr/share/applications/redoubt.desktop
           su builder -c "redoubt-scan --help" >/dev/null
+
+      - name: Fonte publicada confere com o sha256sums do PKGBUILD
+        # O que o AUR baixa e o tarball da TAG no GitHub. Se a tag de pkgver ja existe, o hash do
+        # PKGBUILD tem de bater com ele (pega hash esquecido ou tag movida sem updpkgsums).
+        run: |
+          ver=$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)
+          if curl -sfIL -o /dev/null "https://github.com/NatanPedro/Redoubt/archive/refs/tags/v$ver.tar.gz"; then
+            mkdir -p /tmp/src && cp packaging/arch/PKGBUILD /tmp/src/ && chown -R builder /tmp/src
+            su builder -c "cd /tmp/src && makepkg --verifysource"
+          else
+            echo "tag v$ver ainda nao publicada: nada a conferir"
+          fi

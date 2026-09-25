@@ -14,8 +14,8 @@ depends=('python' 'python-pyqt6' 'python-qscintilla-qt6' 'python-cryptography' '
 optdepends=('git: hook pre-commit anti-segredo (redoubt-scan --install-hook)')
 checkdepends=('python-pytest' 'git')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-# Preenchido no release: `updpkgsums` depois de publicar a tag v$pkgver.
-sha256sums=('SKIP')
+# Tarball da tag v$pkgver no GitHub. A cada release: `updpkgsums` + `makepkg --printsrcinfo > .SRCINFO`.
+sha256sums=('775d88b3d8ed1e3dbeafd34e8776c0fd3e5ceeddf6e9f8a82b48b3c275aa7a3c')
 
 _src="Redoubt-$pkgver"
 _lib="/usr/lib/$pkgname"
