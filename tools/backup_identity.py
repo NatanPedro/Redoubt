@@ -48,8 +48,24 @@ def _ler_keyfile(caminho: str | None) -> bytes | None:
         raise SystemExit(f"[ERRO] nao consegui ler o arquivo-chave: {exc}") from exc
 
 
+def _destino_invalido(caminho: str, force: bool) -> str | None:
+    """Motivo para recusar o `-o` ANTES de pedir qualquer senha, ou None se der para gravar."""
+    pasta = os.path.dirname(os.path.abspath(caminho))
+    if not os.path.isdir(pasta):
+        return (f"a pasta de destino nao existe: {pasta}\n"
+                "       (pendrive desconectado ou letra de unidade diferente? confira e repita)")
+    if os.path.exists(caminho) and not force:
+        return f"{caminho} ja existe (use --force para sobrescrever)."
+    return None
+
+
 def cmd_make(args) -> int:
     keyfile = _ler_keyfile(args.keyfile)
+    if args.out:                      # confere o destino antes das senhas: errar no fim frustra
+        motivo = _destino_invalido(args.out, args.force)
+        if motivo:
+            print(f"[ERRO] {motivo}")
+            return 1
     if not idbackup.local_identity_exists():
         print("[ERRO] nenhuma identidade local encontrada — nada a copiar.")
         print(f"       diretorio de dados: {custody._data_dir()}")
