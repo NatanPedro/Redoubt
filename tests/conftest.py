@@ -23,6 +23,9 @@ os.environ["APPDATA"] = tempfile.mkdtemp(prefix="redoubt-tests-appdata-")
 # check() do PKGBUILD, na maquina de quem instala) mexeria nas chaves e preferencias REAIS.
 os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgdata-")
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgconfig-")
+# O tema grava as setas dos campos (PNG) no cache do usuario: nos testes, num cache temporario.
+os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgcache-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="redoubt-tests-localappdata-")
 
 import pytest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
@@ -51,6 +54,22 @@ def win(qapp, monkeypatch):
                         staticmethod(lambda *a, **k: inbox.pop(0) if inbox else ("", False)))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", "")))
     monkeypatch.setattr(QFileDialog, "getOpenFileNames", staticmethod(lambda *a, **k: ([], "")))
+
+    # Dialogos proprios do redesign: selar le as DUAS senhas da mesma fila (como os dois
+    # QInputDialog de antes) e a custodia nao abre janela modal.
+    from notepy import widgets
+
+    def _seal_ask(_parent, _name):
+        first = inbox.pop(0) if inbox else ("", False)
+        if not first[1]:
+            return None
+        second = inbox.pop(0) if inbox else ("", False)
+        if not second[1]:
+            return None
+        return first[0], second[0]
+
+    monkeypatch.setattr(widgets.SealDialog, "ask", staticmethod(_seal_ask))
+    monkeypatch.setattr(widgets.CustodyDialog, "exec", lambda self: 0)
 
     theme.apply_app(qapp)
     w = MainWindow()

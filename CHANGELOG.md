@@ -16,6 +16,30 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Changed
+- **Nova interface ("carbono")**, fiel ao protótipo aprovado:
+  - uma barra superior junta menus, a busca que abre a paleta e os botões Tarjar, Selar cofre e a
+    identidade (que só **lê** o fingerprint: nunca cria uma chave);
+  - um **trilho lateral** leva à Sentinela, Buscar em arquivos, Comparar, Custódia e Preferências;
+  - a **Sentinela vira painel fixo**, com filtros (credenciais/PII), clique para ir ao segredo e
+    prévias **sempre mascaradas** (só o prefixo público do provedor, como `AKIA`/`ghp_`; nada de
+    senha, PII, cartão, fim do segredo ou comprimento). Com a Redação ligada, nem o prefixo;
+  - uma **faixa de alerta** dentro do editor mostra "N segredos expostos" (vermelho) ou "Modo
+    Redação ligado" (âmbar), com as ações à mão;
+  - as **abas mostram o estado** por ícone (exposto, tarjado, cofre, travado, oculto, queima);
+  - o **cofre travado** ganha um cartão de destravar na própria aba (formato, cifra, destravadores,
+    senha ou arquivo-chave), inclusive nas abas travadas pelo auto-lock;
+  - **selar** tem diálogo próprio, com medidor de força honesto; a **custódia** vira um painel com
+    conteúdo, assinatura, identidade, trilha (eventos recentes) e âncora;
+  - as **Preferências** trazem o tema em cartões; a **paleta** mostra os atalhos alinhados;
+  - a **barra de status** tem o selo em etiqueta, e as mensagens não cobrem mais o selo; um aviso
+    flutuante confirma a cópia mascarada;
+  - a barra `:` só aparece com Ctrl+P.
+- Paleta de cores refinada nos dois temas (mesma semântica), realce de sintaxe mais calmo
+  (palavras-chave em azul, textos em verde) e ícones próprios desenhados em código: sem depender
+  do QtSvg, que é opcional em várias distros. +26 testes (painel, faixa, cartão do cofre, barra de
+  status, diálogos e as regras de máscara).
+
 Visão (sem data):
 - Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
