@@ -304,3 +304,45 @@ def test_restore_recusa_sobrescrever_so_a_chave_de_destinatario(tmp_path, monkey
         idbackup.restore(payload, str(b))
     custody.lock_recipient()
     assert custody.recipient_fingerprint() == fp_b     # nada foi trocado
+
+
+# --------------------------------------------------------------------------- #
+# CLI (tools/backup_identity.py)
+# --------------------------------------------------------------------------- #
+def _cli():
+    import importlib.util
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "backup_identity_cli", os.path.join(root, "tools", "backup_identity.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_cli_make_recusa_destino_inexistente_antes_de_pedir_senha(tmp_identity, monkeypatch, capsys):
+    """Regressao: com -o numa unidade/pasta que nao existe (pendrive desconectado), a CLI pedia as
+    senhas e so falhava no fim, na gravacao."""
+    import getpass
+    custody.sign("x")
+    cli = _cli()
+    monkeypatch.setattr(getpass, "getpass",
+                        lambda *a, **k: pytest.fail("pediu senha antes de validar o destino"))
+    destino = tmp_identity / "nao-existe" / "b.rdbtbak"
+    assert cli.main(["make", "-o", str(destino)]) == 1
+    assert "pasta de destino nao existe" in capsys.readouterr().out
+    assert not destino.parent.exists()
+
+
+def test_cli_make_grava_backup_verificavel(tmp_identity, tmp_path, monkeypatch):
+    import getpass
+    custody.sign("x")
+    fp = custody.fingerprint()
+    cli = _cli()
+    monkeypatch.setattr(getpass, "getpass", lambda *a, **k: "senha-do-backup-forte")
+    destino = tmp_path / "pendrive" / "b.rdbtbak"
+    destino.parent.mkdir()
+    assert cli.main(["make", "-o", str(destino)]) == 0
+    payload = idbackup.verify_blob(destino.read_bytes(), password="senha-do-backup-forte",
+                                   expected_ed_fingerprint=fp)
+    assert payload["ed25519_fingerprint"] == fp
+    assert cli.main(["make", "-o", str(destino)]) == 1          # ja existe, sem --force
