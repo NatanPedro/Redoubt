@@ -10,9 +10,27 @@
 # Instale com:  pip install -r requirements-dev.txt
 root="$(git rev-parse --show-toplevel)"
 
+# O Python do projeto: `python`, ou `python3` nas distros que so tem esse nome.
+PY="$(command -v python || command -v python3)"
+if [ -z "$PY" ]; then
+    echo "[pre-push] BLOQUEADO: Python nao encontrado no PATH (nem python, nem python3)."
+    exit 1
+fi
+
+# Acha a ferramenta: o executavel no PATH ou, se o pip instalou os scripts FORA do PATH (comum
+# no Windows com `pip install --user`), o modulo pelo proprio Python. Imprime o comando ou nada.
+find_tool() {
+    if command -v "$1" >/dev/null 2>&1; then
+        echo "$1"
+    elif "$PY" -m "$1" --version >/dev/null 2>&1; then
+        echo "\"$PY\" -m $1"
+    fi
+}
+
 echo "[pre-push] ruff (lint)..."
-if command -v ruff >/dev/null 2>&1; then
-    if ! (cd "$root" && ruff check .); then
+RUFF="$(find_tool ruff)"
+if [ -n "$RUFF" ]; then
+    if ! (cd "$root" && eval "$RUFF check ."); then
         echo ""
         echo "[pre-push] BLOQUEADO: o ruff reprovou. Boa parte sai com 'ruff check . --fix';"
         echo "           em emergencia, 'git push --no-verify'."
@@ -23,8 +41,9 @@ else
 fi
 
 echo "[pre-push] mypy (tipos nos nucleos puros)..."
-if command -v mypy >/dev/null 2>&1; then
-    if ! (cd "$root" && mypy); then
+MYPY="$(find_tool mypy)"
+if [ -n "$MYPY" ]; then
+    if ! (cd "$root" && eval "$MYPY"); then
         echo ""
         echo "[pre-push] BLOQUEADO: o mypy reprovou (escopo e config em pyproject.toml)."
         echo "           Corrija ou use 'git push --no-verify'."
@@ -35,7 +54,7 @@ else
 fi
 
 echo "[pre-push] rodando a suite do Redoubt antes de empurrar (--no-verify pula)..."
-if ! python "$root/tools/run_tests.py"; then
+if ! "$PY" "$root/tools/run_tests.py"; then
     echo ""
     echo "[pre-push] BLOQUEADO: a suite falhou. Corrija os testes ou use 'git push --no-verify'."
     exit 1
