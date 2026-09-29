@@ -39,6 +39,41 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   (palavras-chave em azul, textos em verde) e ícones próprios desenhados em código: sem depender
   do QtSvg, que é opcional em várias distros. +26 testes (painel, faixa, cartão do cofre, barra de
   status, diálogos e as regras de máscara).
+- **Barra de título unificada de 40 px (Windows):** a barra nativa e a faixa de ações (~108 px)
+  viram uma só — ícone (menu da janela), menus, paleta centrada na janela com o `Ctrl+Shift+P`
+  dentro, Tarjar (estado ligado explícito), Selar cofre ("Selar" / "Abrir" / "Travar"),
+  impressão digital `6b38…f7e7` (o clique copia) e os botões de janela. Moldura própria via
+  Win32, **sem dependência nova**, mantendo Snap Layouts do Windows 11, sombra, redimensionar pela
+  borda de cima, duplo clique para maximizar e o menu da janela; o título nativo segue para a
+  barra de tarefas e o Alt+Tab. Quatro faixas de largura (as ações viram ícone, os menus vão para
+  um "☰"), janela inativa esmaecida, sublinhado dos atalhos só com Alt, Alt/F10 levam aos menus e
+  alto contraste do Windows usa as cores do sistema. No Linux e no macOS a moldura nativa fica.
+  +21 testes; checklist em janela real a 100/150/200%.
+
+### Added
+- **Sentinela reconhece mais 12 provedores pelo nome:** Anthropic (`sk-ant-`), Hugging Face
+  (`hf_`), Docker Hub (`dckr_pat_`), Sentry, Grafana, Linear, Figma, Atlassian (`ATATT3`),
+  PlanetScale, Supabase (`sbp_`/`sb_secret_`), token de acesso OAuth do Google (`ya29.`) e a
+  assinatura SAS do Azure. Antes, a maioria só era pega pela camada de entropia — como "possível
+  segredo", sem o nome e sem o prefixo público na prévia — e o `sbp_` do Supabase, hexadecimal,
+  **escapava** por completo. No SAS o achado é só a assinatura (o resto da URL é público). Corpus
+  de red-team inalterado (recall 91,9%); nenhum achado novo nos arquivos do próprio repositório.
+
+### Security
+- **O hook anti-segredo varre arquivos grandes por inteiro.** Acima de 2 MB ele só avisava e
+  deixava o arquivo passar sem ler — e o CLI com arquivos (`python -m notepy.scan_cli arq`)
+  pulava **em silêncio**. Agora a varredura corre em janelas de 1 MB sobrepostas em 4 KB (nada se
+  perde na emenda; cada achado aparece uma vez, com linha e coluna certas), com um aviso de que
+  vai demorar. Só acima de 50 MB o arquivo fica sem verificar, e os dois caminhos **avisam**.
+  Linha e coluna passaram a ser calculadas de forma incremental: antes, cada achado recontava o
+  arquivo desde o início.
+
+### Fixed
+- **Backup da identidade:** com `-o` numa pasta ou unidade que não existe (pendrive
+  desconectado), o comando pedia as duas senhas e só falhava no fim, com um erro pouco claro;
+  agora recusa logo no início, dizendo qual pasta falta.
+- **Hook `pre-push` (desenvolvimento):** acha o ruff e o mypy via `python -m` quando não estão no
+  `PATH` e aceita `python3`; antes pulava lint e tipos em silêncio.
 
 Visão (sem data):
 - Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.

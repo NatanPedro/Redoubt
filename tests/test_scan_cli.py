@@ -1,8 +1,11 @@
 """Testes do CLI/hook da Sentinela (notepy/scan_cli.py) — puro Python, sem Qt."""
 
 import os
+import time
 
-from notepy import scan_cli
+import pytest
+
+from notepy import scan_cli, secrets
 
 SEC = "AKIA3FK7XQ2MNP8RTUVW"
 
@@ -50,6 +53,100 @@ def test_scan_staged_le_o_stage(monkeypatch):
     monkeypatch.setattr(scan_cli, "_git", fake_git)
     findings = scan_cli.scan_staged()
     assert len(findings) == 1 and findings[0].path == "a.txt"
+
+
+# --------------------------------------------------------------------------- #
+# Arquivo grande: varredura em janelas (antes, acima de 2 MB o hook so avisava e o CLI
+# pulava EM SILENCIO). Tamanhos reduzidos por monkeypatch para os testes serem rapidos e
+# para acertar as emendas das janelas com precisao.
+# --------------------------------------------------------------------------- #
+def _janelas_pequenas(monkeypatch):
+    monkeypatch.setattr(scan_cli, "_SCAN_LIMIT", 1_000)
+    monkeypatch.setattr(scan_cli, "_WINDOW", 500)
+    monkeypatch.setattr(scan_cli, "_OVERLAP", 100)
+
+
+def _texto_com_segredo_em(offset, total=3_000):
+    """Linhas de texto comum, com SEC comecando EXATAMENTE em `offset` (entre espacos, para o
+    padrao ter a fronteira de palavra que exige)."""
+    base = ("linha comum de texto sem nada\n" * (total // 30 + 1))[:total]
+    return base[:offset - 1] + " " + SEC + " " + base[offset - 1:]
+
+
+def test_arquivo_grande_e_varrido_ate_o_fim(monkeypatch):
+    _janelas_pequenas(monkeypatch)
+    text = _texto_com_segredo_em(2_800)
+    (f,) = scan_cli.scan_text(text, "grande.txt")
+    assert f.kind == "Chave de acesso AWS"
+    assert f.line == text.count("\n", 0, 2_800) + 1
+    assert f.col == 2_800 - (text.rfind("\n", 0, 2_800) + 1) + 1
+
+
+def test_segredo_na_emenda_das_janelas_aparece_uma_vez_e_inteiro(monkeypatch):
+    _janelas_pequenas(monkeypatch)
+    for offset in (490, 495, 499, 500, 501, 590, 999, 1_000, 1_495):   # antes, na e depois da emenda
+        found = scan_cli.scan_text(_texto_com_segredo_em(offset), "x")
+        assert [f.kind for f in found] == ["Chave de acesso AWS"], offset
+
+
+def test_varredura_em_janelas_igual_a_de_uma_vez(monkeypatch):
+    """Mesmo resultado (tipo, linha, coluna) que a varredura unica, com varios achados
+    espalhados pelas emendas e um contexto de atribuicao cortado por uma delas."""
+    text = ""
+    for i in range(12):
+        text += "codigo comum " * 7 + "\n"
+        text += f"password = \"S3nh4_{i}_Forte\"\n" if i % 2 else f"k{i} = {SEC}\n"
+    unica = scan_cli.scan_text(text, "x")
+    _janelas_pequenas(monkeypatch)
+    janelas = scan_cli.scan_text(text, "x")
+    assert len(text) > 1_000 and len(unica) == 12
+    assert [(f.kind, f.line, f.col) for f in janelas] == [(f.kind, f.line, f.col) for f in unica]
+
+
+def test_allow_marker_vale_no_arquivo_grande(monkeypatch):
+    _janelas_pequenas(monkeypatch)
+    text = _texto_com_segredo_em(2_000)
+    fim = text.find("\n", 2_000)
+    text = text[:fim] + "  # redoubt:allow" + text[fim:]
+    assert scan_cli.scan_text(text, "x") == []
+
+
+def test_acima_do_teto_avisa_que_nao_verificou(monkeypatch, capsys, tmp_path):
+    _janelas_pequenas(monkeypatch)
+    monkeypatch.setattr(scan_cli, "_SCAN_CEILING", 2_000)
+    f = tmp_path / "enorme.txt"
+    f.write_text(_texto_com_segredo_em(100), encoding="utf-8")
+    assert scan_cli.scan_paths([str(f)]) == []                 # o CLI antes pulava EM SILENCIO
+    assert "NAO verificado" in capsys.readouterr().out
+
+
+def test_stage_grande_e_varrido_e_avisa_a_demora(monkeypatch, capsys):
+    _janelas_pequenas(monkeypatch)
+    blob = _texto_com_segredo_em(2_500).encode()
+
+    def fake_git(args):
+        if args[:2] == ["diff", "--cached"]:
+            return b"dump.sql\x00"
+        return blob if args == ["show", ":dump.sql"] else b""
+    monkeypatch.setattr(scan_cli, "_git", fake_git)
+    findings = scan_cli.scan_staged()
+    assert len(findings) == 1 and findings[0].path == "dump.sql"
+    assert "varrendo 'dump.sql'" in capsys.readouterr().out
+
+
+@pytest.mark.slow
+def test_arquivo_de_3mb_real_e_minificado_sem_explodir():
+    """Tamanhos REAIS: 3 MB com o segredo no fim; e um minificado de UMA linha cheio de achados
+    (linha/coluna incrementais + teto de achados: nada de O(n) por achado)."""
+    text = "x = 1\n" * 500_000 + f"k = {SEC}\n"
+    (f,) = scan_cli.scan_text(text, "x")
+    assert f.line == 500_001
+    tok = "aB3xZ9qW7eR2tY5uI8oP1aS4dF6gH0jK"
+    minified = ";".join(tok + str(i).zfill(8) for i in range(80_000))       # ~3,3 MB, 1 linha
+    t = time.time()
+    found = scan_cli.scan_text(minified, "bundle.min.js")
+    assert len(found) == secrets.MAX_MATCHES and {f.line for f in found} == {1}
+    assert time.time() - t < 20
 
 
 def test_decode_utf16_nao_e_bypass_do_hook(monkeypatch):

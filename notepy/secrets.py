@@ -65,6 +65,26 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # 1 digito p/ nao casar identificador snake_case benigno (ex.: hvs.algum_metodo).
     ("Token HashiCorp Vault", re.compile(r"\bhvs\.(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{30,}")),
     ("Token Doppler", re.compile(r"\bdp\.(?:pt|st|ct|sa|scim|audit)\.[A-Za-z0-9]{40,}\b")),
+    # Antes so a camada de entropia pegava estes (rotulo generico e sem o prefixo na previa); o
+    # sbp_ do Supabase, hexadecimal, tem pouca entropia por caractere e ESCAPAVA de todo.
+    # O fim `(?![A-Za-z0-9_-])` substitui o \b quando o alfabeto do token inclui '-'.
+    ("Chave da Anthropic", re.compile(r"\bsk-ant-[a-z]{2,6}\d{2}-[A-Za-z0-9_-]{80,}")),
+    ("Token Hugging Face", re.compile(r"\bhf_[A-Za-z0-9]{34}\b")),
+    ("Token Docker Hub", re.compile(r"\bdckr_(?:pat|oat)_[A-Za-z0-9_-]{24,}(?![A-Za-z0-9_-])")),
+    ("Token Sentry", re.compile(r"\bsntrys_eyJ[A-Za-z0-9+/=_-]{50,}|\bsntryu_[0-9a-f]{64}\b")),
+    ("Token Grafana", re.compile(r"\bglsa_[A-Za-z0-9]{32}_[0-9a-fA-F]{8}\b|\bglc_eyJ[A-Za-z0-9+/]{30,}={0,2}")),
+    ("Chave da Linear", re.compile(r"\blin_api_[A-Za-z0-9]{40}\b|\blin_oauth_[0-9a-f]{64}\b")),
+    ("Token Figma", re.compile(r"\bfigd_[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")),
+    ("Token Atlassian", re.compile(r"\bATATT3[A-Za-z0-9_=-]{150,}(?![A-Za-z0-9_=-])")),
+    ("Credencial PlanetScale", re.compile(
+        r"\bpscale_(?:tkn|pw|oauth)_[A-Za-z0-9_=.-]{32,64}(?![A-Za-z0-9_=.-])")),
+    ("Token Supabase", re.compile(r"\bsbp_[0-9a-f]{40}\b|\bsb_secret_[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])")),
+    ("Token de acesso OAuth do Google", re.compile(r"\bya29\.[0-9A-Za-z_-]{20,}(?![0-9A-Za-z_-])")),
+    # SAS do Azure: so a ASSINATURA e segredo (o resto da URL e publico). Exige o `sv=AAAA-MM-DD`
+    # da mesma query antes do `sig=`, para nao casar qualquer `sig=` da web; o grupo `secret`
+    # diz ao scan() que o achado e SO o valor.
+    ("Assinatura SAS do Azure", re.compile(
+        r"\bsv=\d{4}-\d{2}-\d{2}(?:&[^\s\"'<>&]*)*?&sig=(?P<secret>[A-Za-z0-9%+/=]{40,})")),
     ("Credencial Basic Auth", re.compile(r"(?i)\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}")),
     ("Token Bearer", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*")),
     ("Connection string", re.compile(
@@ -243,10 +263,11 @@ def scan(text: str, *, entropy: bool = True) -> list[Match]:
         out.append(Match(start, end, kind, snippet))
         covered[start:end] = b"\x01" * (end - start)
 
-    # 1. Provedores
+    # 1. Provedores (padrao com grupo `secret`: o achado e so esse trecho, nao o contexto)
     for kind, pat in _PATTERNS:
+        grp = "secret" if "secret" in pat.groupindex else 0
         for m in pat.finditer(text):
-            add(m.start(), m.end(), kind)
+            add(m.start(grp), m.end(grp), kind)
 
     # 2. Atribuicoes
     for m in _ASSIGN_RE.finditer(text):

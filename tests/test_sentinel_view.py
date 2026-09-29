@@ -23,6 +23,30 @@ def test_mascara_mostra_so_o_prefixo_publico_do_provedor():
     assert sv.mask(gh, "Token do GitHub") == "ghp_" + "•" * 8
 
 
+def test_prefixo_dos_provedores_novos_e_o_mais_especifico():
+    """Achados REAIS da Sentinela: cada provedor novo mostra o proprio prefixo, e a Anthropic nao
+    cai no 'sk-' generico da OpenAI (o especifico vem antes na lista)."""
+    import random
+    import string
+
+    from notepy import secrets
+
+    rng = random.Random(7)
+    body = "".join(rng.choice(string.ascii_letters + string.digits) for _ in range(93))
+    hexs = "".join(rng.choice("0123456789abcdef") for _ in range(40))
+    for token, prefix in (("sk-ant-" + "api03-" + body + "AA", "sk-ant-"),
+                          ("hf_" + body[:34], "hf_"),
+                          ("sbp_" + hexs, "sbp_"),
+                          ("ya29." + body[:60], "ya29.")):
+        (hit,) = secrets.scan(f"x {token} y")
+        assert sv.mask(hit.snippet, hit.kind) == prefix + "•" * 8, hit.kind
+
+
+def test_mascara_da_assinatura_sas_e_so_pontos():
+    """No SAS do Azure o achado e so a assinatura: nao ha prefixo publico a mostrar."""
+    assert sv.mask("aB3dEfGh1jKlMn0pQrStUvWxYz0123456789abcdE%3D", "Assinatura SAS do Azure") == "•" * 8
+
+
 def test_mascara_de_senha_pii_e_cartao_e_so_pontos():
     for snippet, kind in (("Pg_S3nh4_Forte_2024", "Segredo em atribuicao"),
                           ("529.982.247-25", "CPF"),

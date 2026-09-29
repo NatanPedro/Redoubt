@@ -1,5 +1,7 @@
 """Testes da Sentinela de Segredos (notepy/secrets.py) — puro Python, sem Qt."""
 
+import random
+import string
 import time
 
 import pytest
@@ -52,6 +54,71 @@ def test_detecta(text, kind):
 
 
 # --------------------------------------------------------------------------- #
+# Provedores que antes so a entropia pegava (ou que escapavam, como o sbp_ do Supabase).
+# Os tokens sao GERADOS aqui (semente fixa): nenhum token inteiro fica escrito no fonte,
+# para o proprio repositorio nao carregar algo com cara de credencial.
+# --------------------------------------------------------------------------- #
+_RNG = random.Random(1505)
+_B62 = string.ascii_letters + string.digits
+_URL = _B62 + "-_"
+_HEX = "0123456789abcdef"
+
+
+def _t(n, alphabet=_B62):
+    return "".join(_RNG.choice(alphabet) for _ in range(n))
+
+
+NEW_PROVIDERS = [
+    ("sk-ant-" + "api03-" + _t(93, _URL) + "AA", "Chave da Anthropic"),
+    ("sk-ant-" + "admin01-" + _t(93, _URL) + "AA", "Chave da Anthropic"),
+    ("hf_" + _t(34, string.ascii_letters), "Token Hugging Face"),
+    ("dckr_" + "pat_" + _t(27, _URL), "Token Docker Hub"),
+    ("sntrys_" + "eyJpYXQiOjE3MjY" + _t(80, _B62 + "+/") + "_" + _t(43, _B62 + "+/"), "Token Sentry"),
+    ("sntryu_" + _t(64, _HEX), "Token Sentry"),
+    ("glsa_" + _t(32) + "_" + _t(8, _HEX), "Token Grafana"),
+    ("glc_" + "eyJvIjoiMTIzNCIs" + _t(60, _B62 + "+/") + "==", "Token Grafana"),
+    ("lin_" + "api_" + _t(40), "Chave da Linear"),
+    ("figd_" + _t(40, _URL), "Token Figma"),
+    ("ATATT3" + "xFfGF0" + _t(180, _URL + "=") + "=" + _t(8, _HEX).upper(), "Token Atlassian"),
+    ("pscale_" + "tkn_" + _t(43, _URL), "Credencial PlanetScale"),
+    ("pscale_" + "pw_" + _t(43, _URL), "Credencial PlanetScale"),
+    ("sbp_" + _t(40, _HEX), "Token Supabase"),
+    ("sb_" + "secret_" + _t(32, _URL), "Token Supabase"),
+    ("ya29." + _t(120, _URL), "Token de acesso OAuth do Google"),
+]
+
+
+@pytest.mark.parametrize("contexto", [
+    "API_KEY = \"{}\"",                                   # atribuicao com aspas
+    "2026-09-29 10:00:01 INFO auth ok {} user=ana",         # solto numa linha de log
+    "curl -H 'X-Token: {}' https://api.local",             # colado de um terminal
+])
+@pytest.mark.parametrize("token,kind", NEW_PROVIDERS)
+def test_provedores_novos_com_rotulo_proprio(token, kind, contexto):
+    """Rotulo do PROVEDOR (nao 'alta entropia') e o achado cobre o token inteiro."""
+    text = contexto.format(token)
+    hits = s.scan(text)
+    assert [m.kind for m in hits] == [kind], f"{kind}: {[m.kind for m in hits]}"
+    assert hits[0].snippet == token
+
+
+def test_supabase_hex_nao_escapa_mais():
+    """40 hex tem pouca entropia por caractere: a camada 5 sozinha deixava passar."""
+    tok = "sbp_" + _t(40, _HEX)
+    assert kinds(f"log {tok} fim") == ["Token Supabase"]
+    assert s.scan(f"log {tok} fim", entropy=False)            # nao depende da entropia
+
+
+def test_sas_do_azure_marca_so_a_assinatura():
+    sig = _t(43, _B62 + "+/").replace("+", "%2B").replace("/", "%2F") + "%3D"
+    url = ("https://conta.blob.core.windows.net/docs/a.pdf?sp=r&st=2026-09-29T10:00:00Z"
+           "&se=2026-09-30T10:00:00Z&spr=https&sv=2022-11-02&sr=b&sig=" + sig)
+    hits = s.scan(url)
+    assert [m.kind for m in hits] == ["Assinatura SAS do Azure"]
+    assert hits[0].snippet == sig                              # a URL em volta e publica
+
+
+# --------------------------------------------------------------------------- #
 # NAO deve detectar (falsos-positivos / placeholders)
 # --------------------------------------------------------------------------- #
 NO_DETECT = [
@@ -72,6 +139,14 @@ NO_DETECT = [
     'pkg = pypi-test-build-123',             # pypi- mas nao macaroon 'AgEI...'
     'cfg = AccountKey=abc',                  # AccountKey= mas nao base64(86)==
     'result = hvs.interpolate_missing_timestamps(data)',   # 'hvs.' + metodo snake_case (FP corrigido)
+    # prefixos dos provedores novos em codigo comum (nao sao credenciais)
+    "path = hf_hub_download(repo_id='bert-base', filename='config.json')",
+    "k = sk-ant-api03-curta",
+    "ya29.curto",
+    "loader = sbp_config_loader(opts)",
+    "pscale_pw_test = conectar()",
+    "url = 'https://example.com/foto.png?w=200&sig=abc123'",   # sig= sem o sv= do Azure
+    "usuario = figd_sem_token",
 ]
 
 
