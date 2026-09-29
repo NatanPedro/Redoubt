@@ -86,6 +86,8 @@ def _build(name: str) -> QPainterPath:
         _poly(p, (6, 9), (12, 15), (18, 9))
     elif name == "chevup":
         _poly(p, (6, 15), (12, 9), (18, 15))
+    elif name == "menu":
+        _poly(p, (4, 7), (20, 7)); _poly(p, (4, 12), (20, 12)); _poly(p, (4, 17), (20, 17))
     elif name == "git":
         p.addEllipse(QPointF(6, 6), 2, 2); p.addEllipse(QPointF(6, 18), 2, 2)
         p.addEllipse(QPointF(18, 8), 2, 2); _poly(p, (6, 8), (6, 16))
@@ -100,11 +102,13 @@ def _build(name: str) -> QPainterPath:
 
 NAMES = ("shield", "shieldcheck", "search", "lock", "unlock", "key", "finger", "diff", "sliders",
          "x", "alert", "check", "eyeoff", "eye", "flame", "cmd", "file", "copy", "plus", "user",
-         "anchor", "clock", "seal", "chev", "chevup", "git")
+         "anchor", "clock", "seal", "chev", "chevup", "menu", "git")
 
 
-def pixmap(name: str, color: str, size: int = 18, stroke: float = 1.8, dpr: float = 2.0) -> QPixmap:
-    """O icone `name` na cor `color`, com `size` px logicos (desenhado em `dpr`x para HiDPI)."""
+def pixmap(name: str, color: str, size: int = 18, stroke: float = 1.8, dpr: float = 2.0,
+           fill: bool = False) -> QPixmap:
+    """O icone `name` na cor `color`, com `size` px logicos (desenhado em `dpr`x para HiDPI).
+    `fill=True` preenche as formas fechadas (estado ATIVO de um botao alternavel)."""
     px = QPixmap(int(size * dpr), int(size * dpr))
     px.fill(Qt.GlobalColor.transparent)
     px.setDevicePixelRatio(dpr)
@@ -116,11 +120,17 @@ def pixmap(name: str, color: str, size: int = 18, stroke: float = 1.8, dpr: floa
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
+    path = _build(name)
+    if fill:
+        tint = QColor(color)
+        tint.setAlphaF(0.35)
+        path.setFillRule(Qt.FillRule.OddEvenFill)
+        painter.fillPath(path, tint)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawPath(_build(name))
+    painter.drawPath(path)
     painter.end()
     return px
 
 
-def icon(name: str, color: str, size: int = 18, stroke: float = 1.8) -> QIcon:
-    return QIcon(pixmap(name, color, size, stroke))
+def icon(name: str, color: str, size: int = 18, stroke: float = 1.8, fill: bool = False) -> QIcon:
+    return QIcon(pixmap(name, color, size, stroke, fill=fill))
