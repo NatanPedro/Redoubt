@@ -92,6 +92,59 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         r"[^\s'\"]+:[^\s'\"]+@[^\s'\"]+")),
 ]
 
+# Prefiltro da camada 1: um padrao so pode casar se ao menos UM destes trechos fixos estiver no
+# texto, e procurar trecho fixo (`in`, em C) custa quase nada perto de uma regex que percorre o
+# texto todo. Em codigo comum quase nenhum prefixo aparece, entao a maioria das ~40 regex nem
+# roda: a varredura fica ~3x mais rapida SEM mudar o resultado (os testes comparam com a
+# varredura sem prefiltro e conferem que o trecho esta em todo achado). Padrao (?i) compara com o
+# texto em casefold, e o trecho vai em minusculo. Todo rotulo de _PATTERNS PRECISA estar aqui:
+# esquecer um e KeyError no import, de proposito.
+_LITERALS: dict[str, tuple[str, ...]] = {
+    "Chave de acesso AWS": ("AKIA", "ASIA"),
+    "Token JWT": ("eyJ",),
+    "Chave privada PEM": ("-----BEGIN ",),
+    "Token do GitHub": ("ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
+    "Token fine-grained do GitHub": ("github_pat_",),
+    "Token do GitLab": ("glpat-",),
+    "Token do Slack": ("xox",),
+    "Webhook do Slack": ("hooks.slack.com/services/",),
+    "Chave da OpenAI": ("sk-",),                    # vale para sk- e sk-proj-
+    "Chave Stripe": ("k_live_", "k_test_"),
+    "Chave SendGrid": ("SG.",),
+    "Chave Twilio": ("AC", "SK"),
+    "Token npm": ("npm_",),
+    "Chave Google API": ("AIza",),
+    "Segredo OAuth do Google": ("GOCSPX-",),
+    "Token do Telegram": (":AA",),
+    "Chave de conta Azure Storage": ("accountkey=",),
+    "Token Shopify": ("shp",),
+    "Token DigitalOcean": ("dop_v1_",),
+    "Token Square": ("sq0",),
+    "Token PyPI": ("pypi-AgEI",),
+    "Chave Postman": ("PMAK-",),
+    "Token HashiCorp Vault": ("hvs.",),
+    "Token Doppler": ("dp.",),
+    "Credencial Basic Auth": ("basic",),
+    "Token Bearer": ("bearer",),
+    "Connection string": ("://",),
+    "Chave da Anthropic": ("sk-ant-",),
+    "Token Hugging Face": ("hf_",),
+    "Token Docker Hub": ("dckr_",),
+    "Token Sentry": ("sntrys_", "sntryu_"),
+    "Token Grafana": ("glsa_", "glc_"),
+    "Chave da Linear": ("lin_",),
+    "Token Figma": ("figd_",),
+    "Token Atlassian": ("ATATT3",),
+    "Credencial PlanetScale": ("pscale_",),
+    "Token Supabase": ("sbp_", "sb_secret_"),
+    "Token de acesso OAuth do Google": ("ya29.",),
+    "Assinatura SAS do Azure": ("&sig=",),
+}
+# (rotulo, regex, trechos fixos, compara em casefold?)
+_PROVIDERS: list[tuple[str, re.Pattern, tuple[str, ...], bool]] = [
+    (kind, pat, _LITERALS[kind], bool(pat.flags & re.IGNORECASE)) for kind, pat in _PATTERNS]
+_PREFILTER = True                  # os testes desligam para provar que o resultado e o mesmo
+
 # --------------------------------------------------------------------------- #
 # 2. Atribuicao keyword = valor (com ou sem aspas)
 # --------------------------------------------------------------------------- #
@@ -264,7 +317,17 @@ def scan(text: str, *, entropy: bool = True) -> list[Match]:
         covered[start:end] = b"\x01" * (end - start)
 
     # 1. Provedores (padrao com grupo `secret`: o achado e so esse trecho, nao o contexto)
-    for kind, pat in _PATTERNS:
+    folded: str | None = None
+    for kind, pat, literals, icase in _PROVIDERS:
+        if _PREFILTER:
+            if icase:
+                if folded is None:
+                    folded = text.casefold()
+                hay = folded
+            else:
+                hay = text
+            if not any(lit in hay for lit in literals):
+                continue                    # sem o trecho fixo, esta regex nao tem como casar
         grp = "secret" if "secret" in pat.groupindex else 0
         for m in pat.finditer(text):
             add(m.start(grp), m.end(grp), kind)

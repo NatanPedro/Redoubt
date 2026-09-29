@@ -527,9 +527,11 @@ matches:
    `GOCSPX-`, Telegram, Azure `AccountKey=`, Shopify, DigitalOcean `dop_v1_`, Square,
    PyPI, HashiCorp Vault `hvs.`, Doppler `dp.`, Anthropic `sk-ant-`, Hugging Face `hf_`,
    Docker Hub, Sentry, Grafana, Linear, Figma, Atlassian, PlanetScale, Supabase, Google
-   `ya29.`, SAS do Azure, Basic/Bearer, connection string…). Padrão novo: prefixo público
-   em `sentinel_view._PUBLIC_PREFIXES` (o específico ANTES do genérico) e caso nos testes
-   com o token GERADO em tempo de execução, nunca escrito inteiro no fonte.
+   `ya29.`, SAS do Azure, Basic/Bearer, connection string…). Padrão novo: o trecho fixo
+   que todo achado dele contém em `secrets._LITERALS` (sem ele o import falha; em minúsculo
+   se a regex é `(?i)`), o prefixo público em `sentinel_view._PUBLIC_PREFIXES` (o específico
+   ANTES do genérico) e caso nos testes com o token GERADO em tempo de execução, nunca
+   escrito inteiro no fonte.
 2. **Atribuição `keyword=valor`** (`_ASSIGN_RE`), com porteira de complexidade
    (`_looks_like_secret_value`) e contextos benignos ignorados (`_BENIGN_CONTEXT`:
    csrf, paginação, anti-forgery…).

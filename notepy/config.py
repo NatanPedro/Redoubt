@@ -101,9 +101,29 @@ def editor_font() -> QFont:
 # persistida — zero-knowledge).
 # --------------------------------------------------------------------------- #
 def save_session(paths: list[str], active: int = 0) -> None:
+    """Grava a lista com um HMAC (ver session.py): quem so escreve nas configuracoes nao
+    consegue mais escolher o que o Redoubt reabre sozinho."""
+    from . import session
+
+    paths, active = list(paths), int(active)
     s = _s()
-    s.setValue("session/paths", list(paths))
-    s.setValue("session/active", int(active))
+    s.setValue("session/paths", paths)
+    s.setValue("session/active", active)
+    key = session.ensure_key()
+    if key is None:                       # pasta de dados sem escrita: volta como LEGACY
+        s.remove("session/mac")
+    else:
+        s.setValue("session/mac", session.sign(key, paths, active))
+
+
+def load_session_checked() -> tuple[list[str], int, str]:
+    """(caminhos, aba ativa, estado da assinatura: session.OK/LEGACY/EMPTY/TAMPERED)."""
+    from . import session
+
+    paths, active = load_session()
+    raw = _s().value("session/mac", "")
+    tag = raw if isinstance(raw, str) else ""     # tipo trocado no registro = sem assinatura
+    return paths, active, session.check(paths, active, tag, session.current_key())
 
 
 def load_session() -> tuple[list[str], int]:

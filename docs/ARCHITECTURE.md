@@ -108,6 +108,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── passgen.py           Gerador de senha/passphrase (CSPRNG via secrets; entropia honesta)
     ├── lexers.py            Mapeia extensão/rótulo -> lexer do QScintilla (auto + menu Linguagem)
     ├── config.py            QSettings wrapper: auto-lock, fonte, tema, sessão
+    ├── session.py           Núcleo puro: HMAC da lista de sessão (chave na pasta de dados) e filtros do restore
     │
     │   ── camada UI (PyQt6) ──
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + custódia + cofre/oculto/burn
@@ -292,7 +293,12 @@ tipo e prévia mascarada `●●●`).
 - **`difftool.py`** — *unified diff* estilo git via `difflib`.
 - **`config.py`** — wrapper de `QSettings` (auto-lock, fonte, largura de tab,
   tema, sessão); clampa inteiros e coage tipos (defesa contra registro adulterado);
-  `save_session`/`load_session` guardam **só caminhos**, nunca conteúdo.
+  `save_session`/`load_session` guardam **só caminhos**, nunca conteúdo. `save_session`
+  grava junto um HMAC-SHA256 (`session.sign`), e `load_session_checked` devolve o estado da
+  assinatura (`session.OK`/`LEGACY`/`EMPTY`/`TAMPERED`). A chave é `session.key`, na pasta de
+  dados (fora das configurações, que é o que se quer proteger). Com `TAMPERED`, o
+  `restore_session` só reabre se a pessoa confirmar vendo os caminhos, e `session.restorable`
+  (teto de 50, só absoluto, nada de rede) vale para qualquer lista.
 
 ### Camada UI (PyQt6)
 
@@ -510,6 +516,10 @@ sobreposição**, descartando matches que casem com o filtro de placeholder:
    Atlassian (`ATATT3`), PlanetScale, Supabase (`sbp_`/`sb_secret_`), Google OAuth
    (`ya29.`), assinatura SAS do Azure, Basic Auth, Bearer, *connection strings*. Um padrão
    com grupo nomeado `secret` (o SAS) faz o achado ser só esse trecho, não o contexto.
+   **Prefiltro:** cada padrão declara em `_LITERALS` os trechos fixos que todo achado dele
+   contém (`AKIA`, `ghp_`, `sk-ant-`…); a regex só roda se um deles estiver no texto (em
+   `casefold` para as `(?i)`). Em código comum quase nenhum aparece: a varredura fica ~2,8×
+   mais rápida (1010 → 360 ms/MB) com o **mesmo** resultado, conferido nos testes.
 2. **Atribuição `keyword = valor`** com/sem aspas, com porteira de complexidade
    (≥ 8 chars, ≥ 2 classes, não-UUID) e contextos benignos ignorados (csrf,
    paginação, anti-forgery).

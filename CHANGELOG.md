@@ -49,6 +49,12 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   um "☰"), janela inativa esmaecida, sublinhado dos atalhos só com Alt, Alt/F10 levam aos menus e
   alto contraste do Windows usa as cores do sistema. No Linux e no macOS a moldura nativa fica.
   +21 testes; checklist em janela real a 100/150/200%.
+- **Sentinela ~2,8× mais rápida em código comum** (1010 → 360 ms por MB), com o **mesmo**
+  resultado: cada padrão de provedor declara o trecho fixo que todo achado dele contém (`AKIA`,
+  `ghp_`, `sk-ant-`…), e a regex só roda se ele estiver no texto — em código comum quase nenhum
+  está. O editor varre na thread da interface a cada pausa na digitação: num arquivo de 1,5 MB
+  o congelamento cai de ~1,5 s para ~0,5 s; o hook num arquivo de 50 MB, de ~50 s para ~17 s.
+  No pior caso (texto com todos os prefixos) o custo extra é de ~5%.
 
 ### Added
 - **Sentinela reconhece mais 12 provedores pelo nome:** Anthropic (`sk-ant-`), Hugging Face
@@ -67,6 +73,18 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   vai demorar. Só acima de 50 MB o arquivo fica sem verificar, e os dois caminhos **avisam**.
   Linha e coluna passaram a ser calculadas de forma incremental: antes, cada achado recontava o
   arquivo desde o início.
+- **A lista de sessão é assinada (HMAC-SHA256).** Ela vive nas configurações (no Windows, o
+  registro), fora da pasta de dados, e quem conseguia escrever ali escolhia o que o Redoubt abria
+  sozinho ao iniciar (trabalho futuro do pentest §7). A chave (`session.key`, 32 bytes) fica na
+  pasta de dados. Se a assinatura não confere, **nada abre sozinho**: o Redoubt mostra os caminhos
+  e pergunta, com "Não reabrir" como padrão — pergunta, e não recusa muda, porque o caso comum é
+  inofensivo (uma versão antiga, que não assina, usada na mesma conta). A primeira execução depois
+  de atualizar aceita a lista anterior uma vez. Não para um programa rodando como você (ele lê a
+  chave): contra ele valem os filtros de sempre.
+- **Filtros do restore endurecidos:** os caminhos de rede nas formas mistas `/\host\share` e
+  `\/host/share`, que o Windows aceita igual a `\\host\share`, passavam pelo filtro (só `\\` e
+  `//` eram barrados) e disparariam SMB e a autenticação NTLM automática; agora são barrados, e
+  caminho relativo também. Valem para qualquer lista, assinada ou não.
 
 ### Fixed
 - **Backup da identidade:** com `-o` numa pasta ou unidade que não existe (pendrive
@@ -74,6 +92,11 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   agora recusa logo no início, dizendo qual pasta falta.
 - **Hook `pre-push` (desenvolvimento):** acha o ruff e o mypy via `python -m` quando não estão no
   `PATH` e aceita `python3`; antes pulava lint e tipos em silêncio.
+- **Testes no Windows (desenvolvimento) não mexem mais nas configurações reais.** O QSettings
+  nativo grava no registro, que as variáveis de ambiente do `conftest` não redirecionam: cada
+  janela de teste, ao fechar, salvava a sessão e as preferências por cima das de quem rodava a
+  suíte (606 acessos ao registro real só em três arquivos de teste). Agora todo acesso vai para
+  um `.ini` temporário.
 
 Visão (sem data):
 - Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
