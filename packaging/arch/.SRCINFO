@@ -14,6 +14,6 @@ pkgbase = redoubt
 	depends = hicolor-icon-theme
 	optdepends = git: hook pre-commit anti-segredo (redoubt-scan --install-hook)
 	source = redoubt-1.4.0.tar.gz::https://github.com/NatanPedro/Redoubt/archive/refs/tags/v1.4.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 775d88b3d8ed1e3dbeafd34e8776c0fd3e5ceeddf6e9f8a82b48b3c275aa7a3c
 
 pkgname = redoubt
