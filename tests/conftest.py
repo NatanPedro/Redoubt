@@ -10,6 +10,8 @@ import tempfile
 
 # DEVE vir antes de qualquer import de Qt.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# As paletas proprias sao o que os testes conferem: ignora o alto contraste do Windows da maquina.
+os.environ["REDOUBT_IGNORE_HIGH_CONTRAST"] = "1"
 
 # Isola o diretorio de dados do app (identidade Ed25519, chave de destinatario X25519 e trilha de
 # auditoria, que `custody._data_dir()` deriva de %APPDATA%) num temporario. Sem isto, qualquer teste

@@ -6,7 +6,7 @@ import html
 import os
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QColor, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -47,7 +47,9 @@ _MAX_RESTORE = 50
 from .findbar import FindBar                      # noqa: E402  (apos as constantes acima)
 from .preferences import PreferencesDialog        # noqa: E402
 from .widgets import (CustodyDialog, CustodyReport, EditorChrome, Finding, Rail,  # noqa: E402
-                      SealDialog, SentinelPanel, StatusBar, Toast, TopBar)
+                      SealDialog, SentinelPanel, StatusBar, Toast)
+from .titlebar import MnemonicFilter, TitleBar      # noqa: E402
+from . import winframe                             # noqa: E402
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
@@ -408,6 +410,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
+        # Windows: a barra do app vira a barra de titulo (winframe.py devolve os estilos nativos:
+        # Snap, sombra, redimensionar). Em outros sistemas a moldura nativa fica.
+        self._winframe: winframe.WinFrame | None = None
+        if winframe.supported(QApplication.instance()):
+            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.resize(1360, 860)
         self.setAcceptDrops(True)
 
@@ -505,6 +512,19 @@ class MainWindow(QMainWindow):
         cb = QApplication.clipboard()
         cb.dataChanged.connect(self._sanitize_clipboard)
         cb.selectionChanged.connect(lambda: self._sanitize_clipboard(QClipboard.Mode.Selection))
+
+        if winframe.supported(QApplication.instance()):
+            self._winframe = winframe.WinFrame(self, self.top_bar.regions, self.top_bar.set_max_hover,
+                                               self._toggle_maximized)
+        else:
+            self.top_bar.set_native_frame(True)
+        self.top_bar.rebuild_hamburger()
+        # Alt sublinha os atalhos dos menus; Alt/F10 levam o foco para a barra de menus.
+        # O filtro vai na QWindow desta janela (no showEvent), NAO no app: la passam as teclas e os
+        # cliques dela, sem pagar uma chamada Python por evento de cada objeto da aplicacao.
+        self._mnemonics = MnemonicFilter(self._menubar, self)
+        self._mnemonics_on = False
+        QShortcut(QKeySequence("F10"), self, activated=self._focus_menubar)
 
         self.new_file()
         self._update_identity_chip()
@@ -764,11 +784,13 @@ class MainWindow(QMainWindow):
         m_help.addAction(self.act_about)
 
         self._menubar = bar
-        self.top_bar = TopBar(bar)
+        self.top_bar = TitleBar(bar)
         self.top_bar.palette_requested.connect(self.command_palette)
         self.top_bar.redaction_toggled.connect(self._set_redaction)
-        self.top_bar.seal_requested.connect(self.seal_current)
-        self.top_bar.identity_requested.connect(self.verify_custody)
+        self.top_bar.seal_requested.connect(self._on_seal_button)
+        self.top_bar.minimize_requested.connect(self.showMinimized)
+        self.top_bar.maximize_requested.connect(self._toggle_maximized)
+        self.top_bar.close_requested.connect(self.close)
         self.setMenuWidget(self.top_bar)
 
     def _create_language_menu(self, bar) -> None:
@@ -1250,7 +1272,10 @@ class MainWindow(QMainWindow):
         if ed is None:
             self.sentinel.set_findings([], False)
             self.rail.set_badge(0)
+            self.top_bar.set_vault_state("none")
             return
+        self.top_bar.set_vault_state(
+            ("locked" if ed.is_locked() else "open") if ed.is_vault else "none")
         matches = ed.secret_matches()
         spans = getattr(ed, "_secret_byte_spans", [])
         n = len(matches)
@@ -2250,7 +2275,78 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Tema aplicado: {name}", 3000)
 
     def command_palette(self) -> None:
-        CommandPalette(self.palette_commands(), self).exec()
+        dlg = CommandPalette(self.palette_commands(), self)
+        pill = self.top_bar.search
+        if pill.isVisible():
+            width = max(pill.width(), 560)
+            top_left = pill.mapToGlobal(pill.rect().bottomLeft())
+            x = top_left.x() + pill.width() // 2 - width // 2
+            dlg.resize(width, dlg.height())
+            dlg.move(x, top_left.y() + 6)
+        dlg.exec()
+
+    # ------------------------------------------------------------------ #
+    # Janela: barra de titulo propria (Windows)
+    # ------------------------------------------------------------------ #
+    def _toggle_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def _focus_menubar(self) -> None:
+        """F10 (e Alt, pelo estilo): leva o foco para os menus; as setas navegam entre eles."""
+        self._mnemonics.show(True)
+        if self.top_bar.hamburger.isVisible():
+            self.top_bar.hamburger.showMenu()
+            return
+        acts = self._menubar.actions()
+        if acts:
+            self._menubar.setActiveAction(acts[0])
+
+    def _on_seal_button(self) -> None:
+        """Um botao, tres intencoes — todas as acoes JA existentes (a logica nao muda)."""
+        ed = self.current_editor()
+        if ed is None or not ed.is_vault:
+            self.seal_current()
+        elif ed.is_locked():
+            chrome = getattr(ed, "_chrome", None)
+            if chrome is not None and not chrome.overlay.isHidden():
+                chrome.overlay.password.setFocus()      # o cartao de destravar ja esta ali
+            else:
+                self.unlock_current()
+        else:
+            self.lock_current()
+        self._update_chrome()
+
+    def showEvent(self, ev) -> None:
+        super().showEvent(ev)
+        if self._winframe is not None and not self._winframe.hwnd:
+            self._winframe.attach()
+        handle = self.windowHandle()
+        if handle is not None and not self._mnemonics_on:
+            handle.installEventFilter(self._mnemonics)
+            self._mnemonics_on = True
+        # O Windows pode abrir a janela SEM ativa-la (anti roubo de foco), e ai nao ha mudanca de
+        # ativacao para avisar: sincroniza o esmaecimento da barra com o estado real.
+        QTimer.singleShot(0, lambda: self.top_bar.set_active(self.isActiveWindow()))
+
+    def nativeEvent(self, event_type, message):
+        if self._winframe is not None:
+            handled = self._winframe.handle(event_type, message)
+            if handled is not None:
+                return handled
+        # NAO chamar super().nativeEvent: no PyQt6 6.11 isso derruba o processo com janela real
+        # (0xC000041D). O padrao do Qt e so "nao tratei", que e exatamente isto.
+        return False, 0
+
+    def changeEvent(self, ev) -> None:
+        t = ev.type()
+        if t == QEvent.Type.ActivationChange:
+            self.top_bar.set_active(self.isActiveWindow())
+        elif t == QEvent.Type.WindowStateChange:
+            self.top_bar.set_maximized(self.isMaximized())
+        super().changeEvent(ev)
 
     def diff_files(self) -> None:
         cur = self.current_editor()

@@ -117,10 +117,11 @@ def test_mensagem_da_barra_de_status_nao_esconde_o_selo(win):
 
 
 def test_todos_os_menus_cabem_na_barra_superior(win):
+    win.top_bar.resize(1440, 40)
     bar = win.top_bar._menubar
     titulos = [a.text().replace("&", "") for a in bar.actions()]
     assert titulos == ["Arquivo", "Editar", "Linguagem", "Segurança", "Ajuda"]
-    assert bar.minimumWidth() >= bar.sizeHint().width()             # nunca vira ">>"
+    assert bar.width() >= bar.sizeHint().width()                    # nunca vira ">>"
 
 
 def test_botao_de_fechar_aba(win):
