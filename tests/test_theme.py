@@ -11,7 +11,7 @@ def test_set_theme_troca_a_paleta():
         assert "#FFFFFF" in theme.QSS          # QSS reconstruido com a paleta clara
         theme.set_theme("dark")
         assert theme.current_theme() == "dark"
-        assert theme.BG == "#0E1116"
+        assert theme.BG == "#0D1117"
     finally:
         theme.set_theme("dark")                # nao vaza estado pros outros testes
 

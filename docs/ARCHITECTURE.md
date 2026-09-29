@@ -112,6 +112,9 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     │   ── camada UI (PyQt6) ──
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + custódia + cofre/oculto/burn
     ├── mainwindow.py        MainWindow: abas, menus, barra :, selo, orquestração dos núcleos
+    ├── widgets.py           Peças da interface: barra superior, trilho, painel da Sentinela, faixa, cofre travado, diálogos
+    ├── icons.py             Ícones de traço desenhados com QPainter (sem QtSvg)
+    ├── sentinel_view.py     Núcleo puro: o que a tela mostra de um segredo (máscara, camada) e força de senha
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
     ├── preferences.py       Diálogo de Preferências (Ctrl+,)
     └── theme.py             paletas dark/light, QSS e re-tematização dos lexers
