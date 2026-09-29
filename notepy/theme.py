@@ -246,7 +246,7 @@ def _high_contrast_palette() -> dict | None:
         import ctypes
 
         class _HIGHCONTRASTW(ctypes.Structure):
-            _fields_ = [("cbSize", ctypes.c_uint), ("dwFlags", ctypes.c_uint),  # noqa: RUF012 (ctypes)
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwFlags", ctypes.c_uint),
                         ("lpszDefaultScheme", ctypes.c_wchar_p)]
 
         hc = _HIGHCONTRASTW()

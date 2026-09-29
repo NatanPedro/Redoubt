@@ -131,10 +131,10 @@ if sys.platform == "win32":        # a classe so existe onde ha API do Windows (
             self._hover = False
 
             class _NCCALCSIZE_PARAMS(ctypes.Structure):
-                _fields_ = [("rgrc", wintypes.RECT * 3), ("lppos", ctypes.c_void_p)]  # noqa: RUF012 (ctypes)
+                _fields_ = [("rgrc", wintypes.RECT * 3), ("lppos", ctypes.c_void_p)]
 
             class _MARGINS(ctypes.Structure):
-                _fields_ = [("l", ctypes.c_int), ("r", ctypes.c_int),  # noqa: RUF012 (ctypes)
+                _fields_ = [("l", ctypes.c_int), ("r", ctypes.c_int),
                             ("t", ctypes.c_int), ("b", ctypes.c_int)]
 
             self._NCCALCSIZE_PARAMS = _NCCALCSIZE_PARAMS
