@@ -216,5 +216,21 @@ def test_mnemonicos_so_com_alt(qapp):
     theme.set_mnemonics_visible(False)
 
 
+def test_alt_na_janela_liga_e_desliga_o_sublinhado(win, qapp):
+    """O filtro fica na QWindow da janela (nao no app inteiro) e ainda ve o Alt."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    win.show()
+    qapp.processEvents()
+    handle = win.windowHandle()
+    QTest.keyPress(handle, Qt.Key.Key_Alt)
+    assert theme._MNEMONICS_VISIBLE
+    QTest.keyRelease(handle, Qt.Key.Key_Alt)
+    QTest.mouseClick(handle, Qt.MouseButton.LeftButton)     # clique encerra o modo teclado
+    qapp.processEvents()
+    assert not theme._MNEMONICS_VISIBLE
+
+
 def test_alto_contraste_ignorado_nos_testes():
     assert theme._high_contrast_palette() is None and not theme.HIGH_CONTRAST

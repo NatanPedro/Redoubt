@@ -520,10 +520,10 @@ class MainWindow(QMainWindow):
             self.top_bar.set_native_frame(True)
         self.top_bar.rebuild_hamburger()
         # Alt sublinha os atalhos dos menus; Alt/F10 levam o foco para a barra de menus.
+        # O filtro vai na QWindow desta janela (no showEvent), NAO no app: la passam as teclas e os
+        # cliques dela, sem pagar uma chamada Python por evento de cada objeto da aplicacao.
         self._mnemonics = MnemonicFilter(self._menubar, self)
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self._mnemonics)
+        self._mnemonics_on = False
         QShortcut(QKeySequence("F10"), self, activated=self._focus_menubar)
 
         self.new_file()
@@ -2323,6 +2323,10 @@ class MainWindow(QMainWindow):
         super().showEvent(ev)
         if self._winframe is not None and not self._winframe.hwnd:
             self._winframe.attach()
+        handle = self.windowHandle()
+        if handle is not None and not self._mnemonics_on:
+            handle.installEventFilter(self._mnemonics)
+            self._mnemonics_on = True
         # O Windows pode abrir a janela SEM ativa-la (anti roubo de foco), e ai nao ha mudanca de
         # ativacao para avisar: sincroniza o esmaecimento da barra com o estado real.
         QTimer.singleShot(0, lambda: self.top_bar.set_active(self.isActiveWindow()))
