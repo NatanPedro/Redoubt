@@ -210,3 +210,94 @@ def test_dos_capado_e_rapido():
     dt = time.time() - t
     assert len(out) <= s.MAX_MATCHES, "scan nao respeitou o teto de matches"
     assert dt < 5.0, f"scan demorou {dt:.1f}s (DoS O(n^2) pode ter voltado)"
+
+
+# --------------------------------------------------------------------------- #
+# Prefiltro da camada 1: pular a regex cujo trecho fixo nao esta no texto
+# --------------------------------------------------------------------------- #
+def _stdlib_text(limit=400_000):
+    """Codigo Python comum (a biblioteca padrao): quase nenhum prefixo de provedor."""
+    import glob
+    import json as _json
+    import os
+    out = ""
+    for p in sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(_json.__file__)), "*.py"))):
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            out += fh.read()
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
+def _corpus():
+    """Tudo o que os testes daqui ja exercitam + o corpus de red-team + codigo comum."""
+    import json as _json
+    import os
+    texts = [t for t, _ in DETECT] + list(NO_DETECT)
+    texts += [f"x = \"{tok}\" e mais {tok[::-1]}" for tok, _ in NEW_PROVIDERS]
+    with open(os.path.join(os.path.dirname(__file__), "fixtures", "redteam_corpus.json"),
+              encoding="utf-8") as fh:
+        texts += [c["text"] for c in _json.load(fh)]
+    texts.append("\n".join(texts))                      # tudo junto, com sobreposicoes
+    texts.append(_stdlib_text(200_000))
+    return texts
+
+
+def test_prefiltro_nao_muda_o_resultado(monkeypatch):
+    corpus = _corpus()
+    with_pf = [s.scan(t) for t in corpus]
+    monkeypatch.setattr(s, "_PREFILTER", False)
+    assert [s.scan(t) for t in corpus] == with_pf
+
+
+def test_trecho_fixo_esta_em_todo_achado_do_padrao():
+    """A garantia de que o prefiltro nunca esconde um achado: todo casamento da regex contem
+    um dos trechos fixos declarados (em casefold, se a regex e (?i))."""
+    vistos = set()
+    for text in _corpus():
+        for kind, pat, literals, icase in s._PROVIDERS:
+            for m in pat.finditer(text):
+                hay = m.group(0).casefold() if icase else m.group(0)
+                assert any(lit in hay for lit in literals), (kind, m.group(0)[:40])
+                vistos.add(kind)
+    assert len(vistos) >= 35, f"corpus cobre poucos padroes: faltam {set(s._LITERALS) - vistos}"
+
+
+def test_trechos_fixos_bem_formados():
+    assert set(s._LITERALS) == {k for k, _ in s._PATTERNS}     # nem sobra nem falta
+    for kind, _pat, literals, icase in s._PROVIDERS:
+        assert literals and all(literals), kind
+        if icase:                                            # comparado com o texto em casefold
+            assert all(lit == lit.casefold() for lit in literals), kind
+
+
+def test_prefiltro_casefold_nao_perde_o_que_a_regex_i_casa(monkeypatch):
+    """Na regex (?i) o U+017F (s longo) casa 's' e o U+212A (sinal de Kelvin) casa 'k'. Com
+    lower() o prefiltro nao acharia "basic" em "Ba<U+017F>ic" e pularia um achado que a regex
+    faz: por isso casefold."""
+    tok = "dXNlcjpzM25oNFN1cDNyU2VjcmV0YQ=="
+    texts = [f"Authorization: BASIC {tok}", f"Authorization: Ba\u017fic {tok}",
+             "Account\u212aey=" + ("AbC9d2" * 15)[:86] + "=="]
+    assert "basic" not in texts[1].lower()                  # o caso que lower() perderia
+    with_pf = [[m.kind for m in s.scan(t)] for t in texts]
+    monkeypatch.setattr(s, "_PREFILTER", False)
+    assert with_pf == [[m.kind for m in s.scan(t)] for t in texts]
+    assert with_pf[1] == ["Credencial Basic Auth"]
+    assert with_pf[2] == ["Chave de conta Azure Storage"]
+
+
+@pytest.mark.slow
+def test_prefiltro_acelera_codigo_comum(monkeypatch):
+    text = _stdlib_text()
+
+    def best():
+        b = 9e9
+        for _ in range(3):
+            t = time.perf_counter()
+            s.scan(text)
+            b = min(b, time.perf_counter() - t)
+        return b
+    rapido = best()
+    monkeypatch.setattr(s, "_PREFILTER", False)
+    lento = best()
+    assert rapido < 0.8 * lento, f"prefiltro {rapido:.3f}s vs sem {lento:.3f}s"
