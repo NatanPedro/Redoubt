@@ -278,7 +278,8 @@ arquivos; `--staged` varre o *stage* (via `git show :arquivo` — exatamente o q
 será commitado); `--install-hook` instala um `pre-commit` que bloqueia o commit
 (saída ≠ 0) se houver credencial, com backup de hook alheio. `_decode` trata BOM
 UTF-16/UTF-32 e densidade de NUL (não pula arquivos *wide-encoded*); pula binário
-denso e arquivos > 2 MB (avisando). É **fail-closed** quando o git falha dentro
+denso. Acima de 2 MB varre em janelas de 1 MB sobrepostas em 4 KB (achado contado uma
+vez, offsets absolutos); só acima de 50 MB avisa e não varre. É **fail-closed** quando o git falha dentro
 de um repo. O relatório **nunca** imprime o segredo (só `arquivo:linha:coluna`,
 tipo e prévia mascarada `●●●`).
 
@@ -498,14 +499,17 @@ separa **três eixos** — e o que protege um eixo não protege os outros:
 `secrets.scan` aplica as camadas em ordem de confiança e **deduplica por
 sobreposição**, descartando matches que casem com o filtro de placeholder:
 
-1. **Padrões de provedor** (~26 padrões, alta confiança): AWS `AKIA`/`ASIA`, JWT,
+1. **Padrões de provedor** (~40 padrões, alta confiança): AWS `AKIA`/`ASIA`, JWT,
    chave privada PEM (incl. `ENCRYPTED`/`PGP BLOCK`), GitHub clássico +
    fine-grained (`github_pat_`), GitLab (`glpat-`), Slack token + webhook, OpenAI
    (`sk-`/`sk-proj-`), Stripe, SendGrid, Twilio, npm, Google API (`AIza`), Google
    OAuth (`GOCSPX-`), Telegram, Azure Storage (`AccountKey=`), Shopify
    (`shpat_`…), DigitalOcean (`dop_v1_`), Square (`sq0atp-`/`sq0csp-`), PyPI
-   (`pypi-AgEI`), HashiCorp Vault (`hvs.`), Doppler (`dp.`…), Basic Auth, Bearer,
-   *connection strings*.
+   (`pypi-AgEI`), HashiCorp Vault (`hvs.`), Doppler (`dp.`…), Anthropic (`sk-ant-`),
+   Hugging Face (`hf_`), Docker Hub (`dckr_pat_`), Sentry, Grafana, Linear, Figma,
+   Atlassian (`ATATT3`), PlanetScale, Supabase (`sbp_`/`sb_secret_`), Google OAuth
+   (`ya29.`), assinatura SAS do Azure, Basic Auth, Bearer, *connection strings*. Um padrão
+   com grupo nomeado `secret` (o SAS) faz o achado ser só esse trecho, não o contexto.
 2. **Atribuição `keyword = valor`** com/sem aspas, com porteira de complexidade
    (≥ 8 chars, ≥ 2 classes, não-UUID) e contextos benignos ignorados (csrf,
    paginação, anti-forgery).

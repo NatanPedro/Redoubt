@@ -16,7 +16,11 @@ import string
 from dataclasses import dataclass
 
 # Prefixos publicos de provedor: identificam o TIPO da credencial, nao a credencial.
+# O primeiro que casa vence: o especifico vem ANTES do generico (sk-ant- antes de sk-).
 _PUBLIC_PREFIXES = (
+    "sk-ant-", "hf_", "dckr_pat_", "dckr_oat_", "sntrys_", "sntryu_", "glsa_", "glc_",
+    "lin_api_", "lin_oauth_", "figd_", "ATATT3", "pscale_tkn_", "pscale_pw_", "pscale_oauth_",
+    "sbp_", "sb_secret_", "ya29.",
     "sk_live_", "sk_test_", "rk_live_", "rk_test_", "github_pat_", "sk-proj-", "pypi-AgEI",
     "dop_v1_", "xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-", "glpat-", "GOCSPX-", "PMAK-",
     "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "npm_", "AKIA", "ASIA", "AIza", "hvs.", "sk-",

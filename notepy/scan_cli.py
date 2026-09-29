@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 # Importa o pacote mesmo quando chamado por caminho absoluto (ex.: pelo hook),
@@ -36,7 +37,14 @@ from notepy import secrets as secrets_mod
 
 ALLOW_MARKER = "redoubt:allow"
 HOOK_MARKER = "redoubt-hook"          # identifica um hook nosso ja instalado
-_SCAN_LIMIT = 2_000_000               # mesmo teto do editor; arquivo maior e pulado
+_SCAN_LIMIT = 2_000_000               # ate aqui, uma varredura so (o mesmo teto do editor)
+# Acima do teto do editor o hook varre em JANELAS sobrepostas: cada janela custa o mesmo que um
+# arquivo comum (~1 s/MB), e a sobreposicao e maior que qualquer credencial, entao nada se perde
+# na emenda. So acima de _SCAN_CEILING (o tamanho a partir do qual o GitHub ja alerta) o arquivo
+# fica sem verificar — e o hook AVISA.
+_SCAN_CEILING = 50_000_000
+_WINDOW = 1_000_000
+_OVERLAP = 4_096
 _ENCODINGS = ("utf-8", "cp1252", "latin-1")
 
 
@@ -112,24 +120,62 @@ def _mask(snippet: str) -> str:
     return "●" * min(n, 12) + ("…" if n > 12 else "")
 
 
-def _line_col(text: str, offset: int) -> tuple[int, int]:
-    line = text.count("\n", 0, offset) + 1
-    col = offset - (text.rfind("\n", 0, offset) + 1) + 1
-    return line, col
+def _matches(text: str) -> Iterator[secrets_mod.Match]:
+    """secrets.scan do texto inteiro — em janelas sobrepostas quando passa do teto do editor.
+
+    Cada janela "e dona" de [s, s + _WINDOW) e enxerga _OVERLAP a mais dos dois lados: um achado
+    que comeca na parte dela aparece INTEIRO e com o contexto de antes (atribuicao, SRI...), e o
+    que comeca fora e descartado ali, porque a janela vizinha o ve inteiro. Offsets absolutos,
+    em ordem."""
+    if len(text) <= _SCAN_LIMIT:
+        yield from secrets_mod.scan(text)
+        return
+    for s in range(0, len(text), _WINDOW):
+        lo = max(0, s - _OVERLAP)
+        for m in secrets_mod.scan(text[lo:s + _WINDOW + _OVERLAP]):
+            a = lo + m.start
+            if s <= a < s + _WINDOW:
+                yield secrets_mod.Match(a, lo + m.end, m.kind, m.snippet)
 
 
 def scan_text(text: str, path: str) -> list[Finding]:
-    """Varre um texto e devolve achados, pulando linhas marcadas `redoubt:allow`."""
-    if len(text) > _SCAN_LIMIT:
+    """Varre um texto e devolve achados, pulando linhas marcadas `redoubt:allow`.
+
+    Texto acima de _SCAN_CEILING volta vazio: quem chama AVISA (ver _scan_decoded). No maximo
+    secrets.MAX_MATCHES achados por arquivo — o commit ja esta bloqueado no primeiro."""
+    if len(text) > _SCAN_CEILING:
         return []
-    lines = text.splitlines()
     out: list[Finding] = []
-    for m in secrets_mod.scan(text):
-        line, col = _line_col(text, m.start)
-        if 1 <= line <= len(lines) and ALLOW_MARKER in lines[line - 1]:
+    # linha/coluna INCREMENTAIS (os achados vem em ordem): contar desde o inicio a cada achado
+    # custaria O(n) por achado — bilhoes de passos num arquivo grande com muitos achados.
+    pos, line = 0, 1
+    cur_line, line_start, allowed = 0, 0, False
+    for m in _matches(text):
+        line += text.count("\n", pos, m.start)
+        pos = m.start
+        if line != cur_line:              # mesma linha (ex.: minificado): reusa inicio e resposta
+            cur_line = line
+            line_start = text.rfind("\n", 0, m.start) + 1
+            end = text.find("\n", m.start)
+            allowed = text.find(ALLOW_MARKER, line_start, len(text) if end < 0 else end) >= 0
+        if allowed:
             continue                       # falso-positivo consciente: whitelisted
-        out.append(Finding(path, line, col, m.kind, _mask(m.snippet)))
+        out.append(Finding(path, line, m.start - line_start + 1, m.kind, _mask(m.snippet)))
+        if len(out) >= secrets_mod.MAX_MATCHES:
+            break
     return out
+
+
+def _scan_decoded(text: str, path: str) -> list[Finding]:
+    """scan_text + os avisos: arquivo grande (demora) e enorme (NAO verificado)."""
+    if len(text) > _SCAN_CEILING:
+        # nao ficamos em silencio: avisamos que ele NAO foi verificado (poderia esconder segredo).
+        print(f"  Redoubt: aviso — '{path}' grande demais ({len(text) // 1_000_000} MB), "
+              "NAO verificado. Confira manualmente se contem segredo.")
+        return []
+    if len(text) > _SCAN_LIMIT:
+        print(f"  Redoubt: varrendo '{path}' ({len(text) // 1_000_000} MB), pode levar alguns segundos...")
+    return scan_text(text, path)
 
 
 def scan_paths(paths: list[str]) -> list[Finding]:
@@ -143,7 +189,7 @@ def scan_paths(paths: list[str]) -> list[Finding]:
         text = _decode(raw)
         if text is None:
             continue                       # binario: nada a varrer
-        out.extend(scan_text(text, p))
+        out.extend(_scan_decoded(text, p))
     return out
 
 
@@ -185,13 +231,7 @@ def scan_staged() -> list[Finding]:
         text = _decode(raw)
         if text is None:
             continue
-        if len(text) > _SCAN_LIMIT:
-            # nao varremos arquivo enorme (custo), mas NAO ficamos em silencio:
-            # avisamos que ele NAO foi verificado (poderia esconder um segredo).
-            print(f"  Redoubt: aviso — '{path}' grande demais ({len(text)} chars), "
-                  "NAO verificado. Confira manualmente se contem segredo.")
-            continue
-        out.extend(scan_text(text, path))
+        out.extend(_scan_decoded(text, path))
     return out
 
 
