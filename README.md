@@ -48,7 +48,7 @@ A varredura roda no fundo a cada alteração (com *debounce* de 300 ms, sem trav
 
 | # | Camada | Detecta |
 |---|--------|---------|
-| 1 | **Padrões de provedor** | Chave AWS (`AKIA…`), JWT, chave privada PEM, tokens GitHub / Slack, *webhook* Slack, OpenAI (`sk-` / `sk-proj-`), Stripe, SendGrid, Twilio, npm, Google API, Basic Auth, Bearer, *connection strings* (mongodb/postgres/mysql/redis/amqp com `user:senha@host`) |
+| 1 | **Padrões de provedor** | Chave AWS (`AKIA…`), JWT, chave privada PEM, tokens GitHub / Slack, *webhook* Slack, OpenAI (`sk-` / `sk-proj-`), Anthropic (`sk-ant-`), Stripe, SendGrid, Twilio, npm, Google API, Hugging Face, Docker Hub, Supabase, Atlassian, SAS do Azure e outros (~40 padrões — lista em [`docs/SECURITY.md`](docs/SECURITY.md)), Basic Auth, Bearer, *connection strings* (mongodb/postgres/mysql/redis/amqp com `user:senha@host`) |
 | 2 | **Atribuição `chave=valor`** | `password`, `senha`, `secret`, `api_key`, `access_key`, `token`… com **ou sem aspas**, atrás de uma porteira de complexidade (≥ 8 chars, ≥ 2 classes de caractere, não-UUID) e ignorando contextos benignos (CSRF, paginação) |
 | 3 | **PII brasileira** | CPF e CNPJ — **com e sem máscara** — validados pelos **dígitos verificadores** |
 | 4 | **Cartão de crédito** | Validado por **Luhn** + comprimento real (13/14/15/16/19) + IIN |

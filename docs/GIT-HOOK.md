@@ -62,7 +62,9 @@ o tipo e uma prévia mascarada. Assim o próprio log do hook não vira vazamento
 
 - Varre a versão **em stage** (`git show :arquivo`), não a do *working tree* — é o que
   realmente vai pro commit.
-- Pula **binários** (NUL embutido) e arquivos **> 2 MB** (mesmo teto do editor).
+- Pula **binários** (NUL embutido). Arquivo **acima de 2 MB** (o teto do editor) é varrido
+  em janelas de 1 MB sobrepostas, inteiro, com um aviso de que vai demorar (~1 s por MB);
+  só **acima de 50 MB** fica sem verificar — e o hook avisa.
 - Fora de um repo git, o `--staged` não trava nada (sai 0) — não atrapalha ambientes.
 - Mesmas camadas de detecção do editor: provedores (AWS/GitHub/Slack/…), atribuições
   com valor de alta complexidade, CPF/CNPJ/cartão validados, e entropia de Shannon.

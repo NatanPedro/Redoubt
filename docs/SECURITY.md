@@ -104,7 +104,7 @@ trecho que pareça exemplo/dummy é descartado antes de ser reportado.
 ### Camada 1 — Padrões de provedor (alta confiança)
 
 Expressões regulares para formatos de credencial bem definidos. Quando o formato bate,
-a confiança é alta (prefixo distintivo → baixíssimo falso-positivo). Os ~26 padrões
+a confiança é alta (prefixo distintivo → baixíssimo falso-positivo). Os ~40 padrões
 implementados (`_PATTERNS`):
 
 - **Chave de acesso AWS** — `AKIA` **ou** `ASIA` (credencial temporária) + 16 `[0-9A-Z]`.
@@ -133,6 +133,25 @@ implementados (`_PATTERNS`):
 - **Token HashiCorp Vault** — `hvs.` + 30+ caracteres (exige dígito, para não casar
   `obj.metodo_snake_case`).
 - **Token Doppler** — `dp.pt.`/`dp.st.`/… + 40+ caracteres.
+- **Chave da Anthropic** — `sk-ant-api03-`/`sk-ant-admin01-`/… + 80+ caracteres (vem
+  **antes** do `sk-` da OpenAI na prévia, que mostra `sk-ant-`).
+- **Token Hugging Face** — `hf_` + 34 caracteres.
+- **Token Docker Hub** — `dckr_pat_`/`dckr_oat_` + 24+ caracteres.
+- **Token Sentry** — `sntrys_eyJ…` (organização) e `sntryu_` + 64 hex (usuário).
+- **Token Grafana** — `glsa_<32>_<8 hex>` (conta de serviço) e `glc_eyJ…` (Grafana Cloud).
+- **Chave da Linear** — `lin_api_` + 40 e `lin_oauth_` + 64 hex.
+- **Token Figma** — `figd_` + 32+ caracteres.
+- **Token Atlassian** — `ATATT3` + 150+ caracteres.
+- **Credencial PlanetScale** — `pscale_tkn_`/`pscale_pw_`/`pscale_oauth_` + 32–64 caracteres.
+- **Token Supabase** — `sbp_` + 40 hex e `sb_secret_` + 20+. O `sbp_` é hexadecimal: tem pouca
+  entropia por caractere e **escapava** da camada 5 antes do padrão próprio.
+- **Token de acesso OAuth do Google** — `ya29.` + 20+ caracteres.
+- **Assinatura SAS do Azure** — o `sig=` de uma URL que traz o `sv=AAAA-MM-DD` do Azure. O
+  achado é **só a assinatura**: o resto da URL (conta, contêiner, datas) é público.
+
+Esses 12 já eram pegos, na maioria, pela camada 5 — mas como "possível segredo", sem o nome do
+provedor e sem o prefixo público na prévia; o padrão próprio dá o rótulo certo e não depende da
+entropia.
 - **Credencial Basic Auth** — `Basic <base64>`.
 - **Token Bearer** — `Bearer <token>`.
 - **Connection string** — `mongodb`/`mongodb+srv`/`postgres`/`postgresql`/`mysql`/`redis`/`amqp`/`amqps` no formato `esquema://usuario:senha@host`.
@@ -224,6 +243,18 @@ Para não confundir com material público de alta entropia, a camada **exclui**:
 | Chave Postman | `PMAK-<24 hex>-<34 hex>` | 1 |
 | Token HashiCorp Vault | `hvs.…` (30+, com dígito) | 1 |
 | Token Doppler | `dp.pt.` / `dp.st.` / … + 40+ | 1 |
+| Chave da Anthropic | `sk-ant-api03-` / `sk-ant-admin01-` / … + 80+ | 1 |
+| Token Hugging Face | `hf_` + 34 | 1 |
+| Token Docker Hub | `dckr_pat_` / `dckr_oat_` + 24+ | 1 |
+| Token Sentry | `sntrys_eyJ…` / `sntryu_` + 64 hex | 1 |
+| Token Grafana | `glsa_<32>_<8 hex>` / `glc_eyJ…` | 1 |
+| Chave da Linear | `lin_api_` + 40 / `lin_oauth_` + 64 hex | 1 |
+| Token Figma | `figd_` + 32+ | 1 |
+| Token Atlassian | `ATATT3` + 150+ | 1 |
+| Credencial PlanetScale | `pscale_tkn_` / `pscale_pw_` / `pscale_oauth_` + 32–64 | 1 |
+| Token Supabase | `sbp_` + 40 hex / `sb_secret_` + 20+ | 1 |
+| Token de acesso OAuth do Google | `ya29.` + 20+ | 1 |
+| Assinatura SAS do Azure | `…sv=AAAA-MM-DD…&sig=<assinatura>` (só a assinatura) | 1 |
 | Credencial Basic Auth | `Basic <base64>` | 1 |
 | Token Bearer | `Bearer <token>` | 1 |
 | Connection string | `mongodb\|postgres\|mysql\|redis\|amqp://user:senha@host` | 1 |
@@ -436,8 +467,14 @@ A CLI `notepy/scan_cli.py` (núcleo puro, reusa `secrets.scan`) — instalável 
   houver credencial; faz **backup** de hook pré-existente e **não o clobbra**.
   `--uninstall-hook` restaura o backup.
 - `_decode` trata **BOM UTF-16/UTF-32** e densidade de **NUL** para não pular arquivos
-  wide-encoded (bypass de encoding fechado); pula binário denso e arquivos **> 2 MB**
-  (avisando, não em silêncio). **Fail-closed** quando o git falha dentro de um repo.
+  wide-encoded (bypass de encoding fechado); pula binário denso. **Fail-closed** quando o git
+  falha dentro de um repo.
+- **Arquivo grande é varrido inteiro.** Acima do teto do editor (2 MB) a varredura corre em
+  **janelas de 1 MB** que se sobrepõem em 4 KB — mais que qualquer credencial, então nada se
+  perde na emenda — e cada achado é contado uma vez só, com o contexto de antes. O hook avisa
+  que vai demorar (~1 s por MB). Só acima de **50 MB** (o tamanho a partir do qual o GitHub já
+  alerta) o arquivo fica sem verificar, e o hook **avisa**, inclusive no CLI com arquivos
+  (que antes pulava acima de 2 MB **em silêncio**).
 
 ### Garantias
 
@@ -449,7 +486,7 @@ A CLI `notepy/scan_cli.py` (núcleo puro, reusa `secrets.scan`) — instalável 
 ### O que NÃO garante
 
 - **Mesmas limitações de detecção da Sentinela** (best-effort).
-- Arquivo **> 2 MB** não é varrido (só avisado).
+- Arquivo **> 50 MB** não é varrido (só avisado).
 - **Bypass**: `git commit --no-verify`; **whitelist** por linha: `redoubt:allow`.
 - **Não é** um gate obrigatório de CI/CD — é uma rede local na hora do commit.
 - **Código do próprio repositório não roda no hook.** O hook executa `python -P -m notepy.scan_cli`
@@ -622,7 +659,7 @@ O Redoubt mira o **vazamento acidental** de material sensível por humanos, e a
 | **Sentinela** | Detecção | Aponta credencial/PII de formato conhecido ou alta entropia, local, com validação real onde dá (CPF/CNPJ/Luhn) | Best-effort: segredo sem padrão/ofuscado escapa; há FP. `LIMPO` = "nada detectado", não "sem segredo" |
 | **Cofre `.rdbt`** | Confidencialidade em repouso | Conteúdo cifrado AES-256-GCM (KDF **Argon2id**, **RDBT4**), zero-knowledge, multi-destravador (senha/arquivo-chave/**destinatário X25519**); disco sempre cifrado; privada X25519 **protegível por senha** | Não prova autoria; não autentica o remetente (X25519); não recupera senha; privada X25519 em claro **se não protegida**; resíduo em RAM enquanto destravado |
 | **Custódia (Ed25519)** | Integridade + autenticidade | "Veio desta instalação e não mudou desde que assinei"; trilha + âncora detectam adulteração e reset | Não dá confidencialidade; sem proteção da identidade, quem tem a máquina assina/forja como você |
-| **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >2 MB não varrido |
+| **Hook git** | Detecção (commit) | Bloqueia commit de credencial detectada; nunca imprime o segredo | Mesmas limitações da Sentinela; `--no-verify`/`redoubt:allow` desativam; >50 MB não varrido |
 | **Release assinado** | Integridade + autenticidade do download | Integridade + autenticidade contra a âncora embutida | Assinatura sozinha não prova autoria (pubkey viaja no payload); chave local sem senha por padrão |
 | **Selo (`.rdbt-seal`)** | Integridade + autenticidade do arquivo | Liga conteúdo+identidade+trilha num artefato portátil; verificável offline contra a âncora embutida | Amarra o conteúdo, não esconde (sem confidencialidade); head da trilha é asserção forense, não verificável por terceiros |
 | **Modo Redação** | Privacidade (tela + clipboard) | Esconde de olhos/câmeras e mascara o clipboard para o detectado | Tela é só visual; conteúdo real permanece no disco; clipboard só mascara o detectado |
