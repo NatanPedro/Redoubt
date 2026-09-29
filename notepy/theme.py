@@ -19,9 +19,12 @@ O QUE cada peca e, a aparencia mora aqui.
 
 from __future__ import annotations
 
+import os
+import sys
 from string import Template
 
 from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtWidgets import QProxyStyle, QStyle, QStyleFactory
 
 # --------------------------------------------------------------------------- #
 # Paletas (a cor e SEMANTICA, identica entre os temas)
@@ -57,6 +60,7 @@ TEXT = TEXT2 = DIM = AMBER = AMBER_INK = AMBER_BG = GREEN = GREEN_BG = ""
 RED = RED_INK = RED_BG = CYAN = VIOLET = TERRACOTA = ""
 KEYWORD = STRING = NUMBER = CARET_LN = SELECTION = ""
 _ACTIVE = "dark"
+HIGH_CONTRAST = False          # Windows em alto contraste: as cores viram as do SISTEMA
 
 # Fonte da INTERFACE (o editor usa a monoespacada das preferencias, a parte).
 UI_FONTS = ["IBM Plex Sans", "Segoe UI", "Noto Sans", "Cantarell", "Ubuntu", "Helvetica Neue", "Arial"]
@@ -72,9 +76,27 @@ _QSS_TEMPLATE = Template("""
 QMainWindow, QWidget { background: $BG; color: $TEXT; }
 QToolTip { background: $RAISED; color: $TEXT; border: 1px solid $BORDER2; padding: 5px 8px; }
 
-/* ---------- barra superior: menus + busca + acoes ---------- */
-#TopBar { background: $SURFACE; border-bottom: 1px solid $BORDER; }
-#TopBar QMenuBar { background: transparent; border: none; }
+/* ---------- barra de titulo unificada (40 px): menus + paleta + acoes + janela ---------- */
+/* Mesmo fundo da area de abas e SEM linha divisoria: quem separa e a aba ativa. */
+#TitleBar { background: $SURFACE; border: none; }
+#TitleBar QLabel { background: transparent; }
+#TitleBar QMenuBar { background: transparent; border: none; }
+QPushButton#BarButton, QToolButton#BarButton {
+    background: transparent; color: $TEXT; border: 1px solid $BORDER2; border-radius: 6px;
+    padding: 0 10px; min-height: 26px; max-height: 26px;
+}
+QPushButton#BarButton:hover, QToolButton#BarButton:hover { background: $RAISED; border-color: $DIM; }
+QPushButton#BarButton:checked { background: $AMBER_BG; border-color: $AMBER; color: $AMBER; }
+QPushButton#BarButton[sealed="true"] { color: $AMBER; }
+QPushButton#BarButton:focus, QToolButton#BarButton:focus, QPushButton#SearchPill:focus,
+QPushButton#Fingerprint:focus { border: 2px solid $AMBER; }
+QPushButton#Fingerprint {
+    background: transparent; color: $TEXT2; border: 1px solid $BORDER2; border-radius: 6px;
+    padding: 0 10px; min-height: 26px; max-height: 26px;
+}
+QPushButton#Fingerprint:hover { background: $RAISED; border-color: $DIM; color: $TEXT; }
+QToolButton#BarButton::menu-indicator { image: none; width: 0; }
+#BarSeparator { background: $BORDER2; border: none; }
 QMenuBar { background: $SURFACE; color: $TEXT2; }
 QMenuBar::item { background: transparent; padding: 6px 10px; border-radius: 6px; }
 QMenuBar::item:selected { background: $RAISED; color: $TEXT; }
@@ -84,11 +106,16 @@ QMenu::item:selected { background: $RAISED; color: $AMBER; }
 QMenu::item:disabled { color: $DIM; }
 QMenu::separator { height: 1px; background: $BORDER; margin: 5px 8px; }
 
+/* Paleta: UM campo continuo. O atalho fica dentro, com o MESMO fundo do campo. */
 QPushButton#SearchPill {
-    background: $BG; color: $DIM; border: 1px solid $BORDER2; border-radius: 8px;
-    padding: 5px 12px; text-align: left; min-width: 360px;
+    background: $BG; color: $DIM; border: 1px solid $BORDER2; border-radius: 6px;
+    padding: 0; text-align: left;
 }
-QPushButton#SearchPill:hover { border-color: $DIM; color: $TEXT2; }
+QPushButton#SearchPill:hover { border-color: $DIM; }
+#SearchPill QLabel { background: transparent; color: $DIM; }
+#SearchPill QLabel#Kbd {
+    background: $BG; color: $TEXT2; border: 1px solid $BORDER2; border-radius: 4px; padding: 0 5px;
+}
 
 /* ---------- botoes ---------- */
 QPushButton {
@@ -209,16 +236,51 @@ QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QSS = ""
 
 
+def _high_contrast_palette() -> dict | None:
+    """Cores do SISTEMA quando o Windows esta em alto contraste (o equivalente a
+    `forced-colors: active`). None fora do Windows ou sem alto contraste. Pode ser desligado com
+    REDOUBT_IGNORE_HIGH_CONTRAST=1 (a suite de testes precisa das paletas proprias)."""
+    if sys.platform != "win32" or os.environ.get("REDOUBT_IGNORE_HIGH_CONTRAST") == "1":
+        return None
+    try:
+        import ctypes
+
+        class _HIGHCONTRASTW(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwFlags", ctypes.c_uint),  # noqa: RUF012 (ctypes)
+                        ("lpszDefaultScheme", ctypes.c_wchar_p)]
+
+        hc = _HIGHCONTRASTW()
+        hc.cbSize = ctypes.sizeof(hc)
+        u32 = ctypes.windll.user32
+        if not u32.SystemParametersInfoW(0x0042, hc.cbSize, ctypes.byref(hc), 0) or not (hc.dwFlags & 1):
+            return None
+
+        def col(i: int) -> str:
+            v = u32.GetSysColor(i)
+            return f"#{v & 0xFF:02X}{(v >> 8) & 0xFF:02X}{(v >> 16) & 0xFF:02X}"
+    except Exception:
+        return None
+    win, txt, hl, hlt = col(5), col(8), col(13), col(14)
+    btn, gray, hot = col(15), col(17), col(26)
+    return {"APP": win, "BG": win, "SURFACE": win, "PANEL": win, "RAISED": btn, "BORDER": txt,
+            "BORDER2": txt, "TEXT": txt, "TEXT2": txt, "DIM": gray, "AMBER": hl, "AMBER_INK": hlt,
+            "AMBER_BG": win, "GREEN": hot, "GREEN_BG": win, "RED": hot, "RED_INK": win, "RED_BG": win,
+            "CYAN": hot, "VIOLET": txt, "TERRACOTA": txt, "KEYWORD": txt, "STRING": txt, "NUMBER": txt,
+            "CARET_LN": win, "SELECTION": hl}
+
+
 def _apply_palette(name: str) -> None:
     """Reescreve as constantes de modulo e o QSS para o tema `name`."""
     # guarda contra tipo nao-hashavel (list/dict vindos de um QSettings adulterado):
     # 'name in _PALETTES' / _PALETTES.get(name) levantariam TypeError.
     if not (isinstance(name, str) and name in _PALETTES):
         name = "dark"
-    pal = _PALETTES[name]
+    hc = _high_contrast_palette()
+    pal = hc or _PALETTES[name]
     g = globals()
     g.update(pal)
     g["_ACTIVE"] = name
+    g["HIGH_CONTRAST"] = hc is not None
     g["QSS"] = _QSS_TEMPLATE.substitute(MONO=_MONO_CSS, **pal)
 
 
@@ -283,9 +345,37 @@ def _arrow_qss() -> str:
     return "\n".join(rules) + "\n"
 
 
+_MNEMONICS_VISIBLE = False
+_STYLE = None
+
+
+def set_mnemonics_visible(on: bool) -> bool:
+    """Sublinhado dos atalhos de menu (&Arquivo): so com Alt, como no Windows. True se mudou."""
+    global _MNEMONICS_VISIBLE
+    if on == _MNEMONICS_VISIBLE:
+        return False
+    _MNEMONICS_VISIBLE = on
+    return True
+
+
+class _RedoubtStyle(QProxyStyle):
+    """Fusion + duas regras do Windows: sublinhado dos mnemonicos so ao pressionar Alt, e Alt
+    leva o foco para a barra de menus."""
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_UnderlineShortcut:
+            return 1 if _MNEMONICS_VISIBLE else 0
+        if hint == QStyle.StyleHint.SH_MenuBar_AltKeyNavigation:
+            return 1
+        return super().styleHint(hint, option, widget, returnData)
+
+
 def apply_app(app) -> None:
     """Aplica estilo Fusion + paleta + QSS + fonte de interface na aplicacao inteira."""
-    app.setStyle("Fusion")
+    global _STYLE
+    if _STYLE is None:
+        _STYLE = _RedoubtStyle(QStyleFactory.create("Fusion"))
+    app.setStyle(_STYLE)
     app.setFont(ui_font())
     pal = QPalette()
     pal.setColor(QPalette.ColorRole.Window, QColor(BG))
