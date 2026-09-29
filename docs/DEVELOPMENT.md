@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (466 testes); o conftest força offscreen
+pytest                  # roda tudo (492 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -425,7 +425,7 @@ Notepad/                       # pasta do projeto (nome historico)
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # 466 testes (pytest, offscreen)
+├── tests/                     # 492 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
 │   └── test_*.py              # 20 arquivos: secrets, vault, custody, idbackup,
@@ -459,6 +459,9 @@ Notepad/                       # pasta do projeto (nome historico)
     │                          #   lock/unlock cofre, gate/reveal oculto, burn
     ├── mainwindow.py          # MainWindow: abas, menus, barra ':' (Ctrl+P),
     │                          #   selo de estado, custodia, _sanitize_clipboard
+    ├── widgets.py             # barra superior, trilho, painel da Sentinela, faixa, cofre travado, dialogos
+    ├── icons.py               # icones de traco desenhados com QPainter (sem QtSvg)
+    ├── sentinel_view.py       # nucleo puro: mascara/camada do segredo na tela + forca de senha
     ├── findbar.py             # Localizar/Substituir
     └── preferences.py         # dialogo de preferencias (Ctrl+,)
 ```

@@ -6,7 +6,7 @@ import html
 import os
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QColor, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,18 +19,22 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenuBar,
     QMessageBox,
     QPushButton,
     QStyle,
+    QStyledItemDelegate,
+    QTabBar,
     QTabWidget,
     QTextEdit,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool,
+from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool, icons,
                palette, passgen, redaction, seal, searchfiles, secrets as secrets_mod,
                textops, theme, transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
@@ -42,6 +46,8 @@ _RESTORE_SCAN_LIMIT = 2_000_000
 _MAX_RESTORE = 50
 from .findbar import FindBar                      # noqa: E402  (apos as constantes acima)
 from .preferences import PreferencesDialog        # noqa: E402
+from .widgets import (CustodyDialog, CustodyReport, EditorChrome, Finding, Rail,  # noqa: E402
+                      SealDialog, SentinelPanel, StatusBar, Toast, TopBar)
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
@@ -159,6 +165,27 @@ class SearchDialog(QDialog):
             self._on_open(*data)
 
 
+class _ShortcutDelegate(QStyledItemDelegate):
+    """Item da paleta: o nome do comando a esquerda e o atalho, discreto, a direita."""
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        sc = index.data(Qt.ItemDataRole.UserRole + 1)
+        if not sc:
+            return
+        painter.save()
+        painter.setFont(theme.mono_font(8))
+        painter.setPen(QColor(theme.TEXT2))
+        r = option.rect.adjusted(0, 0, -12, 0)
+        painter.drawText(r, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), sc)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        sz = super().sizeHint(option, index)
+        sz.setHeight(max(sz.height(), 36))
+        return sz
+
+
 class CommandPalette(QDialog):
     """Paleta de comandos (Ctrl+Shift+P): acha e executa qualquer comando por nome.
 
@@ -168,14 +195,38 @@ class CommandPalette(QDialog):
     def __init__(self, commands, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Paleta de comandos")
-        self.resize(560, 420)
+        self.setObjectName("Palette")
+        self.resize(680, 440)
         self._items = list(commands)                 # (label, atalho, callable)
         self._labels = [lbl for lbl, _sc, _fn in self._items]
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        head = QWidget()
+        head.setObjectName("PanelHeader")
+        head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(16, 4, 16, 4)
+        hl.setSpacing(10)
+        ic = QLabel()
+        ic.setPixmap(icons.pixmap("cmd", theme.AMBER, 18, 2.0))
+        hl.addWidget(ic)
         self.edit = QLineEdit(); self.edit.setPlaceholderText("Digite um comando…")
+        hl.addWidget(self.edit, 1)
+        esc = QLabel("Esc"); esc.setObjectName("Muted")
+        hl.addWidget(esc)
         self.list = QListWidget()
-        lay.addWidget(self.edit)
-        lay.addWidget(self.list, 1)
+        self.list.setItemDelegate(_ShortcutDelegate(self.list))
+        lay.addWidget(head)
+        body = QWidget()
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(8, 8, 8, 8)
+        bl.addWidget(self.list)
+        lay.addWidget(body, 1)
+        foot = QLabel("↑↓ navegar   ·   Enter executar   ·   Ctrl+P abre a barra de comando  :")
+        foot.setObjectName("Muted")
+        foot.setContentsMargins(16, 8, 16, 10)
+        lay.addWidget(foot)
         self.edit.textChanged.connect(self._refilter)
         self.edit.returnPressed.connect(self._run_current)
         self.list.itemActivated.connect(lambda *_: self._run_current())
@@ -197,8 +248,9 @@ class CommandPalette(QDialog):
         order = palette.rank(text, self._labels) if text else list(range(len(self._labels)))
         for i in order:
             lbl, sc, fn = self._items[i]
-            item = QListWidgetItem(f"{lbl}    {sc}" if sc else lbl)
+            item = QListWidgetItem(lbl)
             item.setData(Qt.ItemDataRole.UserRole, fn)
+            item.setData(Qt.ItemDataRole.UserRole + 1, sc)
             self.list.addItem(item)
         if self.list.count():
             self.list.setCurrentRow(0)
@@ -356,7 +408,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(1024, 720)
+        self.resize(1360, 860)
         self.setAcceptDrops(True)
 
         self._untitled_counter = 0
@@ -370,11 +422,12 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         # Barra ':' onipresente no rodape (comandos de seguranca/arquivo).
-        self.cmd_bar = CommandBar(self._focus_current_editor)
+        self.cmd_bar = CommandBar(self._close_cmd_bar)
         self.cmd_bar.setPlaceholderText(
             ":  comando  —  seal · burn · redact · hash · goto N · w · q · open <arquivo>"
             "   (Ctrl+P foca aqui, Esc volta ao editor)")
         self.cmd_bar.returnPressed.connect(self._run_command)
+        self.cmd_bar.hide()                          # aparece com Ctrl+P (ou Arquivo ▸ Barra de comando)
 
         # Barra de Localizar/Substituir (Ctrl+F / Ctrl+H), oculta por padrao.
         self.find_bar = FindBar(self.current_editor)
@@ -382,9 +435,12 @@ class MainWindow(QMainWindow):
         # Barra de "conteudo oculto" (arquivo restaurado com credencial): so aparece
         # quando a aba atual esta gated. Oferece Revelar / Selar como cofre.
         self.gate_bar = QWidget()
+        self.gate_bar.setObjectName("Banner")
+        self.gate_bar.setProperty("level", "warn")
+        self.gate_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         gb = QHBoxLayout(self.gate_bar)
-        gb.setContentsMargins(8, 4, 8, 4)
-        gb.setSpacing(8)
+        gb.setContentsMargins(14, 5, 10, 5)
+        gb.setSpacing(10)
         self.gate_label = QLabel("")
         self.gate_label.setStyleSheet(f"color:{theme.AMBER}; font-weight:600;")
         btn_reveal = QPushButton("Revelar")
@@ -399,19 +455,37 @@ class MainWindow(QMainWindow):
         gb.addWidget(btn_seal)
         self.gate_bar.hide()
 
-        container = QWidget()
-        lay = QVBoxLayout(container)
+        center = QWidget()
+        lay = QVBoxLayout(center)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.find_bar)
         lay.addWidget(self.gate_bar)
         lay.addWidget(self.tabs)
         lay.addWidget(self.cmd_bar)
-        self.setCentralWidget(container)
+
+        # Trilho + painel da Sentinela a esquerda do editor.
+        self.rail = Rail()
+        self.rail.triggered.connect(self._on_rail)
+        self.sentinel = SentinelPanel()
+        self.sentinel.finding_activated.connect(self._goto_offset)
+        self.sentinel.redact_all.connect(lambda: self._set_redaction(True))
+        self.sentinel.report_requested.connect(self.show_secret_report)
+        self.rail.set_sentinel_open(True)
+
+        body = QWidget()
+        bl = QHBoxLayout(body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(0)
+        bl.addWidget(self.rail)
+        bl.addWidget(self.sentinel)
+        bl.addWidget(center, 1)
+        self.setCentralWidget(body)
+        self.toast = Toast(body)                     # aviso flutuante (ex.: copia mascarada)
+        self._chrome_key: object = None
 
         self._create_actions()
         self._create_menus()
-        self._create_toolbar()
         self._create_statusbar()
 
         # Auto-lock: trava cofres apos inatividade (intervalo vem das preferencias).
@@ -433,6 +507,8 @@ class MainWindow(QMainWindow):
         cb.selectionChanged.connect(lambda: self._sanitize_clipboard(QClipboard.Mode.Selection))
 
         self.new_file()
+        self._update_identity_chip()
+        QTimer.singleShot(0, self._update_chain_label)
 
     def _sanitize_clipboard(self, mode: QClipboard.Mode = QClipboard.Mode.Clipboard) -> None:
         if self._clip_guard:
@@ -477,6 +553,9 @@ class MainWindow(QMainWindow):
                 cb.setText(new, mode)
             finally:
                 self._clip_guard = False
+            if mode == QClipboard.Mode.Clipboard:    # a selecao primaria muda a todo arrasto: sem aviso
+                self.toast.show_message("Copiado com máscara", " ".join(new.split())[:120],
+                                        "O segredo não saiu do Redoubt.")
 
     def _touch_idle(self) -> None:
         if config.get("auto_lock_min") > 0:      # so reinicia se auto-lock ativo
@@ -592,7 +671,7 @@ class MainWindow(QMainWindow):
         self.act_command = make("Barra de comando :",
                                 SP.SP_FileDialogDetailedView,
                                 QKeySequence("Ctrl+P"),
-                                lambda: self.cmd_bar.setFocus())
+                                self._open_cmd_bar)
         self.act_settings = make("&Preferencias…",
                                  SP.SP_FileDialogInfoView,
                                  QKeySequence("Ctrl+,"),
@@ -618,7 +697,7 @@ class MainWindow(QMainWindow):
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
     def _create_menus(self) -> None:
-        bar = self.menuBar()
+        bar = QMenuBar()        # vai DENTRO da barra superior (menus + busca + acoes numa linha so)
 
         m_file = bar.addMenu("&Arquivo")
         for act in (self.act_new, self.act_open):
@@ -655,7 +734,7 @@ class MainWindow(QMainWindow):
 
         self._create_language_menu(bar)
 
-        m_sec = bar.addMenu("&Seguranca")
+        m_sec = bar.addMenu("&Segurança")
         m_sec.addAction(self.act_redact)
         m_sec.addAction(self.act_next_secret)
         m_sec.addAction(self.act_scan_report)
@@ -683,6 +762,14 @@ class MainWindow(QMainWindow):
 
         m_help = bar.addMenu("A&juda")
         m_help.addAction(self.act_about)
+
+        self._menubar = bar
+        self.top_bar = TopBar(bar)
+        self.top_bar.palette_requested.connect(self.command_palette)
+        self.top_bar.redaction_toggled.connect(self._set_redaction)
+        self.top_bar.seal_requested.connect(self.seal_current)
+        self.top_bar.identity_requested.connect(self.verify_custody)
+        self.setMenuWidget(self.top_bar)
 
     def _create_language_menu(self, bar) -> None:
         """Menu &Linguagem: forca o lexer da aba ativa, sobrepondo a auto-deteccao
@@ -937,33 +1024,27 @@ class MainWindow(QMainWindow):
         editor.replaceSelectedText(value)   # selecao vazia -> insere no cursor
         editor.rescan_secrets()
 
-    def _create_toolbar(self) -> None:
-        tb = self.addToolBar("Principal")
-        tb.setMovable(False)
-        for act in (self.act_new, self.act_open, self.act_save):
-            tb.addAction(act)
-        tb.addSeparator()
-        for act in (self.act_undo, self.act_redo):
-            tb.addAction(act)
-        tb.addSeparator()
-        for act in (self.act_redact, self.act_next_secret):
-            tb.addAction(act)
-
     def _create_statusbar(self) -> None:
-        sb = self.statusBar()
-        # Selo de estado de seguranca (esquerda).
+        sb = StatusBar()
+        self.setStatusBar(sb)
+        # Selo de estado de seguranca (esquerda), em etiqueta colorida.
         self.lbl_seal = QLabel("● LIMPO")
-        self.lbl_seal.setStyleSheet(f"color:{theme.GREEN}; font-weight:700; padding:0 8px;")
-        sb.addWidget(self.lbl_seal)
+        self.lbl_seal.setObjectName("SealPill")
+        sb.add_left(self.lbl_seal)
 
-        # Cadeia de custodia + posicao/linguagem/encoding (direita).
-        self.lbl_hash = QLabel("custodia: —")
+        # Posicao/linguagem/encoding e, a direita, custodia do conteudo + trilha.
         self.lbl_pos = QLabel("Lin 1, Col 1")
         self.lbl_lang = QLabel("Texto")
         self.lbl_enc = QLabel("UTF-8")
-        for lbl in (self.lbl_hash, self.lbl_pos, self.lbl_lang, self.lbl_enc):
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sb.addPermanentWidget(lbl)
+        for lbl in (self.lbl_pos, self.lbl_lang, self.lbl_enc):
+            sb.add_left(lbl)
+        self.lbl_hash = QLabel("SHA-256 —")
+        self.lbl_hash.setObjectName("Mono")
+        self.lbl_hash.setToolTip("Custódia: hash do último salvamento (linha de base)")
+        self.lbl_chain = QLabel("")
+        self.lbl_chain.setToolTip("Trilha de auditoria encadeada (hash-chain)")
+        for lbl in (self.lbl_hash, self.lbl_chain):
+            sb.add_right(lbl)
 
     # ================================================================== #
     # Helpers de aba/editor
@@ -979,10 +1060,21 @@ class MainWindow(QMainWindow):
         editor.cursorPositionChanged.connect(lambda *_: self._touch_idle())
         editor.textChanged.connect(self._touch_idle)
         editor.secretsChanged.connect(lambda n, e=editor: self._on_secrets_changed(e, n))
+        editor._chrome = EditorChrome(editor)       # faixa de alerta + cartao de cofre travado
+        editor._chrome.overlay.unlock_requested.connect(lambda pw, e=editor: self._overlay_unlock(e, pw))
+        editor._chrome.overlay.keyfile_requested.connect(lambda e=editor: self._overlay_keyfile(e))
         return editor
 
     def _add_tab(self, editor: CodeEditor, make_current: bool = True) -> None:
         idx = self.tabs.addTab(editor, self._name_for(editor))
+        close = QToolButton()
+        close.setObjectName("TabClose")
+        close.setIcon(icons.icon("x", theme.DIM, 12, 2.0))
+        close.setFixedSize(20, 20)
+        close.setToolTip("Fechar aba (Ctrl+W)")
+        close.setAccessibleName("Fechar aba")
+        close.clicked.connect(lambda _c=False, e=editor: self.close_tab(self.tabs.indexOf(e)))
+        self.tabs.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, close)
         if make_current:
             self.tabs.setCurrentIndex(idx)
         self._refresh_tab(editor)
@@ -995,17 +1087,30 @@ class MainWindow(QMainWindow):
         idx = self.tabs.indexOf(editor)
         if idx < 0:
             return
-        prefix = ""
-        if editor.is_vault:
-            prefix += "🔒 "
-        elif not editor.is_burn and editor.secret_matches():
-            prefix += "▲ "
-        if editor.isModified() and not editor.is_burn:
-            prefix += "• "
-        self.tabs.setTabText(idx, prefix + self._name_for(editor))
-        self.tabs.setTabToolTip(idx, editor.path or self._name_for(editor))
+        n = len(editor.secret_matches())
+        if editor.is_burn:
+            ic, color, tip = "flame", theme.RED, "Nota de queima (só na RAM)"
+        elif editor.is_vault and editor.is_locked():
+            ic, color, tip = "lock", theme.AMBER, "Cofre travado"
+        elif editor.is_vault:
+            ic, color, tip = "lock", theme.GREEN, "Cofre (cifrado ao salvar)"
+        elif editor.is_gated():
+            ic, color, tip = "shield", theme.AMBER, "Conteúdo oculto"
+        elif n and editor.is_redacted():
+            ic, color, tip = "eyeoff", theme.AMBER, f"{n} segredo(s) tarjado(s)"
+        elif n:
+            ic, color, tip = "alert", theme.RED, f"{n} segredo(s) exposto(s)"
+        else:
+            ic, color, tip = "file", theme.DIM, ""
+        self.tabs.setTabIcon(idx, icons.icon(ic, color, 14, 2.0))
+        star = "  •" if (editor.isModified() and not editor.is_burn) else ""
+        self.tabs.setTabText(idx, self._name_for(editor) + star)
+        where = editor.path or self._name_for(editor)
+        self.tabs.setTabToolTip(idx, f"{where}\n{tip}" if tip else where)
+        self._sync_overlay(editor)
         if editor is self.current_editor():
             self._update_window_title()
+            self._update_chrome()
 
     def _update_window_title(self) -> None:
         editor = self.current_editor()
@@ -1023,30 +1128,32 @@ class MainWindow(QMainWindow):
             return
         n = len(editor.secret_matches())
         if editor.is_burn:
-            text, color = "🔥 BURN (so RAM)", theme.RED
+            text, color, bg = "BURN · SÓ RAM", theme.RED, theme.RED_BG
         elif editor.is_gated():
-            text, color = f"🛡️ OCULTO · {editor.gated_count()}", theme.AMBER
+            text, color, bg = f"OCULTO · {editor.gated_count()}", theme.AMBER, theme.AMBER_BG
         elif editor.is_vault and editor.is_locked():
-            text, color = "🔒 TRAVADO", theme.AMBER
+            text, color, bg = "TRAVADO", theme.AMBER, theme.AMBER_BG
         elif editor.is_vault:
-            text, color = "🔒 COFRE", theme.GREEN
+            text, color, bg = "COFRE", theme.GREEN, theme.GREEN_BG
         elif editor.scan_skipped():
-            text, color = "⚠ NAO VERIFICADO", theme.AMBER
+            text, color, bg = "⚠ NAO VERIFICADO", theme.AMBER, theme.AMBER_BG
         elif n == 0:
-            text, color = "● LIMPO", theme.GREEN
+            text, color, bg = "● LIMPO", theme.GREEN, theme.GREEN_BG
         elif editor.is_redacted():
-            text, color = f"■ REDIGIDO · {n}", theme.AMBER
+            text, color, bg = f"■ REDIGIDO · {n}", theme.AMBER, theme.AMBER_BG
         else:
-            text, color = f"▲ EXPOSTO · {n}", theme.RED
+            text, color, bg = f"▲ EXPOSTO · {n}", theme.RED, theme.RED_BG
         self.lbl_seal.setText(text)
-        self.lbl_seal.setStyleSheet(f"color:{color}; font-weight:700; padding:0 8px;")
+        self.lbl_seal.setStyleSheet(
+            f"color:{color}; background:{bg}; font-weight:700; padding:2px 10px; border-radius:6px;")
 
     def _hash_text(self, editor: CodeEditor) -> str:
         if editor.saved_hash is None:
-            return "custodia: —"
+            return "SHA-256 —"
         if editor.isModified():
-            return "custodia: ░ alterado"
-        return f"custodia: {editor.saved_hash[:8]}"
+            return "SHA-256 · alterado"
+        h = editor.saved_hash
+        return f"SHA-256 {h[:4]}…{h[-4:]}"
 
     def _update_status(self) -> None:
         editor = self.current_editor()
@@ -1062,10 +1169,12 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, _index: int) -> None:
         editor = self.current_editor()
         self.act_redact.setChecked(editor.is_redacted() if editor else False)
+        self.top_bar.set_redaction(editor.is_redacted() if editor else False)
         self._update_gate_bar()
         self._update_status()
         self._update_window_title()
         self._sync_language_menu()
+        self._update_chrome()
 
     def _update_gate_bar(self) -> None:
         editor = self.current_editor()
@@ -1077,17 +1186,12 @@ class MainWindow(QMainWindow):
             self.gate_bar.hide()
 
     def _on_secrets_changed(self, editor: CodeEditor, count: int) -> None:
-        prev = getattr(editor, "_last_secret_count", 0)
         editor._last_secret_count = count
         self._refresh_tab(editor)
         if editor is self.current_editor():
             self._update_seal()
             self._update_window_title()
-        if count > prev and count > 0:
-            kinds = ", ".join(sorted({m.kind for m in editor.secret_matches()}))
-            self.statusBar().showMessage(
-                f"⚠ {count} segredo(s) detectado(s): {kinds}  —  "
-                "Ctrl+Shift+R p/ tarjar · F8 p/ ir ao proximo", 7000)
+            self._update_chrome()
 
     def _edit(self, method: str) -> None:
         editor = self.current_editor()
@@ -1101,8 +1205,168 @@ class MainWindow(QMainWindow):
         editor = self.current_editor()
         if editor is not None:
             editor.set_redaction(checked)
+            self._refresh_tab(editor)
+        self.top_bar.set_redaction(checked)
         self._update_seal()
         self._update_window_title()
+        self._update_chrome()
+
+    def _set_redaction(self, on: bool) -> None:
+        """Liga/desliga a Redacao pelos botoes da interface (a QAction continua a fonte)."""
+        self.act_redact.setChecked(on)
+        self.toggle_redaction(on)
+
+    # ------------------------------------------------------------------ #
+    # Moldura do redesign: trilho, painel da Sentinela, faixa e cofre travado
+    # ------------------------------------------------------------------ #
+    def _on_rail(self, key: str) -> None:
+        if key == "sentinela":
+            on = self.sentinel.isHidden()
+            self.sentinel.setVisible(on)
+            self.rail.set_sentinel_open(on)
+            self.rail.update()
+        elif key == "busca":
+            self.search_in_files()
+        elif key == "diff":
+            self.diff_files()
+        elif key == "custodia":
+            self.verify_custody()
+        elif key == "prefs":
+            self.open_preferences()
+
+    def _goto_offset(self, byte_pos: int) -> None:
+        ed = self.current_editor()
+        if ed is None:
+            return
+        line, idx = ed.lineIndexFromPosition(byte_pos)
+        ed.setCursorPosition(line, idx)
+        ed.ensureLineVisible(line)
+        ed.setFocus()
+
+    def _update_chrome(self) -> None:
+        """Sincroniza faixa de alerta, painel da Sentinela e o contador do trilho com a aba atual.
+        Barato quando nada mudou (a chave de estado evita refazer botoes a cada tecla)."""
+        ed = self.current_editor()
+        if ed is None:
+            self.sentinel.set_findings([], False)
+            self.rail.set_badge(0)
+            return
+        matches = ed.secret_matches()
+        spans = getattr(ed, "_secret_byte_spans", [])
+        n = len(matches)
+        locked = ed.is_vault and ed.is_locked()
+        key = (id(ed), n, ed.is_redacted(), locked, ed.is_burn,
+               tuple(s[0] for s in spans[:500]))
+        if key == self._chrome_key:
+            return
+        self._chrome_key = key
+        self.rail.set_badge(0 if locked else n)
+        findings = []
+        for m, (bstart, _blen, _k) in zip(matches[:500], spans[:500], strict=False):
+            line, _ = ed.lineIndexFromPosition(bstart)
+            findings.append(Finding(m.kind, line + 1, bstart, m.snippet))
+        self.sentinel.set_findings(findings, ed.is_redacted())
+        chrome = getattr(ed, "_chrome", None)
+        if chrome is None:
+            return
+        if locked:
+            chrome.show_banner(False)
+        elif ed.is_burn:
+            chrome.banner.set_state(
+                "warn", "flame", "<b>Nota de queima.</b> Vive só na memória: some ao fechar e "
+                "nunca vai para o disco.", [])
+            chrome.show_banner(True)
+        elif n and ed.is_redacted():
+            chrome.banner.set_state(
+                "warn", "eyeoff",
+                "<b>Modo Redação ligado.</b> Segredos tarjados na tela, no clipboard e na seleção "
+                "primária.",
+                [("Lista de redação…", self.manage_redaction_list, False),
+                 ("Desligar · Ctrl+Shift+R", lambda: self._set_redaction(False), True)])
+            chrome.show_banner(True)
+        elif n:
+            chrome.banner.set_state(
+                "danger", "alert",
+                f"<b>{n} segredo(s) exposto(s)</b> neste arquivo. Não compartilhe a tela nem faça "
+                "commit sem tarjar.",
+                [("Próximo · F8", self.goto_next_secret, False),
+                 ("Tarjar tudo · Ctrl+Shift+R", lambda: self._set_redaction(True), True)])
+            chrome.show_banner(True)
+        else:
+            chrome.show_banner(False)
+
+    def _sync_overlay(self, editor: CodeEditor) -> None:
+        """Cartao de destravar sobre um cofre travado (inclusive em abas de fundo, pelo auto-lock)."""
+        chrome = getattr(editor, "_chrome", None)
+        if chrome is None:
+            return
+        locked = editor.is_vault and editor.is_locked()
+        if locked:
+            blob = editor._locked_blob or b""
+            try:
+                kinds = vault.slot_kinds(blob)
+            except Exception:
+                kinds = []
+            parts = []
+            for kind, one, many in ((vault.KIND_PASSWORD, "senha", "senhas"),
+                                    (vault.KIND_KEYFILE, "arquivo-chave", "arquivos-chave"),
+                                    (vault.KIND_X25519, "destinatário", "destinatários")):
+                c = kinds.count(kind)
+                if c:
+                    parts.append(f"{c} {one if c == 1 else many}")
+            fmt = blob[:5].decode("ascii", "replace") if blob.startswith(b"RDBT") else "?"
+            mins = config.get("auto_lock_min")
+            reason = "O conteúdo saiu da memória."
+            if mins:
+                reason += f" Trava sozinho após {mins} min sem uso."
+            chrome.overlay.set_info(self._name_for(editor), reason, fmt, " · ".join(parts) or "—")
+        chrome.show_overlay(locked)
+
+    def _overlay_unlock(self, editor: CodeEditor, pw: str) -> None:
+        try:
+            ok = editor.unlock(pw)
+        except vault.WrongPassword:
+            editor._chrome.overlay.show_error("Senha incorreta.")
+            return
+        except vault.VaultError as exc:
+            editor._chrome.overlay.show_error(f"Cofre inválido ou adulterado: {exc}")
+            return
+        if not ok:
+            return
+        self._refresh_tab(editor)
+        self._update_status()
+        editor.setFocus()
+        self.statusBar().showMessage("Cofre destravado.", 3000)
+
+    def _overlay_keyfile(self, editor: CodeEditor) -> None:
+        self.tabs.setCurrentWidget(editor)
+        self.unlock_with_keyfile()
+
+    def _update_identity_chip(self) -> None:
+        try:
+            fp = custody._local_fingerprint_or_none() or ""
+            protected = custody.is_protected()
+        except Exception:
+            fp, protected = "", False
+        self.top_bar.set_identity(fp, protected)
+
+    def _update_chain_label(self) -> None:
+        try:
+            ok, _idx = custody.verify_chain()
+        except Exception:
+            self.lbl_chain.setText("")
+            return
+        color = theme.GREEN if ok else theme.AMBER
+        self.lbl_chain.setText("✓ trilha íntegra" if ok else "⚠ trilha quebrada")
+        self.lbl_chain.setStyleSheet(f"color:{color};")
+
+    def _open_cmd_bar(self) -> None:
+        self.cmd_bar.show()
+        self.cmd_bar.setFocus()
+
+    def _close_cmd_bar(self) -> None:
+        self.cmd_bar.hide()
+        self._focus_current_editor()
 
     def _rescan_all_editors(self) -> None:
         """Re-varre todas as abas (ex.: a Lista de redação mudou/destravou/travou)."""
@@ -1203,25 +1467,12 @@ class MainWindow(QMainWindow):
         if editor.is_burn:
             QMessageBox.information(self, APP_NAME, "Uma nota de queima e efemera e nao pode virar cofre.")
             return None
-        SB = QMessageBox.StandardButton
-        if QMessageBox.warning(
-            self, f"{APP_NAME} — Selar cofre",
-            "O conteudo sera CIFRADO (AES-256-GCM) ao salvar, num arquivo .rdbt.\n\n"
-            "ZERO-KNOWLEDGE: a senha-mestra nao e guardada em lugar nenhum. Se voce "
-            "esquece-la, o conteudo fica IRRECUPERAVEL — nao ha recuperacao nem backdoor.\n\n"
-            "Continuar?",
-            SB.Ok | SB.Cancel, SB.Cancel) != SB.Ok:
+        got = SealDialog.ask(self, self._name_for(editor))
+        if got is None:
             return None
-        pw1, ok = QInputDialog.getText(self, "Selar cofre", "Defina a senha-mestra:",
-                                       QLineEdit.EchoMode.Password)
-        if not ok:
-            return None
+        pw1, pw2 = got
         if len(pw1) < 4:
             QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
-            return None
-        pw2, ok = QInputDialog.getText(self, "Selar cofre", "Confirme a senha-mestra:",
-                                       QLineEdit.EchoMode.Password)
-        if not ok:
             return None
         if pw1 != pw2:
             QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
@@ -1426,6 +1677,7 @@ class MainWindow(QMainWindow):
             custody.log_event(event, detail=label, content_hash=content_hash)
         except Exception:
             pass
+        QTimer.singleShot(0, self._update_chain_label)
 
     def verify_custody(self) -> None:
         editor = self.current_editor()
@@ -1435,49 +1687,62 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP_NAME, "Destrave o cofre (Ctrl+Shift+U) para verificar a custodia.")
             return
         full = editor.content_hash()           # hash VIVO (nao confia no flag isModified)
-        if editor.saved_hash is None:
-            status = "Documento ainda nao salvo (sem linha de base)."
-        elif full != editor.saved_hash:
-            status = "⚠ ALTERADO desde o ultimo salvamento (o hash difere da linha de base)."
-        else:
-            status = "✓ INTEGRO: confere com a linha de base do ultimo salvamento."
 
         # Assinatura .sig (se exportada): tamper-evidence COM chave contra o conteudo atual.
-        sig_line = ""
+        sig_state, sig_file = "none", ""
         sig_path = (editor.path + ".sig") if editor.path else None
         if sig_path and os.path.exists(sig_path):
             try:
-                sig = open(sig_path, encoding="utf-8").read().strip()
-                confere = custody.verify(editor.custody_text(), sig)
-                sig_line = (f"Assinatura ({os.path.basename(sig_path)}): "
-                            + ("✓ CONFERE — nao mudou desde que voce assinou.\n\n"
-                               if confere else
-                               "⚠ NAO CONFERE — conteudo mudou, ou .sig de outro arquivo/chave.\n\n"))
+                with open(sig_path, encoding="utf-8") as fh:
+                    sig = fh.read().strip()
+                sig_state = "ok" if custody.verify(editor.custody_text(), sig) else "bad"
+                sig_file = os.path.basename(sig_path)
             except (OSError, ValueError):   # ValueError cobre UnicodeDecodeError: .sig binario/nao-UTF8
-                sig_line = ""               # escapava do slot Qt e ABORTAVA o processo
+                sig_state = "none"          # escapava do slot Qt e ABORTAVA o processo
 
         ok_chain, idx = custody.verify_chain()
         st = custody.audit_stats()
-        n = st["total"]
-        trilha = "✓ CADEIA INTEGRA" if ok_chain else f"⚠ CADEIA QUEBRADA na entrada {idx}"
-        base = f"Linha de base (ultimo salvamento):\n{editor.saved_hash}\n\n" if editor.saved_hash else ""
-        orfao = ("\n⚠ ATENCAO: ha uma copia EM CLARO da chave (identity.ed25519) coexistindo com a "
-                 "identidade protegida — provavel proteger/desproteger interrompido. Assine algo "
-                 "(vai pedir a senha) e o Redoubt remove a copia automaticamente.\n"
-                 if custody.identity_has_orphan_pem() else "")
+        warnings = []
+        if custody.identity_has_orphan_pem():
+            warnings.append("⚠ Há uma cópia EM CLARO da chave (identity.ed25519) junto da identidade "
+                            "protegida — proteger/desproteger interrompido. Assine algo (pede a senha) "
+                            "e o Redoubt remove a cópia.")
         if custody.recipient_has_orphan_raw():
-            orfao += ("\n⚠ ATENCAO: ha uma copia EM CLARO da sua chave de destinatario "
-                      "(recipient.x25519) coexistindo com a versao protegida — provavel proteger "
-                      "interrompido. Abra um cofre selado para voce (vai pedir a senha) e o Redoubt "
-                      "remove a copia automaticamente.\n")
-        QMessageBox.information(
-            self, f"{APP_NAME} — Cadeia de custodia",
-            f"SHA-256 do conteudo atual:\n{full}\n\n{base}{sig_line}{status}\n\n"
-            f"Identidade (fingerprint da chave publica): {self._safe_fingerprint()}\n"
-            f"Trilha de auditoria: {n} evento(s) (seq {st['head_seq']}, "
-            f"{st['signed']} assinado(s)) — {trilha}\n{orfao}\n"
-            "Assine e exporte (.sig) em Seguranca ▸ Assinar e exportar — quem tiver sua "
-            "chave publica verifica que o arquivo nao mudou.")
+            warnings.append("⚠ Há uma cópia EM CLARO da sua chave de destinatário (recipient.x25519) "
+                            "junto da versão protegida. Abra um cofre selado para você (pede a senha) "
+                            "e o Redoubt remove a cópia.")
+        fp = custody._local_fingerprint_or_none() or ""
+        pub = ""
+        if fp:
+            try:
+                pub = custody.public_key_b64()
+            except Exception:
+                pub = ""
+        recent = []
+        try:
+            for e in reversed(custody.read_audit()[-4:]):
+                ts = str(e.get("ts", ""))
+                when = f"{ts[8:10]}/{ts[5:7]} {ts[11:16]}" if len(ts) >= 16 else ts
+                recent.append((str(e.get("seq", "")), str(e.get("event", "")),
+                               os.path.basename(str(e.get("detail", ""))), when))
+        except Exception:
+            recent = []
+        report = CustodyReport(
+            name=self._name_for(editor), sha256=full,
+            content_state=("unsaved" if editor.saved_hash is None
+                           else "changed" if full != editor.saved_hash else "ok"),
+            signature_state=sig_state, signature_file=sig_file,
+            fingerprint=fp, public_key=pub, identity_protected=custody.is_protected(),
+            warnings=warnings, chain_ok=ok_chain, chain_break_at=idx,
+            events_total=st["total"], events_signed=st["signed"], recent=recent)
+        CustodyDialog(report, {
+            "protect_identity": self.protect_identity,
+            "export_anchor": self.export_custody_anchor,
+            "check_anchor": self.check_custody_anchor,
+            "sign": self.sign_and_export,
+        }, self).exec()
+        self._update_identity_chip()
+        self._update_chain_label()
 
     def export_custody_anchor(self) -> None:
         """Exporta uma âncora assinada da trilha (anti-reset). Pede senha se a identidade estiver protegida."""
@@ -1797,6 +2062,7 @@ class MainWindow(QMainWindow):
     def _run_command(self) -> None:
         raw = self.cmd_bar.text().strip()
         self.cmd_bar.clear()
+        self.cmd_bar.hide()
         if raw.startswith(":"):
             raw = raw[1:].strip()
         if not raw:
@@ -1878,6 +2144,19 @@ class MainWindow(QMainWindow):
             if lx is not None:
                 theme.retheme_lexer(lx)
         self.gate_label.setStyleSheet(f"color:{theme.AMBER}; font-weight:600;")
+        self.top_bar.retheme()
+        self.rail.retheme()
+        self.sentinel.retheme()
+        for i in range(self.tabs.count()):
+            ed = self.tabs.widget(i)
+            chrome = getattr(ed, "_chrome", None)
+            if chrome is not None:
+                chrome.overlay.retheme()
+            self._refresh_tab(ed)
+        self._chrome_key = None                 # forca redesenhar faixa/painel nas cores novas
+        self._update_identity_chip()
+        self._update_chain_label()
+        self._update_chrome()
         self._update_status()                   # re-aplica a cor do selo
 
     def protect_repo(self) -> None:

@@ -12,7 +12,7 @@
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-E8A33D)](#licença)
 [![Status](https://img.shields.io/badge/status-v1.4.0%20%C2%B7%20est%C3%A1vel-3FB950)](CHANGELOG.md)
 [![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux-5B6EE1)](#como-instalar)
-[![Testes](https://img.shields.io/badge/testes-466%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
+[![Testes](https://img.shields.io/badge/testes-492%20passando-3FB950)](docs/SECURITY-TEST-REPORT.md)
 [![CI](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NatanPedro/Redoubt/actions/workflows/ci.yml)
 
 </div>
@@ -327,6 +327,9 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── searchfiles.py       Busca em arquivos / grep na pasta (sem Qt)
     ├── palette.py           Busca fuzzy da paleta de comandos (sem Qt)
     ├── difftool.py          Diff entre arquivos via difflib (sem Qt)
+    ├── widgets.py           Barra superior, trilho, painel da Sentinela, faixa de alerta, cofre travado, diálogos
+    ├── icons.py             Ícones desenhados em código (sem depender do QtSvg)
+    ├── sentinel_view.py     O que a tela mostra de um segredo (sempre mascarado) + força de senha (sem Qt)
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
     ├── preferences.py       Diálogo de preferências (Ctrl+,)
     ├── config.py            QSettings: auto-lock, fonte, tab, tema, sessão (sem Qt)
@@ -375,7 +378,7 @@ O Redoubt é uma ferramenta de **defesa local e best-effort** — e é honesto s
 
 O que era backlog (o Cofre cifrado, Burn Note, barra `:`, mapa de exposição) **já é arquitetura corrente** — e o projeto foi muito além: **Cofre++** (múltiplas senhas / arquivo-chave **e cifrar-para-destinatário X25519**), **custódia assinada Ed25519** + trilha de auditoria (com **identidade protegível por senha**), **hook git anti-segredo**, **release assinado** (`RELEASE.json` + verificador), **selo de proveniência** (`.rdbt-seal` portátil, verificável offline), **lista de redação cifrada**, **distribuição via Scoop e AUR (Linux)**, **tema claro/escuro**, **restaurar sessão** (com conteúdo oculto), **busca em arquivos**, **paleta de comandos** e **diff**.
 
-**Pentests adversariais** sobrevividos e **466 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível, o backup da identidade e o suporte a Linux). O **CI** (GitHub Actions) roda a cada push e PR em dois ambientes: Windows (Python 3.11 e 3.14: lint, tipos e suíte) e Arch Linux (suíte, seleção primária num X11 real, `makepkg` com `check()`, `namcap` e instalação do pacote).
+**Pentests adversariais** sobrevividos e **492 testes** automatizados sustentam o produto (eram 176 no corte do 1.0.0; subiram com release assinado, selo de proveniência, lista de redação, o cofre cifrado para destinatário X25519, a chave de destinatário protegível, o backup da identidade e o suporte a Linux). O **CI** (GitHub Actions) roda a cada push e PR em dois ambientes: Windows (Python 3.11 e 3.14: lint, tipos e suíte) e Arch Linux (suíte, seleção primária num X11 real, `makepkg` com `check()`, `namcap` e instalação do pacote).
 
 > Visão (sem data): destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
