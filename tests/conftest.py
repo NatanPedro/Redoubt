@@ -30,7 +30,19 @@ os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="redoubt-tests-xdgcache-"
 os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="redoubt-tests-localappdata-")
 
 import pytest
+from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
+
+from notepy import config as _config
+
+# No Windows o QSettings nativo grava no REGISTRO (HKCU\Software\Redoubt\Redoubt), que nenhuma
+# variavel de ambiente redireciona: cada `win.close()` da suite salvava a sessao e as preferencias
+# por cima das REAIS de quem roda os testes (e, com a sessao assinada, deixaria o Redoubt de
+# verdade acusando "sessao nao confere"). Aqui todo `config._s()` vai para um .ini temporario do
+# processo. Por substituicao no import, pelo mesmo motivo do bloco acima (nada de fixture autouse);
+# o teste que quer configuracoes proprias continua fazendo o monkeypatch de `config._s`.
+_SETTINGS_INI = os.path.join(tempfile.mkdtemp(prefix="redoubt-tests-settings-"), "Redoubt.ini")
+_config._s = lambda: QSettings(_SETTINGS_INI, QSettings.Format.IniFormat)
 
 
 @pytest.fixture(scope="session")
