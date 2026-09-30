@@ -16,6 +16,23 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+Visão (sem data):
+- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
+
+---
+
+## [1.5.0] - 2026-09-30 — Interface nova + Sentinela mais afiada 🎨🛡️
+
+A versão da **interface nova**: o protótipo "carbono" aprovado vira o app, com o painel fixo da
+Sentinela, a faixa de alerta dentro do editor e o cartão de destravar na aba do cofre. No
+Windows, as duas faixas do topo viram **uma barra de título de 40 px**, com Snap Layouts e sem
+dependência nova. Por baixo, a Sentinela reconhece **12 provedores a mais** pelo nome (o token
+hexadecimal do Supabase escapava por completo) e fica **~2,8× mais rápida** em código comum; o
+hook anti-segredo passa a varrer **arquivos grandes por inteiro** (acima de 2 MB eles passavam
+sem ser lidos); e a lista de sessão, que vive no registro, vai **assinada**, para quem só
+escreve nas configurações não escolher mais o que o Redoubt reabre sozinho. A suíte foi de
+**466 → 612 testes** verdes. Os binários seguem assinados pela chave `6b38433243e8f7e7`.
+
 ### Changed
 - **Nova interface ("carbono")**, fiel ao protótipo aprovado:
   - uma barra superior junta menus, a busca que abre a paleta e os botões Tarjar, Selar cofre e a
@@ -97,9 +114,6 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   janela de teste, ao fechar, salvava a sessão e as preferências por cima das de quem rodava a
   suíte (606 acessos ao registro real só em três arquivos de teste). Agora todo acesso vai para
   um `.ini` temporário.
-
-Visão (sem data):
-- Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
 ---
 
@@ -971,6 +985,7 @@ Base do editor de texto/codigo, antes da virada de seguranca.
   por linha de comando (suporta "Abrir com…").
 
 [Nao lancado]: #nao-lancado
+[1.5.0]: #150---2026-09-30
 [1.4.0]: #140---2026-09-24
 [0.2.0]: #020---redoubt
 [0.1.0]: #010

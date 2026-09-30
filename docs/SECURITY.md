@@ -661,7 +661,7 @@ foi endurecido (**v2**) e remedido, mantendo intacta a regressão dos casos orig
 Além do corpus do detector, o produto sobreviveu a **4 pentests adversariais** completos
 (relatório em [`docs/SECURITY-TEST-REPORT.md`](SECURITY-TEST-REPORT.md)), e as features
 de **identidade protegida** e **release assinado** passaram por red-team + 2 rodadas de
-confirmação. A suíte automatizada soma **212 testes** (headless, `QT_QPA_PLATFORM=offscreen`).
+confirmação. A suíte automatizada soma **612 testes** (headless, `QT_QPA_PLATFORM=offscreen`).
 
 > Os números acima foram **medidos contra o próprio scanner**; não são estimativas. Eles
 > também deixam explícito que o detector **não é perfeito** — ~8 % dos segredos do corpus
@@ -783,4 +783,4 @@ python verify_release.py .
 
 ---
 
-*Redoubt v1.4.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*
+*Redoubt v1.5.0 — Python · PyQt6 · QScintilla. Nada vaza sem você mandar.*

@@ -1,6 +1,6 @@
 # Arquitetura do Redoubt
 
-> **Redoubt** v1.4.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.5.0 — *editor que trata cada arquivo como evidência.*
 > Tagline: **"Nada vaza sem você mandar."**
 
 Este documento descreve **como o Redoubt é montado por dentro**: as camadas, os
@@ -45,7 +45,7 @@ Quatro defesas locais sustentam a tagline *"nada vaza sem você mandar"*:
 > **Nota sobre o nome do pacote.** O produto se chama **Redoubt**, mas o pacote
 > Python preserva o nome histórico **`notepy/`** e a pasta do projeto se chama
 > `Notepad`. A identidade vive em `notepy/__init__.py`
-> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.4.0"`). Para renomear o app inteiro,
+> (`APP_NAME = "Redoubt"`, `APP_VERSION = "1.5.0"`). Para renomear o app inteiro,
 > basta trocar essa constante.
 
 ### As duas camadas
@@ -195,7 +195,7 @@ python main.py [arquivo1 arquivo2 ...]
 
 ### `notepy/__init__.py` — identidade
 
-Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.4.0"` e
+Três constantes: `APP_NAME = "Redoubt"`, `APP_VERSION = "1.5.0"` e
 `APP_TAGLINE = "Nada vaza sem você mandar."`. É o ponto único de verdade sobre
 nome/versão do produto; todos os outros módulos importam daqui.
 
@@ -650,7 +650,7 @@ no payload; um atacante re-assina com a própria chave) — por isso depende da
 - **Teste headless.** Para a UI, use `QT_QPA_PLATFORM=offscreen` e
   `PYTHONIOENCODING=utf-8` — os glifos de selo (`●`/`▲`/`■`/`░`/`🔒`/`🔥`) quebram
   no console cp1252 do Windows, mas funcionam dentro do Qt.
-- **Suíte.** **212 testes** (pytest), 0 falhas, validados também por 4 pentests
+- **Suíte.** **612 testes** (pytest), 0 falhas, validados também por 4 pentests
   adversariais (relatório §1–§7 em `docs/SECURITY-TEST-REPORT.md`) e por
   verificação ponta-a-ponta do hook num repositório git real.
 - **`run.bat`** abre o app sem console (via `pythonw`).
