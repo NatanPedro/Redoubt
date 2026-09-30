@@ -1,6 +1,6 @@
 # Guia do Desenvolvedor — Redoubt
 
-> **Redoubt** v1.4.0 — *editor que trata cada arquivo como evidência.*
+> **Redoubt** v1.5.0 — *editor que trata cada arquivo como evidência.*
 > *Nada vaza sem você mandar.*
 
 Este documento explica como configurar o ambiente, **rodar**, **testar** e
@@ -133,7 +133,7 @@ arrastar-e-soltar arquivos na janela também os abre.)
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                  # roda tudo (492 testes); o conftest força offscreen
+pytest                  # roda tudo (612 testes); o conftest força offscreen
 pytest -m "not slow"    # pula o teste de DoS/performance do scanner
 pytest tests/test_vault.py -q   # só um arquivo
 python tools/run_tests.py       # runner resiliente (ver abaixo) — também é o que o hook usa
@@ -425,7 +425,7 @@ Notepad/                       # pasta do projeto (nome historico)
 │   ├── ARCHITECTURE.md        # modulos, fluxo de dados e decisoes (ADRs)
 │   ├── SECURITY.md            # Sentinela, cofre, custodia, threat model
 │   └── DEVELOPMENT.md         # este guia
-├── tests/                     # 492 testes (pytest, offscreen)
+├── tests/                     # 612 testes (pytest, offscreen)
 │   ├── conftest.py            # offscreen + fixtures (qapp, win, _inbox)
 │   ├── fixtures/              # redteam_corpus.json
 │   └── test_*.py              # 20 arquivos: secrets, vault, custody, idbackup,
@@ -434,7 +434,7 @@ Notepad/                       # pasta do projeto (nome historico)
 │                              #   findbar, transforms, textops, passgen,
 │                              #   redteam_corpus
 └── notepy/                    # o pacote Python (nome historico; produto = Redoubt)
-    ├── __init__.py            # APP_NAME / APP_VERSION (1.4.0) / APP_TAGLINE
+    ├── __init__.py            # APP_NAME / APP_VERSION (1.5.0) / APP_TAGLINE
     │
     │   # --- NUCLEOS PUROS (sem Qt; testaveis isolados) ---
     ├── secrets.py             # Sentinela de Segredos (5 camadas)
@@ -670,5 +670,5 @@ Qt), o que facilita testá-los isolados. Regras ao estendê-los:
 
 ---
 
-> **Redoubt** v1.4.0 — Python · PyQt6 · QScintilla · cryptography
+> **Redoubt** v1.5.0 — Python · PyQt6 · QScintilla · cryptography
 > *Nada vaza sem você mandar.*
