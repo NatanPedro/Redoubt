@@ -609,15 +609,37 @@ Reabre os arquivos da última sessão guardando **apenas os caminhos**, nunca o 
 reaparecem **TRAVADOS**, sem pedir senha (zero-knowledge). Um arquivo **em claro** onde a
 Sentinela detecta credencial reabre **OCULTO** (selo `🛡️ OCULTO`), com barra *Revelar* /
 *Selar como cofre*; salvar fica bloqueado enquanto oculto (a guarda `is_gated` está no
-chokepoint `_write`). Arquivo **> 2 MB** é ocultado por precaução (fail-safe). Teto de
-**50 arquivos**; **ignora caminhos UNC/remotos** (defesa contra registro adulterado:
-trava de SMB / captura de hash NTLM).
+chokepoint `_write`). Arquivo **> 2 MB** é ocultado por precaução (fail-safe).
+
+**A lista é assinada** (`notepy/session.py`). Ela vive nas configurações — no Windows, o
+**registro** (`HKCU\Software\Redoubt\Redoubt`); no Linux, `~/.config/Redoubt/Redoubt.conf` —,
+fora da pasta de dados, e quem conseguia escrever ali escolhia o que o Redoubt abria sozinho
+ao iniciar. Agora ela vai com um **HMAC-SHA256** (caminhos, ordem e aba ativa) cuja chave,
+32 bytes aleatórios, fica em `session.key` na pasta de dados (0600, numa pasta 0700 no Linux):
+
+| Lista lida | O que acontece |
+| --- | --- |
+| Assinatura confere | Reabre normalmente. |
+| Sem assinatura e **ainda sem chave** | 1ª execução depois de atualizar: a lista da versão anterior vale **uma vez**; o próximo fechamento já assina. |
+| Assinatura **não confere**, lista sem assinatura com a chave presente, ou assinatura sem chave | **Nada abre sozinho.** O Redoubt mostra os caminhos e pergunta, com **"Não reabrir"** como padrão. |
+
+A pergunta, e não um "não" mudo, é porque o caso comum de assinatura que não confere é
+inofensivo: uma **versão antiga** do Redoubt, que não assina, usada na mesma conta.
+
+Valem para **qualquer** lista (assinada, antiga ou confirmada): teto de **50 arquivos**; só
+**caminhos absolutos**; **nenhum caminho de rede** — `\\host\share`, `//host/share` e as
+misturas `/\host` e `\/host`, que o Windows aceita igual (antes só as duas primeiras formas
+eram barradas) — contra trava de SMB e captura de hash NTLM.
 
 - **Garante:** privacidade — não joga segredo na tela ao restaurar (anti screen-share);
   o conteúdo só fica em RAM e nunca é exibido até revelar; `content_hash`/custódia usam
-  o **texto real**, não o banner.
+  o **texto real**, não o banner. E quem **só escreve nas configurações** (um `.reg`
+  importado, uma cópia ou sincronização delas, uma ferramenta que só mexe no registro) não
+  escolhe mais, sem você ver, o que o Redoubt reabre.
 - **NÃO garante:** **ocultar NÃO cifra** — o arquivo segue **em claro no disco**. A
-  proteção real em repouso é **Selar como cofre**.
+  proteção real em repouso é **Selar como cofre**. E a assinatura **não** para um programa
+  rodando **como você**: ele lê a `session.key` e assina o que quiser — contra ele valem só os
+  filtros acima. Uma unidade de rede **mapeada** (`Z:\…`) parece local e não é barrada.
 
 ---
 

@@ -333,6 +333,7 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
     ├── preferences.py       Diálogo de preferências (Ctrl+,)
     ├── config.py            QSettings: auto-lock, fonte, tab, tema, sessão (sem Qt)
+    ├── session.py           Assinatura (HMAC) da lista de sessão + filtros do restore (sem Qt)
     ├── lexers.py            Mapa extensão → lexer (~50 linguagens)
     └── theme.py             Paletas dark/light, QSS e repintura dos lexers
 ```

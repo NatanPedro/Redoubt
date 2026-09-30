@@ -41,15 +41,13 @@ from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
 # Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
 _RESTORE_SCAN_LIMIT = 2_000_000
-# Teto de arquivos reabertos por sessao (defesa: "session/paths" vive no registro e
-# pode ser adulterado — sem teto, N caminhos poderiam travar/inundar a inicializacao).
-_MAX_RESTORE = 50
 from .findbar import FindBar                      # noqa: E402  (apos as constantes acima)
 from .preferences import PreferencesDialog        # noqa: E402
 from .widgets import (CustodyDialog, CustodyReport, EditorChrome, Finding, Rail,  # noqa: E402
                       SealDialog, SentinelPanel, StatusBar, Toast)
 from .titlebar import MnemonicFilter, TitleBar      # noqa: E402
 from . import winframe                             # noqa: E402
+from . import session                              # noqa: E402
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
@@ -2834,17 +2832,20 @@ class MainWindow(QMainWindow):
     def restore_session(self) -> int:
         """Reabre os arquivos da ultima sessao. Cofres reaparecem TRAVADOS (sem
         pedir senha). Arquivos sumidos sao ignorados em silencio. Retorna a qtd
-        reaberta."""
+        reaberta.
+
+        A lista vem das configuracoes (no Windows, o registro) e vai assinada (session.py):
+        se a assinatura nao confere, nada abre sem a pessoa ver os caminhos e confirmar. E
+        os filtros de session.restorable (teto, nada de rede, so caminho absoluto) valem
+        para QUALQUER lista — assinada, antiga ou confirmada."""
         if not config.get("restore_session"):
             return 0
-        paths, active = config.load_session()
+        paths, active, status = config.load_session_checked()
+        candidates = session.restorable(paths)
+        if status == session.TAMPERED and not self._confirm_unsigned_session(candidates):
+            return 0
         opened = 0
-        for p in paths[:_MAX_RESTORE]:              # teto: lista vem do registro
-            # Ignora UNC/remoto no auto-restore: um caminho \\host\... adulterado no
-            # registro travaria a inicializacao (timeout SMB, antes do show) e poderia
-            # induzir autenticacao NTLM contra um host arbitrario.
-            if p.startswith("\\\\") or p.startswith("//"):
-                continue
+        for p in candidates:
             if not os.path.isfile(p):
                 continue
             already = any(self.tabs.widget(i).path and
@@ -2863,6 +2864,30 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentIndex(active)
             self._update_gate_bar()
         return opened
+
+    def _confirm_unsigned_session(self, paths: list[str]) -> bool:
+        """Lista cuja assinatura nao confere: mostra os caminhos e so reabre se a pessoa
+        confirmar (o padrao e NAO). Um "nao" mudo daria alarme falso no caso comum de uma
+        versao antiga do Redoubt, que nao assina, ter sido usada na mesma conta."""
+        if not paths:
+            return False
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Sessão não confere")
+        box.setText("A lista de arquivos da última sessão foi alterada fora do Redoubt: "
+                    "a assinatura dela não confere.")
+        # os caminhos NA mensagem (e nao atras do "Show Details..." do Qt, que viria em ingles):
+        # quem decide precisa ver o que seria reaberto sem procurar
+        shown = "\n".join(paths[:8]) + (f"\n… e mais {len(paths) - 8}" if len(paths) > 8 else "")
+        box.setInformativeText(
+            "Isso acontece se uma versão antiga do Redoubt foi usada nesta conta, ou se alguém "
+            f"mexeu nas configurações. Reabrir {len(paths)} arquivo(s)?\n\n{shown}")
+        yes = box.addButton("Reabrir", QMessageBox.ButtonRole.AcceptRole)
+        no = box.addButton("Não reabrir", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(no)
+        box.setEscapeButton(no)
+        box.exec()
+        return box.clickedButton() is yes
 
     def _restore_one(self, path: str) -> None:
         """Reabre 1 arquivo na restauracao. Cofre -> travado. Arquivo em claro COM

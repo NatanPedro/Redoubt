@@ -272,6 +272,63 @@ def test_restore_desligado_nao_reabre(win, tmp_path, monkeypatch):
     assert win.restore_session() == 0
 
 
+# --- sessao assinada: quem so escreve nas configuracoes nao escolhe o que reabre ---
+def _sessao_isolada(monkeypatch, tmp_path):
+    from notepy import custody
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(custody, "_data_dir", lambda: str(data))      # onde fica a chave
+    return _temp_settings(monkeypatch, tmp_path)
+
+
+def _abas(win):
+    return [win.tabs.widget(i).path for i in range(win.tabs.count()) if win.tabs.widget(i).path]
+
+
+def test_sessao_adulterada_so_reabre_se_confirmar(win, tmp_path, monkeypatch):
+    from notepy import config
+    s = _sessao_isolada(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("x", encoding="utf-8")
+    intruso = tmp_path / "intruso.txt"; intruso.write_text("y", encoding="utf-8")
+    config.save_session([str(f)], 0)
+    s.setValue("session/paths", [str(f), str(intruso)])      # escrita por fora da assinatura
+    perguntas = []
+    monkeypatch.setattr(win, "_confirm_unsigned_session", lambda ps: perguntas.append(ps) or False)
+    assert win.restore_session() == 0 and _abas(win) == []    # padrao: NAO reabre
+    assert perguntas == [[str(f), str(intruso)]]              # e mostrou o que reabriria
+    monkeypatch.setattr(win, "_confirm_unsigned_session", lambda ps: True)
+    assert win.restore_session() == 2                         # a pessoa confirmou
+
+
+def test_sessao_assinada_reabre_sem_perguntar(win, tmp_path, monkeypatch):
+    from notepy import config
+    _sessao_isolada(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("x", encoding="utf-8")
+    config.save_session([str(f)], 0)
+    monkeypatch.setattr(win, "_confirm_unsigned_session",
+                        lambda ps: pytest.fail("assinada nao pergunta"))
+    assert win.restore_session() == 1
+
+
+def test_sessao_de_antes_da_assinatura_reabre_uma_vez(win, tmp_path, monkeypatch):
+    """1a execucao depois de atualizar: ainda nao ha chave, a lista da versao anterior vale."""
+    s = _sessao_isolada(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("x", encoding="utf-8")
+    s.setValue("session/paths", [str(f)])
+    s.setValue("session/active", 0)
+    monkeypatch.setattr(win, "_confirm_unsigned_session",
+                        lambda ps: pytest.fail("lista antiga sem chave nao pergunta"))
+    assert win.restore_session() == 1
+
+
+def test_sessao_ignora_rede_e_relativo_mesmo_confirmada(win, tmp_path, monkeypatch):
+    from notepy import config
+    _sessao_isolada(monkeypatch, tmp_path)
+    f = tmp_path / "a.txt"; f.write_text("x", encoding="utf-8")
+    config.save_session([str(f), "/\\host\\share\\x.txt", "\\/host/share/x.txt", "relativo.txt"], 0)
+    assert win.restore_session() == 1 and _abas(win) == [str(f)]
+
+
 # --------------------------------------------------------------------------- #
 # Conteudo OCULTO (gated): arquivo restaurado com credencial
 # --------------------------------------------------------------------------- #
