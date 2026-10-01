@@ -29,7 +29,7 @@ makepkg -si
 ```
 
 Para testar antes de existir a tag, troque o `source=` por um tarball local
-(`git archive --prefix=Redoubt-1.4.0/ -o redoubt-1.4.0.tar.gz HEAD`, na raiz).
+(`git archive --prefix=Redoubt-1.5.0/ -o redoubt-1.5.0.tar.gz HEAD`, na raiz).
 
 ## Publicar no AUR (a cada release)
 
