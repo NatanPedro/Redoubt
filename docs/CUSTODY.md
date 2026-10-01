@@ -104,6 +104,32 @@ o fingerprint derivado da chave bata com o **esperado** (por padrão, a identida
 > fingerprint da âncora** com o que você conhece do autor, obtido fora da máquina. A âncora que
 > **você** guardou sempre detecta o reset pela divergência de `head_hash`/`seq`.
 
+## Troca da chave do autor (2026-10-01)
+
+A identidade que assinou a v1.4.0 (`6b38433243e8f7e7`) ficou **inacessível**: ela estava protegida
+por senha (o cofre RDBT da identidade, AES-256-GCM com a chave derivada por Argon2id), **a senha
+se perdeu**, e não havia um backup dela à mão. A chave não vazou — o cofre continua cifrado e sem porta
+dos fundos, que é exatamente o que a proteção promete. Mas, sem a senha, ela não assina mais nada,
+e de novo **não dá para fazer a rotação assinada** (a chave antiga atestando a nova).
+
+O que foi feito:
+
+- **Chave nova:** `f2478010e453b42f` (pública `5AbY8LQZnuWCGbAwhTOHdQtQ9u+E/0eCk8TNW+Bq+Nw=`).
+  Assina a partir da v1.5.0. Protegida por senha e, desta vez, com o **backup cifrado feito na
+  criação** (`tools/backup_identity.py make`), guardado fora da máquina.
+- **Chave anterior aposentada, não revogada:** o `verify_release.py` e o `verify_seal.py` passam a
+  ter **duas** chaves em `RETIRED_AUTHOR_KEYS`, cada uma aceita só para o que já assinou: a
+  `6b38433243e8f7e7` para releases até a v1.4.0 e selos com `sealed_at` até 2026-10-01; a
+  `4e391f28930f3b6e` como antes (até a v1.3.0 e 2026-09-24). O manifesto **oficial publicado** da
+  v1.4.0 segue verificando como autêntico, pela chave aposentada (há um teste com ele).
+- **Âncora de confiança da troca:** como na anterior, o **repositório oficial**
+  (github.com/NatanPedro/Redoubt) — o fingerprint novo entra por commit revisado em PR, no
+  CHANGELOG, no README e nas notas do release v1.5.0.
+- **A lição, aplicada:** backup **no momento** em que a identidade é criada ou protegida, e a
+  credencial fora da máquina (gerenciador de senhas). Um segundo destravador (um arquivo-chave num
+  pendrive, *Segurança ▸ Proteger identidade com senha…* numa identidade já protegida) cobre a
+  perda da senha sem depender do backup.
+
 ## Troca da chave do autor (2026-09-24)
 
 A identidade que assinava os releases até a v1.3.0 (`4e391f28930f3b6e`) **se perdeu**: vivia só
@@ -116,7 +142,7 @@ O que foi feito:
 - **Chave nova:** `6b38433243e8f7e7` (pública `jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs=`).
   Assina a partir da v1.4.0. Diferente da anterior, fica **protegida por senha** e com **backup
   cifrado** (`tools/backup_identity.py make`, ou `redoubt-backup-identity` no Linux) guardado fora
-  da máquina.
+  da máquina. *(Aposentada em 2026-10-01: a senha se perdeu, sem backup à mão — veja a seção acima.)*
 - **Chave antiga aposentada, não revogada:** o `verify_release.py` e o `verify_seal.py` mantêm
   a `4e391f28930f3b6e` em `RETIRED_AUTHOR_KEYS`, aceita **só** para o que ela já assinou:
   releases até a v1.3.0 e selos com `sealed_at` até 2026-09-24. Um manifesto de versão posterior
