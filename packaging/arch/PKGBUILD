@@ -4,7 +4,7 @@
 # oficiais: nada de pip. Publicar no AUR: veja packaging/arch/README.md.
 
 pkgname=redoubt
-pkgver=1.4.0
+pkgver=1.5.0
 pkgrel=1
 pkgdesc='Text/code editor that treats every file as evidence: flags secrets, encrypts and signs'
 arch=('any')
@@ -15,7 +15,7 @@ optdepends=('git: hook pre-commit anti-segredo (redoubt-scan --install-hook)')
 checkdepends=('python-pytest' 'git')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Tarball da tag v$pkgver no GitHub. A cada release: `updpkgsums` + `makepkg --printsrcinfo > .SRCINFO`.
-sha256sums=('775d88b3d8ed1e3dbeafd34e8776c0fd3e5ceeddf6e9f8a82b48b3c275aa7a3c')
+sha256sums=('728fe94e6f0c6304552ffcc8ecc1ee5c92107bddc2d1386942afa33f693b2fbb')
 
 _src="Redoubt-$pkgver"
 _lib="/usr/lib/$pkgname"
