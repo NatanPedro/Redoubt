@@ -103,10 +103,12 @@ class WrongPassword(VaultError):
 @dataclass
 class Opened:
     """Resultado de abrir um cofre: texto + a chave-de-conteudo e os slots crus (ja no
-    enquadramento RDBT4), para re-selar PRESERVANDO todos os destravadores."""
+    enquadramento RDBT4), para re-selar PRESERVANDO todos os destravadores. `slot_index` diz QUAL
+    slot abriu (trocar a senha = substituir esse slot; remover outro = exigir que nao seja ele)."""
     text: str
     key: bytes
     slots: list[bytes]
+    slot_index: int = 0
 
 
 # --------------------------------------------------------------------------- #
@@ -302,6 +304,16 @@ def add_unlocker(ck: bytes, slots: list[bytes], *, password: str | None = None,
     return new
 
 
+def remove_unlocker(slots: list[bytes], index: int) -> list[bytes]:
+    """Devolve a lista de slots SEM o de posicao `index`. Recusa deixar o cofre sem destravador
+    (a chave-de-conteudo ficaria irrecuperavel) e indice fora da lista."""
+    if not 0 <= index < len(slots):
+        raise VaultError(f"destravador inexistente: {index + 1}")
+    if len(slots) == 1:
+        raise VaultError("e o unico destravador: o cofre ficaria sem como abrir")
+    return slots[:index] + slots[index + 1:]
+
+
 def add_recipient(ck: bytes, slots: list[bytes], recipient_pub: bytes) -> list[bytes]:
     """Devolve a lista de slots com um novo destinatario X25519 (cifrar-para a chave publica dele)."""
     new = list(slots)
@@ -413,7 +425,8 @@ def open_vault(blob: bytes, *, password: str | None = None,
 
     # Derivacao EM SERIE (pico de memoria = uma derivacao). Slot que nao abre e PULADO (nao fatal).
     ck: bytes | None = None
-    for slot in slots:
+    opened_at = -1
+    for i, slot in enumerate(slots):
         if not _matches(slot):
             continue
         try:
@@ -428,6 +441,7 @@ def open_vault(blob: bytes, *, password: str | None = None,
                 secret = password if _base_kind(slot[0]) == KIND_PASSWORD else keyfile
                 kek = _derive_kek(slot[0], secret, meta[0], meta[1], meta[2], meta[3:19])
                 ck = AESGCM(kek).decrypt(meta[19:31], _slot_wrapped(slot), _slot_wrap_aad(slot))
+            opened_at = i
             break
         except (VaultError, InvalidTag, ValueError, IndexError):
             # QUALQUER slot malformado (params/nonce/ponto X25519 invalido) e PULADO, nunca fatal.
@@ -439,7 +453,7 @@ def open_vault(blob: bytes, *, password: str | None = None,
         pt = AESGCM(ck).decrypt(content_nonce, ct, aad)
     except InvalidTag:
         raise WrongPassword("conteudo adulterado") from None
-    return Opened(pt.decode("utf-8", "surrogatepass"), ck, slots)
+    return Opened(pt.decode("utf-8", "surrogatepass"), ck, slots, opened_at)
 
 
 def slot_kinds(blob: bytes) -> list[int]:

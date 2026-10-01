@@ -346,3 +346,32 @@ def test_cli_make_grava_backup_verificavel(tmp_identity, tmp_path, monkeypatch):
                                    expected_ed_fingerprint=fp)
     assert payload["ed25519_fingerprint"] == fp
     assert cli.main(["make", "-o", str(destino)]) == 1          # ja existe, sem --force
+
+
+# --------------------------------------------------------------------------- #
+# write_verified / destino: o mesmo caminho para a CLI e o app
+# --------------------------------------------------------------------------- #
+def test_destino_aceita_pasta_ou_arquivo(tmp_identity, tmp_path):
+    custody.sign("x")                                       # cria a identidade
+    payload = idbackup.collect_local()
+    nome = idbackup.default_filename(payload)
+    assert nome.startswith("redoubt-identity-" + payload["ed25519_fingerprint"]) and nome.endswith(".rdbtbak")
+    pasta = tmp_path / "pendrive"
+    pasta.mkdir()
+    assert idbackup.resolve_destination(str(pasta), payload, "/cwd") == os.path.join(str(pasta), nome)
+    assert idbackup.resolve_destination(str(pasta / "x.rdbtbak"), payload, "/cwd") == str(pasta / "x.rdbtbak")
+    assert idbackup.resolve_destination(None, payload, str(tmp_path)) == os.path.join(str(tmp_path), nome)
+
+
+def test_write_verified_grava_e_o_arquivo_abre(tmp_identity, tmp_path):
+    custody.sign("x")                                       # cria a identidade
+    payload = idbackup.collect_local()
+    dest = tmp_path / "b.rdbtbak"
+    idbackup.write_verified(payload, str(dest), password="senha-do-backup")
+    lido = idbackup.verify_blob(dest.read_bytes(), password="senha-do-backup",
+                                expected_ed_fingerprint=payload["ed25519_fingerprint"])
+    assert lido["ed25519_fingerprint"] == payload["ed25519_fingerprint"]
+    with pytest.raises(idbackup.BackupError):
+        idbackup.write_verified(payload, str(dest), password="x")            # ja existe
+    idbackup.write_verified(payload, str(dest), password="outra", overwrite=True)
+    assert idbackup.verify_blob(dest.read_bytes(), password="outra")

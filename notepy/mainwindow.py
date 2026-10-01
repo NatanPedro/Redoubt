@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool, icons,
-               palette, passgen, redaction, seal, searchfiles, secrets as secrets_mod,
+               idbackup, palette, passgen, redaction, seal, searchfiles, secrets as secrets_mod,
                textops, theme, transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
@@ -703,6 +703,17 @@ class MainWindow(QMainWindow):
                                      SP.SP_DialogApplyButton, None, self.protect_repo)
         self.act_protect_id = make("Proteger &identidade com senha…",
                                    SP.SP_DialogYesButton, None, self.protect_identity)
+        # Credenciais da identidade (protegida) e backup: perder a unica senha custa a chave.
+        self.act_id_change_pw = make("Identidade: trocar senha…",
+                                     SP.SP_DialogResetButton, None, self.change_identity_password)
+        self.act_id_add_pw = make("Identidade: adicionar senha…",
+                                  SP.SP_DialogYesButton, None, self.add_identity_password)
+        self.act_id_add_keyfile = make("Identidade: adicionar arquivo-chave…",
+                                       SP.SP_DriveHDIcon, None, self.add_identity_keyfile)
+        self.act_id_remove = make("Identidade: remover credencial…",
+                                  SP.SP_DialogDiscardButton, None, self.remove_identity_credential)
+        self.act_id_backup = make("Identidade: fazer backup cifrado…",
+                                  SP.SP_DialogSaveButton, None, lambda *_: self.backup_identity())
         self.act_export_anchor = make("Exportar â&ncora de custódia…",
                                       SP.SP_DialogSaveButton, None, self.export_custody_anchor)
         self.act_check_anchor = make("&Verificar âncora de custódia…",
@@ -760,6 +771,10 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_verify)
         m_sec.addAction(self.act_sign)
         m_sec.addAction(self.act_protect_id)
+        for act in (self.act_id_change_pw, self.act_id_add_pw, self.act_id_add_keyfile,
+                    self.act_id_remove, self.act_id_backup):
+            m_sec.addAction(act)
+        m_sec.aboutToShow.connect(self._refresh_identity_actions)
         m_sec.addAction(self.act_export_anchor)
         m_sec.addAction(self.act_check_anchor)
         m_sec.addAction(self.act_prov_seal)
@@ -1760,6 +1775,7 @@ class MainWindow(QMainWindow):
             events_total=st["total"], events_signed=st["signed"], recent=recent)
         CustodyDialog(report, {
             "protect_identity": self.protect_identity,
+            "backup_identity": self.backup_identity,
             "export_anchor": self.export_custody_anchor,
             "check_anchor": self.check_custody_anchor,
             "sign": self.sign_and_export,
@@ -1879,20 +1895,7 @@ class MainWindow(QMainWindow):
     def protect_identity(self) -> None:
         """Protege a identidade Ed25519 com senha (opt-in) — ou adiciona credencial se ja protegida."""
         if custody.is_protected():
-            cur, ok = QInputDialog.getText(self, "Adicionar credencial",
-                                           "Senha ATUAL da identidade:", QLineEdit.EchoMode.Password)
-            if not ok or not cur:
-                return
-            new, ok = QInputDialog.getText(self, "Adicionar credencial",
-                                           "NOVA senha (rota de backup):", QLineEdit.EchoMode.Password)
-            if not ok or not new:
-                return
-            try:
-                custody.add_identity_unlocker(passphrase=cur, new_password=new)
-            except vault.VaultError:
-                QMessageBox.warning(self, APP_NAME, "Senha atual incorreta.")
-                return
-            QMessageBox.information(self, APP_NAME, "Senha de backup adicionada a sua identidade.")
+            self.add_identity_password()
             return
 
         pw1, ok = QInputDialog.getText(self, "Proteger identidade",
@@ -1918,12 +1921,294 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, APP_NAME, f"Nao foi possivel proteger:\n{exc}")
             return
-        QMessageBox.information(
+        # O momento de risco e AGORA: uma senha so, sem backup. Oferece o backup na hora, com a
+        # senha que acabou de ser digitada (sem pedir de novo).
+        resp = QMessageBox.question(
             self, APP_NAME,
             f"Identidade ({custody.fingerprint()}) protegida. A chave privada agora exige "
             "senha para assinar (pedida 1x por sessao).\n\nIMPORTANTE: nao ha recuperacao — "
-            "esqueceu a senha, perdeu a identidade (a chave publica exportada ainda verifica o "
-            "que voce ja assinou). Considere adicionar uma 2a senha/arquivo-chave de backup.")
+            "esqueceu a senha sem um backup, perdeu a identidade (a chave publica exportada ainda "
+            "verifica o que voce ja assinou).\n\nFazer o backup cifrado agora? (num pendrive, de "
+            "preferencia)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if resp == QMessageBox.StandardButton.Yes:
+            self.backup_identity(identity_password=pw1)
+
+    # ------------------------------------------------------------------ #
+    # Identidade: credenciais (trocar, adicionar, remover) e backup cifrado
+    # ------------------------------------------------------------------ #
+    def _refresh_identity_actions(self) -> None:
+        """Habilita no menu so o que faz sentido para o estado atual da identidade. (Proteger fica
+        sempre ativo: numa identidade ja protegida, ele adiciona uma senha.)"""
+        protected = custody.is_protected()
+        for act in (self.act_id_change_pw, self.act_id_add_pw, self.act_id_add_keyfile,
+                    self.act_id_remove):
+            act.setEnabled(protected)
+        self.act_id_backup.setEnabled(idbackup.local_identity_exists())
+
+    def _read_keyfile(self, title: str) -> bytes | None:
+        path, _ = QFileDialog.getOpenFileName(self, title)
+        if not path:
+            return None
+        try:
+            with open(path, "rb") as fh:
+                kf = fh.read()
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ler o arquivo-chave:\n{exc}")
+            return None
+        if not kf:
+            QMessageBox.warning(self, APP_NAME, "Arquivo-chave vazio.")
+            return None
+        return kf
+
+    def _ask_identity_credential(self, title: str, prompt: str, *,
+                                 kinds: list[int] | None = None
+                                 ) -> tuple[str | None, bytes | None] | None:
+        """Pede UMA credencial da identidade: a senha, se ha destravador de senha entre `kinds`;
+        senao (ou se a senha ficar em branco), o arquivo-chave. None = cancelou."""
+        kinds = custody.identity_unlockers() if kinds is None else kinds
+        if vault.KIND_PASSWORD in kinds:
+            pw, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
+            if not ok:
+                return None
+            if pw:
+                return pw, None
+        if vault.KIND_KEYFILE in kinds:
+            kf = self._read_keyfile(f"{title}: arquivo-chave")
+            if kf:
+                return None, kf
+        return None
+
+    def _ask_new_password(self, title: str, prompt: str) -> str | None:
+        pw1, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
+        if not ok or not pw1:
+            return None
+        if len(pw1) < 4:
+            QMessageBox.warning(self, APP_NAME, "Senha muito curta (minimo 4 caracteres).")
+            return None
+        pw2, ok = QInputDialog.getText(self, title, "Confirme:", QLineEdit.EchoMode.Password)
+        if not ok or pw1 != pw2:
+            QMessageBox.warning(self, APP_NAME, "As senhas nao conferem.")
+            return None
+        return pw1
+
+    def _need_protected_identity(self) -> bool:
+        if custody.is_protected():
+            return True
+        QMessageBox.information(self, APP_NAME, "A identidade nao esta protegida por senha. Use "
+                                "primeiro Seguranca > Proteger identidade com senha.")
+        return False
+
+    def change_identity_password(self) -> None:
+        """Troca a senha da identidade: a antiga deixa de abrir; a chave e o fingerprint ficam."""
+        if not self._need_protected_identity():
+            return
+        if vault.KIND_PASSWORD not in custody.identity_unlockers():
+            QMessageBox.information(self, APP_NAME, "A identidade abre so com arquivo-chave: nao ha "
+                                    "senha para trocar (use Identidade: adicionar senha).")
+            return
+        title = "Trocar senha da identidade"
+        cur, ok = QInputDialog.getText(self, title, "Senha ATUAL:", QLineEdit.EchoMode.Password)
+        if not ok or not cur:
+            return
+        new = self._ask_new_password(title, "NOVA senha:")
+        if new is None:
+            return
+        try:
+            custody.change_identity_password(cur, new)
+        except vault.WrongPassword:
+            QMessageBox.warning(self, APP_NAME, "Senha atual incorreta. Nada mudou.")
+            return
+        except vault.VaultError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel trocar a senha:\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_NAME,
+            "Senha trocada: a antiga nao abre mais a identidade. A chave, o fingerprint e o que voce "
+            "ja assinou nao mudam.\n\nGuarde a senha nova fora desta maquina. Backups .rdbtbak ja "
+            "feitos seguem abrindo com a senha DO BACKUP.")
+
+    def add_identity_password(self) -> None:
+        """Uma senha a mais na identidade protegida (qualquer uma das credenciais abre)."""
+        if not self._need_protected_identity():
+            return
+        title = "Adicionar senha a identidade"
+        cred = self._ask_identity_credential(title, "Senha ATUAL da identidade:")
+        if cred is None:
+            return
+        new = self._ask_new_password(title, "NOVA senha (uma credencial a mais):")
+        if new is None:
+            return
+        try:
+            custody.add_identity_unlocker(passphrase=cred[0], keyfile=cred[1], new_password=new)
+        except vault.WrongPassword:
+            QMessageBox.warning(self, APP_NAME, "Credencial atual incorreta. Nada mudou.")
+            return
+        except vault.VaultError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel adicionar a senha:\n{exc}")
+            return
+        QMessageBox.information(self, APP_NAME, "Senha adicionada: a identidade abre com qualquer "
+                                "uma das credenciais.")
+
+    def add_identity_keyfile(self) -> None:
+        """Um arquivo-chave como credencial a mais — gerado na hora (ex.: direto no pendrive) ou
+        um arquivo existente. Cobre a perda da senha sem depender do backup."""
+        if not self._need_protected_identity():
+            return
+        title = "Adicionar arquivo-chave a identidade"
+        cred = self._ask_identity_credential(title, "Senha ATUAL da identidade:")
+        if cred is None:
+            return
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(title)
+        box.setText("Gerar um arquivo-chave novo, ou usar um que voce ja tem?")
+        box.setInformativeText("Gere direto no pendrive. Ele abre a identidade sozinho, como uma "
+                               "senha: guarde-o fora desta maquina e longe da senha.")
+        gen = box.addButton("Gerar novo…", QMessageBox.ButtonRole.AcceptRole)
+        use = box.addButton("Usar existente…", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        generated = ""
+        if box.clickedButton() is gen:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Salvar o arquivo-chave novo (ex.: no pendrive)",
+                f"redoubt-identidade-{self._safe_fingerprint()}.keyfile")
+            if not path:
+                return
+            data_dir = os.path.abspath(custody._data_dir())
+            if os.path.commonpath([os.path.abspath(path), data_dir]) == data_dir:
+                QMessageBox.warning(self, APP_NAME, "Nao salve o arquivo-chave na pasta de dados do "
+                                    "Redoubt: ao lado do cofre, ele nao protege nada. Escolha o "
+                                    "pendrive ou outra pasta.")
+                return
+            kf = os.urandom(64)
+            try:
+                custody._atomic_write(path, kf)
+            except OSError as exc:
+                QMessageBox.critical(self, APP_NAME, f"Nao consegui gravar o arquivo-chave:\n{exc}")
+                return
+            generated = path
+        elif box.clickedButton() is use:
+            kf_or_none = self._read_keyfile("Arquivo-chave para a identidade")
+            if not kf_or_none:
+                return
+            kf = kf_or_none
+        else:
+            return
+        try:
+            custody.add_identity_unlocker(passphrase=cred[0], keyfile=cred[1], new_keyfile=kf)
+        except vault.WrongPassword:
+            QMessageBox.warning(self, APP_NAME, "Credencial atual incorreta. Nada mudou." +
+                                (f"\n\n(O arquivo gerado em {generated} nao abre nada.)"
+                                 if generated else ""))
+            return
+        except vault.VaultError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel adicionar o arquivo-chave:\n{exc}")
+            return
+        onde = f"\n\nGravado em: {generated}" if generated else ""
+        QMessageBox.information(self, APP_NAME, "Arquivo-chave adicionado: ele abre a identidade "
+                                f"sozinho.{onde}\n\nGuarde-o fora desta maquina, longe da senha.")
+
+    def remove_identity_credential(self) -> None:
+        """Remove uma credencial. Pede outra — uma que FICA — e o nucleo prova que ela ainda abre:
+        nao ha como remover a ultima nem se trancar para fora."""
+        if not self._need_protected_identity():
+            return
+        kinds = custody.identity_unlockers()
+        title = "Remover credencial da identidade"
+        if len(kinds) < 2:
+            QMessageBox.information(self, APP_NAME, "A identidade tem uma credencial so. Adicione "
+                                    "outra antes; sem nenhuma, ela ficaria sem como abrir.")
+            return
+        names = {vault.KIND_PASSWORD: "Senha", vault.KIND_KEYFILE: "Arquivo-chave"}
+        items = [f"{i + 1}. {names.get(k, 'Outra')}" for i, k in enumerate(kinds)]
+        item, ok = QInputDialog.getItem(self, title, "Qual credencial sai?", items, 0, False)
+        if not ok or item not in items:
+            return
+        index = items.index(item)
+        remaining = [k for i, k in enumerate(kinds) if i != index]
+        cred = self._ask_identity_credential(
+            title, "Entre com uma credencial que FICA (nao a que vai sair):", kinds=remaining)
+        if cred is None:
+            return
+        resp = QMessageBox.question(
+            self, APP_NAME, f"Remover a credencial {item}? Nao da para desfazer: ela deixa de abrir "
+            "a identidade.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if resp != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            custody.remove_identity_unlocker(index, passphrase=cred[0], keyfile=cred[1])
+        except vault.WrongPassword:
+            QMessageBox.warning(self, APP_NAME, "Credencial incorreta. Nada mudou.")
+            return
+        except vault.VaultError as exc:
+            QMessageBox.warning(self, APP_NAME, f"Nada mudou:\n{exc}")
+            return
+        QMessageBox.information(self, APP_NAME, f"Credencial {item} removida.")
+
+    def backup_identity(self, identity_password: str | None = None) -> None:
+        """Backup cifrado e VERIFICADO da identidade (e da chave de destinatario), pelo app — o
+        mesmo caminho da CLI (idbackup.write_verified)."""
+        if not idbackup.local_identity_exists():
+            QMessageBox.information(self, APP_NAME, "Ainda nao ha identidade nesta instalacao: "
+                                    "nada a copiar.")
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Pasta do backup (ex.: o pendrive)")
+        if not folder:
+            return
+        title = "Backup da identidade"
+        id_pw, id_kf = identity_password, None
+        if custody.is_protected() and id_pw is None:
+            cred = self._ask_identity_credential(title, "Senha da identidade (para ler a chave):")
+            if cred is None:
+                return
+            id_pw, id_kf = cred
+        x_pw = None
+        if custody.recipient_exists() and not custody.recipient_unlocked():
+            x_pw, ok = QInputDialog.getText(
+                self, title, "Senha da chave de destinatario (X25519), para inclui-la no backup:",
+                QLineEdit.EchoMode.Password)
+            if not ok or not x_pw:
+                return
+        try:
+            payload = idbackup.collect_local(id_pw, keyfile=id_kf, recipient_passphrase=x_pw)
+        except idbackup.BackupError as exc:
+            QMessageBox.warning(self, APP_NAME, f"Backup nao feito:\n{exc}")
+            return
+        pw = self._ask_new_password(
+            "Senha do backup", "Crie a senha DO BACKUP (pode ser diferente da senha da "
+            "identidade). Esquecer esta senha = perder o backup:")
+        if pw is None:
+            return
+        dest = idbackup.resolve_destination(folder, payload, folder)
+        overwrite = False
+        if os.path.exists(dest):
+            resp = QMessageBox.question(
+                self, APP_NAME, f"{dest} ja existe. Substituir?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if resp != QMessageBox.StandardButton.Yes:
+                return
+            overwrite = True
+        try:
+            idbackup.write_verified(payload, dest, password=pw, overwrite=overwrite)
+        except idbackup.BackupError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Backup nao feito:\n{exc}")
+            return
+        except OSError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao consegui gravar o backup:\n{exc}")
+            return
+        sem_x = custody.recipient_exists() and not payload.get("x25519_private")
+        QMessageBox.information(
+            self, APP_NAME,
+            f"Backup criado e VERIFICADO (relido do disco):\n{dest}\n\n{idbackup.summary(payload)}"
+            + ("\n\n⚠ A chave de destinatario esta ilegivel e NAO entrou no pacote."
+               if sem_x else "")
+            + "\n\nGuarde DUAS copias offline, em lugares diferentes, e a senha do backup fora "
+            "desta maquina.")
 
     def sign_and_export(self) -> None:
         """Assina o conteudo (Ed25519) e grava a assinatura destacada .sig + a chave publica."""

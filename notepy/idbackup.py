@@ -171,6 +171,38 @@ def payload_keys(payload: dict) -> tuple[bytes, bytes | None]:
     return ed, x
 
 
+def default_filename(payload: dict) -> str:
+    """Nome padrao do pacote: redoubt-identity-<fingerprint>-<AAAAMMDD>.rdbtbak."""
+    return (f"redoubt-identity-{payload['ed25519_fingerprint']}-"
+            f"{payload['created_at'][:10].replace('-', '')}.rdbtbak")
+
+
+def resolve_destination(out: str | None, payload: dict, cwd: str) -> str:
+    """Onde gravar: `out` pode ser o ARQUIVO ou uma PASTA existente (ex.: `E:\\` do pendrive) — na
+    pasta, vai com o nome padrao. Sem `out`, na pasta atual."""
+    if not out:
+        return os.path.join(cwd, default_filename(payload))
+    if os.path.isdir(out):
+        return os.path.join(out, default_filename(payload))
+    return out
+
+
+def write_verified(payload: dict, dest: str, *, password: str | None = None,
+                   keyfile: bytes | None = None, overwrite: bool = False) -> None:
+    """Cifra o pacote, PROVA que ele abre com a mesma identidade, grava em `dest` e prova de novo
+    relendo do disco. O mesmo caminho para a CLI e para o app: so depois disto se diz que o backup
+    existe. OSError (pasta sumiu, disco cheio) sobe para o chamador."""
+    if os.path.exists(dest) and not overwrite:
+        raise BackupError(f"{dest} ja existe")
+    expected = payload["ed25519_fingerprint"]
+    blob = make_blob(payload, password=password, keyfile=keyfile)
+    verify_blob(blob, password=password, keyfile=keyfile, expected_ed_fingerprint=expected)
+    custody._atomic_write(dest, blob)
+    with open(dest, "rb") as fh:
+        on_disk = fh.read()
+    verify_blob(on_disk, password=password, keyfile=keyfile, expected_ed_fingerprint=expected)
+
+
 def verify_blob(blob: bytes, *, password: str | None = None, keyfile: bytes | None = None,
                 expected_ed_fingerprint: str | None = None) -> dict:
     """PROVA que o pacote recem-criado abre e devolve a MESMA identidade.

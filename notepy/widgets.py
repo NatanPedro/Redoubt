@@ -966,6 +966,20 @@ class CustodyDialog(QDialog):
             b.clicked.connect(lambda: self._run("protect_identity"))
             rl.addWidget(b)
             id_rows.append(row)
+        if r.fingerprint:
+            # Backup cifrado, protegida ou nao: sem ele, perder a senha (ou a maquina) perde a chave.
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 4, 0, 0)
+            rl.setSpacing(12)
+            rl.addWidget(_label("Guarde um backup cifrado fora desta máquina (num pendrive): "
+                                "perder a senha ou o disco sem ele perde a identidade.",
+                                "Secondary", wrap=True), 1)
+            bb = _button("Fazer backup")
+            bb.setObjectName("CustodyBackup")
+            bb.clicked.connect(lambda: self._run("backup_identity"))
+            rl.addWidget(bb)
+            id_rows.append(row)
         for wmsg in r.warnings:
             wl = _label(wmsg, wrap=True)
             wl.setStyleSheet(f"color:{theme.AMBER};")
