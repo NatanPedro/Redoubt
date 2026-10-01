@@ -392,6 +392,12 @@ por outros usuários da máquina). No Windows vale a ACL do perfil do usuário.
   *verificação* **não** pedem senha — só **assinar** pede (lazy, com cache de 1× por
   sessão). Proteger/desproteger faz **escrita atômica + wipe**, com *binding* pública↔chave e
   **auto-cura** de PEM órfão se cofre e PEM coexistirem após uma interrupção abrupta.
+- **Credenciais gerenciáveis** (*Segurança ▸ Identidade: …*): trocar a senha, adicionar senha ou
+  arquivo-chave (gerado no pendrive; recusado na pasta de dados) e remover uma credencial. Cada
+  mudança regrava o cofre e só vale se, **relido do disco**, ele abrir a mesma chave com a
+  credencial que acabou de ser usada; senão o anterior volta. Remover exige entrar com **outra**
+  credencial, que fica — nunca a última. E o backup cifrado sai do próprio app, oferecido logo ao
+  proteger a identidade.
 - **Prioridade no erro: a identidade nunca se perde.** O cofre é **verificado** antes de o PEM em claro
   ser destruído; se a remoção do PEM falhar (lock de antivírus/sync), o cofre **permanece** e o
   Redoubt erra alto (`IdentityClearCopyRemains`), com o resíduo **detectado** (aviso em *Verificar
