@@ -702,7 +702,11 @@ def _open_protected(passphrase: str | None = None, *,
     Levanta vault.VaultError (WrongPassword/NotAVault/conteudo invalido) em qualquer falha."""
     with open(_vault_path(), "rb") as fh:
         blob = fh.read()
-    raw_b64 = vault.open_vault(blob, password=passphrase, keyfile=keyfile).text  # VaultError se credencial errada
+    return _key_from_vault_text(vault.open_vault(blob, password=passphrase, keyfile=keyfile).text)
+
+
+def _key_from_vault_text(raw_b64: str) -> Ed25519PrivateKey:
+    """A chave Ed25519 guardada (em base64) dentro do cofre da identidade."""
     try:
         raw = base64.b64decode(raw_b64, validate=True)
         return Ed25519PrivateKey.from_private_bytes(raw)
@@ -918,19 +922,83 @@ def unprotect_identity(passphrase: str | None = None, *, keyfile: bytes | None =
     _session_key = key
 
 
-def add_identity_unlocker(passphrase: str | None = None, *, keyfile: bytes | None = None,
-                          new_password: str | None = None, new_keyfile: bytes | None = None) -> None:
-    """Adiciona uma senha/arquivo-chave EXTRA ao cofre da identidade (destrava com a credencial atual)."""
+def _open_identity_vault(passphrase: str | None, keyfile: bytes | None
+                         ) -> tuple[bytes, vault.Opened, Ed25519PrivateKey]:
+    """(cofre cru, cofre aberto, chave) — para mudar os destravadores. WrongPassword se errar."""
     if not is_protected():
         raise vault.VaultError("identidade nao esta protegida")
-    if not new_password and not new_keyfile:
-        raise vault.VaultError("forneca a nova senha ou o novo arquivo-chave")
     with open(_vault_path(), "rb") as fh:
         blob = fh.read()
     opened = vault.open_vault(blob, password=passphrase, keyfile=keyfile)
+    return blob, opened, _key_from_vault_text(opened.text)
+
+
+def _rewrite_identity_vault(old_blob: bytes, new_blob: bytes, key: Ed25519PrivateKey, *,
+                            passphrase: str | None = None, keyfile: bytes | None = None) -> None:
+    """Grava o cofre novo da identidade e PROVA, relendo do disco, que `passphrase`/`keyfile` abre a
+    MESMA chave. Se a prova falhar, regrava o cofre anterior e erra: nenhuma mudanca de destravador
+    deixa a identidade sem uma credencial que a pessoa ACABOU de usar.
+
+    A chave-de-conteudo nao muda (os outros destravadores seguem validos) e a chave Ed25519 tambem
+    nao: o fingerprint, o que ja foi assinado e os backups `.rdbtbak` continuam valendo."""
+    try:
+        _atomic_write(_vault_path(), new_blob)
+    except OSError as exc:
+        raise vault.VaultError(f"nao consegui gravar o cofre da identidade: {exc}") from exc
+    try:
+        ok = _pub_b64_of(_open_protected(passphrase, keyfile=keyfile)) == _pub_b64_of(key)
+    except (OSError, vault.VaultError):
+        ok = False
+    if ok:
+        return
+    try:
+        _atomic_write(_vault_path(), old_blob)
+    except OSError as exc:
+        raise vault.VaultError(
+            "o cofre novo da identidade nao abriu E nao consegui restaurar o anterior — nao feche o "
+            "Redoubt: a chave segue destravada nesta sessao; faca o backup (Identidade: fazer backup) "
+            f"antes de qualquer coisa ({exc})") from exc
+    raise vault.VaultError("o cofre novo da identidade nao abriu com a credencial: nada mudou")
+
+
+def add_identity_unlocker(passphrase: str | None = None, *, keyfile: bytes | None = None,
+                          new_password: str | None = None, new_keyfile: bytes | None = None) -> None:
+    """Adiciona uma senha/arquivo-chave EXTRA ao cofre da identidade (destrava com a credencial
+    atual) e prova que a credencial NOVA abre a mesma identidade."""
+    if not new_password and not new_keyfile:
+        raise vault.VaultError("forneca a nova senha ou o novo arquivo-chave")
+    blob, opened, key = _open_identity_vault(passphrase, keyfile)
     slots = vault.add_unlocker(opened.key, opened.slots,
                                password=new_password, keyfile=new_keyfile)
-    _atomic_write(_vault_path(), vault.reseal(opened.text, opened.key, slots))
+    _rewrite_identity_vault(blob, vault.reseal(opened.text, opened.key, slots), key,
+                            passphrase=new_password or None,
+                            keyfile=None if new_password else new_keyfile)
+
+
+def change_identity_password(passphrase: str, new_password: str) -> None:
+    """Troca a senha: o destravador que abre com `passphrase` passa a abrir SO com `new_password`
+    (a antiga deixa de funcionar; os outros destravadores ficam como estao)."""
+    if not passphrase or not new_password:
+        raise vault.VaultError("informe a senha atual e a nova")
+    blob, opened, key = _open_identity_vault(passphrase, None)   # so slots de senha casam
+    slots = list(opened.slots)
+    slots[opened.slot_index] = vault.make_password_slot(opened.key, new_password)
+    _rewrite_identity_vault(blob, vault.reseal(opened.text, opened.key, slots), key,
+                            passphrase=new_password)
+
+
+def remove_identity_unlocker(index: int, passphrase: str | None = None, *,
+                             keyfile: bytes | None = None) -> None:
+    """Remove o destravador `index` (a posicao em identity_unlockers()).
+
+    Exige entrar com OUTRA credencial — uma que fica — e prova depois que ela ainda abre: nao ha
+    como remover a credencial que se acabou de usar, nem a ultima, nem se trancar para fora."""
+    blob, opened, key = _open_identity_vault(passphrase, keyfile)
+    if opened.slot_index == index:
+        raise vault.VaultError("essa e a credencial que voce quer remover: entre com uma das que ficam")
+    slots = vault.remove_unlocker(opened.slots, index)
+    _rewrite_identity_vault(blob, vault.reseal(opened.text, opened.key, slots), key,
+                            passphrase=passphrase, keyfile=keyfile)
 
 
 def identity_unlockers() -> list[int]:
