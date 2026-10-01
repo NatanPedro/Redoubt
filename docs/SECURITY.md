@@ -513,9 +513,10 @@ A CLI `notepy/scan_cli.py` (núcleo puro, reusa `secrets.scan`) — instalável 
 
 O verificador **standalone** `verify_release.py` (na raiz; só Python + `cryptography`,
 não precisa instalar o app) **embute a chave pública do autor** (*fingerprint* oficial
-**`6b38433243e8f7e7`** desde a v1.4.0) e valida contra ela. A chave anterior, `4e391f28930f3b6e`, está
-**aposentada**: o verificador ainda a aceita, mas só para os releases até a v1.3.0 e para selos
-feitos até 2026-09-24, e informa quando foi ela que assinou (veja `docs/CUSTODY.md`):
+**`f2478010e453b42f`** desde a v1.5.0) e valida contra ela. As anteriores estão **aposentadas**: o
+verificador ainda as aceita, mas só para o que já assinaram — `6b38433243e8f7e7` para os releases
+até a v1.4.0 e selos até 2026-10-01; `4e391f28930f3b6e` para os releases até a v1.3.0 e selos até
+2026-09-24 — e informa quando foi uma delas que assinou (veja `docs/CUSTODY.md`):
 
 ```bash
 python verify_release.py .
@@ -661,7 +662,7 @@ foi endurecido (**v2**) e remedido, mantendo intacta a regressão dos casos orig
 Além do corpus do detector, o produto sobreviveu a **4 pentests adversariais** completos
 (relatório em [`docs/SECURITY-TEST-REPORT.md`](SECURITY-TEST-REPORT.md)), e as features
 de **identidade protegida** e **release assinado** passaram por red-team + 2 rodadas de
-confirmação. A suíte automatizada soma **612 testes** (headless, `QT_QPA_PLATFORM=offscreen`).
+confirmação. A suíte automatizada soma **615 testes** (headless, `QT_QPA_PLATFORM=offscreen`).
 
 > Os números acima foram **medidos contra o próprio scanner**; não são estimativas. Eles
 > também deixam explícito que o detector **não é perfeito** — ~8 % dos segredos do corpus

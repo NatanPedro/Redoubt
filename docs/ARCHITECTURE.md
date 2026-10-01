@@ -482,8 +482,9 @@ cripto; ela chama `vault`/`custody`/`release`/`scan_cli` e traduz o resultado.
 
 A identidade Ed25519 é **uma só**: a mesma chave que a Custódia usa para assinar
 arquivos assina o `RELEASE.json`. O fingerprint oficial do autor é
-`6b38433243e8f7e7` desde a v1.4.0. A chave anterior, `4e391f28930f3b6e`, foi aposentada em
-2026-09-24 e só vale para os releases até a v1.3.0 (veja `docs/CUSTODY.md`). A chave **X25519 de destinatário** (cifrar-para-destinatário) é
+`f2478010e453b42f` desde a v1.5.0. As anteriores estão aposentadas e só valem para o que já
+assinaram: `6b38433243e8f7e7` (até a v1.4.0, aposentada em 2026-10-01) e `4e391f28930f3b6e` (até a
+v1.3.0, aposentada em 2026-09-24) — veja `docs/CUSTODY.md`. A chave **X25519 de destinatário** (cifrar-para-destinatário) é
 **separada** da Ed25519 — assinar (autoria) e receber-cifrado (confidencialidade) são
 eixos distintos, então comprometer uma não compromete a outra.
 
@@ -600,7 +601,7 @@ nada (qualquer um recalcula) — a prova é a **assinatura**.
 ### O Release assinado — prova do próprio download
 
 `release.py` + `verify_release.py` (standalone na raiz, embute a pubkey do autor
-`6b38433243e8f7e7` e a lista de chaves aposentadas). Gera `SHA256SUMS` + `RELEASE.json` (**RDBT-REL1**):
+`f2478010e453b42f` e a lista de chaves aposentadas). Gera `SHA256SUMS` + `RELEASE.json` (**RDBT-REL1**):
 `signed_payload` (string JSON canônica) + assinatura Ed25519 sobre **essa
 string**. O verificador checa a assinatura sobre a string e só então parseia
 (zero divergência gerador/verificador); o fingerprint é sempre **derivado** da
@@ -650,7 +651,7 @@ no payload; um atacante re-assina com a própria chave) — por isso depende da
 - **Teste headless.** Para a UI, use `QT_QPA_PLATFORM=offscreen` e
   `PYTHONIOENCODING=utf-8` — os glifos de selo (`●`/`▲`/`■`/`░`/`🔒`/`🔥`) quebram
   no console cp1252 do Windows, mas funcionam dentro do Qt.
-- **Suíte.** **612 testes** (pytest), 0 falhas, validados também por 4 pentests
+- **Suíte.** **615 testes** (pytest), 0 falhas, validados também por 4 pentests
   adversariais (relatório §1–§7 em `docs/SECURITY-TEST-REPORT.md`) e por
   verificação ponta-a-ponta do hook num repositório git real.
 - **`run.bat`** abre o app sem console (via `pythonw`).

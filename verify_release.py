@@ -35,15 +35,20 @@ except ImportError:
 
 # === Ancora de confianca: a chave publica do AUTOR oficial do Redoubt ========
 # (32 bytes, base64). Vem versionada neste arquivo, pelo repositorio oficial.
-# Chave ATUAL, desde a v1.4.0 (2026-09-24).
-AUTHOR_PUBKEY_B64 = "jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs="
-AUTHOR_FINGERPRINT = "6b38433243e8f7e7"   # = sha256(pubkey)[:16], so para exibir
+# Chave ATUAL, desde a v1.5.0 (2026-10-01).
+AUTHOR_PUBKEY_B64 = "5AbY8LQZnuWCGbAwhTOHdQtQ9u+E/0eCk8TNW+Bq+Nw="
+AUTHOR_FINGERPRINT = "f2478010e453b42f"   # = sha256(pubkey)[:16], so para exibir
 
-# Chaves ANTERIORES do autor, APOSENTADAS. A 4e391f28930f3b6e assinou os releases ate a v1.3.0 e
-# se perdeu junto com a maquina que a guardava (disco destruido: a chave nao vazou, so deixou de
-# existir). Como nao assina mais nada, so vale para o que ja assinou: releases ate `max_version`.
-# Um manifesto de versao posterior assinado por ela e recusado.
+# Chaves ANTERIORES do autor, APOSENTADAS. Nenhuma vazou; as duas deixaram de ser usaveis:
+#   - 4e391f28930f3b6e assinou os releases ate a v1.3.0 e se perdeu junto com a maquina que a
+#     guardava (disco destruido);
+#   - 6b38433243e8f7e7 assinou a v1.4.0 e ficou inacessivel: a senha que a protegia se perdeu, e o
+#     cofre dela nao tem porta dos fundos.
+# Como nao assinam mais nada, so valem para o que ja assinaram: releases ate `max_version`. Um
+# manifesto de versao posterior assinado por uma delas e recusado.
 RETIRED_AUTHOR_KEYS = (
+    {"pubkey": "jkPCODB0xP85HRf+U6l0WAfnKJlAvGuMB6HeN0Wg2Fs=", "fingerprint": "6b38433243e8f7e7",
+     "retired": "2026-10-01", "max_version": "1.4.0"},
     {"pubkey": "RZZBbCP6irycPMcBLFs5raHw5gONJOU5LMYZwGawrBA=", "fingerprint": "4e391f28930f3b6e",
      "retired": "2026-09-24", "max_version": "1.3.0"},
 )
