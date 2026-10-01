@@ -312,6 +312,31 @@ def test_manifesto_oficial_da_130_segue_autentico_pela_chave_aposentada(tmp_path
     assert ok is False                                   # binarios ausentes: integridade falha
 
 
+# Troca da chave do autor (v1.5.0): a 6b38433243e8f7e7 tambem fica APOSENTADA (a senha se perdeu)
+_FIXTURE_140 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
+                            "release-1.4.0.RELEASE.json")   # manifesto OFICIAL publicado da v1.4.0
+
+
+def test_manifesto_oficial_da_140_segue_autentico_pela_chave_aposentada(tmp_path):
+    vr = _load_standalone()
+    ok, lines = vr.verify_dir(str(tmp_path), manifest_path=_FIXTURE_140)
+    texto = "\n".join(lines)
+    assert "Assinatura confere com a chave do autor: SIM" in texto
+    assert "6b38433243e8f7e7" in texto and "aposentada" in texto and "v1.4.0" in texto
+    assert ok is False                                   # binarios ausentes: integridade falha
+
+
+def test_chaves_do_autor_fixadas():
+    """A atual assina daqui para frente; cada aposentada vale so ate a versao que ja assinou."""
+    vr = _load_standalone()
+    assert vr.AUTHOR_FINGERPRINT == "f2478010e453b42f"
+    assert vr.fingerprint_of(vr.AUTHOR_PUBKEY_B64) == vr.AUTHOR_FINGERPRINT
+    limites = {k["fingerprint"]: k["max_version"] for k in vr.RETIRED_AUTHOR_KEYS}
+    assert limites == {"6b38433243e8f7e7": "1.4.0", "4e391f28930f3b6e": "1.3.0"}
+    for k in vr.RETIRED_AUTHOR_KEYS:
+        assert vr.fingerprint_of(k["pubkey"]) == k["fingerprint"] != vr.AUTHOR_FINGERPRINT
+
+
 def test_chave_aposentada_so_vale_ate_a_versao_que_assinou(ident, tmp_path, monkeypatch):
     vr = _load_standalone()
     monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (

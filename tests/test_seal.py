@@ -460,6 +460,18 @@ def test_chave_aposentada_so_vale_para_selos_anteriores(ident, tmp_path, monkeyp
             assert any("aposentada" in ln for ln in lines)
 
 
+def test_chaves_do_autor_fixadas_no_verificador_de_selo():
+    """Mesmas chaves do verify_release: a atual sela daqui para frente; as aposentadas, so os selos
+    com `sealed_at` ate o dia em que sairam de uso."""
+    vr = _load_standalone()
+    assert vr.AUTHOR_FINGERPRINT == "f2478010e453b42f"
+    assert vr.fingerprint_of(vr.AUTHOR_PUBKEY_B64) == vr.AUTHOR_FINGERPRINT
+    datas = {k["fingerprint"]: k["retired"] for k in vr.RETIRED_AUTHOR_KEYS}
+    assert datas == {"6b38433243e8f7e7": "2026-10-01", "4e391f28930f3b6e": "2026-09-24"}
+    for k in vr.RETIRED_AUTHOR_KEYS:
+        assert vr.fingerprint_of(k["pubkey"]) == k["fingerprint"] != vr.AUTHOR_FINGERPRINT
+
+
 def test_selo_pubkey_explicita_e_a_unica_ancora(ident, tmp_path, monkeypatch):
     vr = _load_standalone()
     monkeypatch.setattr(vr, "RETIRED_AUTHOR_KEYS", (

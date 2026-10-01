@@ -21,7 +21,7 @@ Visão (sem data):
 
 ---
 
-## [1.5.0] - 2026-09-30 — Interface nova + Sentinela mais afiada 🎨🛡️
+## [1.5.0] - 2026-10-01 — Interface nova + Sentinela mais afiada 🎨🛡️
 
 A versão da **interface nova**: o protótipo "carbono" aprovado vira o app, com o painel fixo da
 Sentinela, a faixa de alerta dentro do editor e o cartão de destravar na aba do cofre. No
@@ -31,7 +31,9 @@ hexadecimal do Supabase escapava por completo) e fica **~2,8× mais rápida** em
 hook anti-segredo passa a varrer **arquivos grandes por inteiro** (acima de 2 MB eles passavam
 sem ser lidos); e a lista de sessão, que vive no registro, vai **assinada**, para quem só
 escreve nas configurações não escolher mais o que o Redoubt reabre sozinho. A suíte foi de
-**466 → 612 testes** verdes. Os binários seguem assinados pela chave `6b38433243e8f7e7`.
+**466 → 615 testes** verdes. E a chave que assina os releases **mudou de novo**: a
+`6b38433243e8f7e7` ficou inacessível (a senha que a protegia se perdeu), e a nova,
+`f2478010e453b42f`, assina a partir desta versão — veja Security.
 
 ### Changed
 - **Nova interface ("carbono")**, fiel ao protótipo aprovado:
@@ -83,6 +85,15 @@ escreve nas configurações não escolher mais o que o Redoubt reabre sozinho. A
   de red-team inalterado (recall 91,9%); nenhum achado novo nos arquivos do próprio repositório.
 
 ### Security
+- **🔑 Nova chave do autor: `f2478010e453b42f`** (pública `5AbY8LQZnuWCGbAwhTOHdQtQ9u+E/0eCk8TNW+Bq+Nw=`).
+  A chave que assinou a v1.4.0, `6b38433243e8f7e7`, estava protegida por senha, e a senha se
+  perdeu sem um backup à mão. Ela não vazou: o cofre dela segue cifrado e sem porta dos fundos.
+  Sem ela não há rotação assinada, então, como na troca anterior, ela fica **aposentada, não
+  revogada**: o `verify_release.py` e o `verify_seal.py` a mantêm em `RETIRED_AUTHOR_KEYS`, aceita
+  **só** para releases até a v1.4.0 e selos até 2026-10-01, e a saída diz qual chave assinou. O
+  manifesto oficial publicado da v1.4.0 segue autêntico (há um teste com ele). A chave nova foi
+  criada já protegida e com backup cifrado fora da máquina. Confira o fingerprint por este
+  repositório.
 - **O hook anti-segredo varre arquivos grandes por inteiro.** Acima de 2 MB ele só avisava e
   deixava o arquivo passar sem ler — e o CLI com arquivos (`python -m notepy.scan_cli arq`)
   pulava **em silêncio**. Agora a varredura corre em janelas de 1 MB sobrepostas em 4 KB (nada se
@@ -985,7 +996,7 @@ Base do editor de texto/codigo, antes da virada de seguranca.
   por linha de comando (suporta "Abrir com…").
 
 [Nao lancado]: #nao-lancado
-[1.5.0]: #150---2026-09-30
+[1.5.0]: #150---2026-10-01
 [1.4.0]: #140---2026-09-24
 [0.2.0]: #020---redoubt
 [0.1.0]: #010
