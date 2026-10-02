@@ -49,7 +49,10 @@ def _ler_keyfile(caminho: str | None) -> bytes | None:
 
 
 def _destino_invalido(caminho: str, force: bool) -> str | None:
-    """Motivo para recusar o `-o` ANTES de pedir qualquer senha, ou None se der para gravar."""
+    """Motivo para recusar o `-o` ANTES de pedir qualquer senha, ou None se der para gravar.
+    Uma PASTA existente vale (o pacote vai la com o nome padrao)."""
+    if os.path.isdir(caminho):
+        return None
     pasta = os.path.dirname(os.path.abspath(caminho))
     if not os.path.isdir(pasta):
         return (f"a pasta de destino nao existe: {pasta}\n"
@@ -96,19 +99,15 @@ def cmd_make(args) -> int:
         print("[ERRO] backup sem credencial nao seria cifrado — abortado.")
         return 1
 
-    destino = args.out or os.path.join(
-        os.getcwd(),
-        f"redoubt-identity-{payload['ed25519_fingerprint']}-"
-        f"{payload['created_at'][:10].replace('-', '')}.rdbtbak")
+    destino = idbackup.resolve_destination(args.out, payload, os.getcwd())
     if os.path.exists(destino) and not args.force:
         print(f"[ERRO] {destino} ja existe (use --force para sobrescrever).")
         return 1
     try:
-        blob = idbackup.make_blob(payload, password=pw or None, keyfile=keyfile)
-        # PROVA antes de prometer: reabre o pacote e confere o fingerprint derivado da chave.
-        idbackup.verify_blob(blob, password=pw or None, keyfile=keyfile,
-                             expected_ed_fingerprint=payload["ed25519_fingerprint"])
-        custody._atomic_write(destino, blob)
+        # PROVA antes de prometer: reabre o pacote (na memoria e depois do disco) e confere o
+        # fingerprint derivado da chave.
+        idbackup.write_verified(payload, destino, password=pw or None, keyfile=keyfile,
+                                overwrite=args.force)
     except idbackup.BackupError as exc:
         print(f"[ERRO] {exc}")
         return 1

@@ -22,6 +22,26 @@ estão no formato do Windows (`%APPDATA%\Redoubt\Redoubt`); no Linux o mesmo dir
 
 Veja o *fingerprint* da sua identidade em **Verificar custódia** (`Ctrl+Shift+H`).
 
+### Credenciais da identidade protegida
+
+Uma identidade protegida abre com **qualquer** um dos seus destravadores (senhas e/ou
+arquivos-chave). Tudo pelo menu **Segurança**:
+
+| Ação | O que faz |
+| --- | --- |
+| **Identidade: trocar senha…** | Pede a senha atual e a nova (2×). A antiga **deixa de abrir**; os outros destravadores ficam. |
+| **Identidade: adicionar senha…** | Uma senha a mais (entra com uma credencial atual). |
+| **Identidade: adicionar arquivo-chave…** | **Gera** um arquivo-chave novo (64 bytes aleatórios) onde você escolher — direto no pendrive — ou usa um que você já tem. Recusa salvar na pasta de dados do Redoubt: ao lado do cofre, ele não protege nada. Ele abre a identidade **sozinho**, como uma senha: guarde-o longe dela. |
+| **Identidade: remover credencial…** | Escolhe qual sai e pede **outra, que fica**, para entrar. |
+| **Identidade: fazer backup cifrado…** | O mesmo backup da CLI (veja *Backup e rotação*), pela janela. Também no painel de Custódia. |
+
+Garantias, iguais às de proteger/desproteger: o cofre novo é gravado de forma atômica e **relido
+do disco**, e só vale se a credencial que você acabou de usar (a nova, na troca e na adição; a que
+fica, na remoção) **abrir a mesma chave**. Se não abrir, o cofre anterior volta e nada muda. Por
+isso não há como remover a **última** credencial, nem a que você usou para entrar, nem se trancar
+para fora. A chave Ed25519 não muda: o *fingerprint*, o que você já assinou e os backups
+`.rdbtbak` continuam valendo.
+
 ## Assinar um arquivo
 
 **Segurança ▸ Assinar e exportar** (`Ctrl+Shift+G`) grava, ao lado do arquivo:
@@ -127,8 +147,8 @@ O que foi feito:
   CHANGELOG, no README e nas notas do release v1.5.0.
 - **A lição, aplicada:** backup **no momento** em que a identidade é criada ou protegida, e a
   credencial fora da máquina (gerenciador de senhas). Um segundo destravador (um arquivo-chave num
-  pendrive, *Segurança ▸ Proteger identidade com senha…* numa identidade já protegida) cobre a
-  perda da senha sem depender do backup.
+  pendrive, *Segurança ▸ Identidade: adicionar arquivo-chave…*) cobre a perda da senha sem depender
+  do backup. Desde então o app **oferece o backup na hora** em que a identidade é protegida.
 
 ## Troca da chave do autor (2026-09-24)
 
@@ -175,14 +195,24 @@ cofre que alguém selou **para você** fica inacessível.
 
 ### Fazer o backup
 
+Pelo app: **Segurança ▸ Identidade: fazer backup cifrado…** (ou o botão *Fazer backup* no painel de
+Custódia). Escolha a pasta — o pendrive — e crie a senha **do backup**. Logo depois de *Proteger
+identidade com senha*, o app já oferece fazer isso, com a senha que você acabou de digitar.
+
+Pela linha de comando:
+
 ```bash
-python tools/backup_identity.py make
+python tools/backup_identity.py make -o E:\
 ```
 
-Gera `redoubt-identity-<fingerprint>-<data>.rdbtbak`: um **Cofre** (AES-256-GCM + Argon2id) com as
-privadas Ed25519 **e** X25519 dentro. A senha é pedida sem eco, com confirmação, e o pacote é
-**reaberto e verificado** antes de a ferramenta dizer que existe — um backup não verificado é só
-uma esperança. O material de chave nunca é impresso na tela.
+O `-o` aceita uma **pasta** (o pacote vai lá com o nome padrão) ou o caminho do arquivo; sem ele,
+grava na pasta atual.
+
+Os dois caminhos geram `redoubt-identity-<fingerprint>-<data>.rdbtbak`: um **Cofre** (AES-256-GCM +
+Argon2id) com as privadas Ed25519 **e** X25519 dentro. A senha é pedida sem eco, com confirmação, e
+o pacote é **reaberto e verificado** — na memória e de novo **relido do disco** — antes de a
+ferramenta dizer que existe: um backup não verificado é só uma esperança. O material de chave nunca
+é impresso na tela.
 
 Se a chave de destinatário estiver **protegida por senha** (*Segurança ▸ Proteger chave de
 destinatário com senha*), o `make` pede também a senha **dela** — sem isso ele **recusa** gerar o

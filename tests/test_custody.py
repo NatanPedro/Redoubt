@@ -1030,3 +1030,93 @@ def test_make_writable_limpa_somente_leitura_sem_tirar_a_leitura(tmp_path):
         assert fh.read() == b"conteudo"
     if os.name == "posix":
         assert os.stat(p).st_mode & 0o600 == 0o600
+
+
+# --------------------------------------------------------------------------- #
+# Credenciais da identidade: trocar senha, remover, e a prova de que ainda abre
+# --------------------------------------------------------------------------- #
+def _protegida(senha="antiga"):
+    custody.sign("x")
+    fp = custody.fingerprint()
+    custody.protect_identity(senha)
+    custody.lock_identity()
+    return fp
+
+
+def test_trocar_senha_antiga_para_de_abrir_e_a_chave_fica(tmp_identity):
+    fp = _protegida("antiga")
+    custody.change_identity_password("antiga", "nova-senha")
+    assert custody.unlock_identity("antiga") is False
+    assert custody.unlock_identity("nova-senha")
+    assert custody.fingerprint() == fp                      # mesma chave: nada a re-assinar
+    assert custody.verify("d", custody.sign("d"))
+
+
+def test_trocar_senha_preserva_os_outros_destravadores(tmp_identity):
+    _protegida("antiga")
+    custody.add_identity_unlocker(passphrase="antiga", new_keyfile=b"pendrive")
+    custody.change_identity_password("antiga", "nova")
+    assert sorted(custody.identity_unlockers()) == [vault.KIND_PASSWORD, vault.KIND_KEYFILE]
+    assert custody.unlock_identity(keyfile=b"pendrive")
+
+
+def test_trocar_senha_com_a_atual_errada_nao_muda_nada(tmp_identity):
+    _protegida("antiga")
+    antes = open(custody._vault_path(), "rb").read()
+    with pytest.raises(vault.WrongPassword):
+        custody.change_identity_password("errada", "nova")
+    assert open(custody._vault_path(), "rb").read() == antes
+
+
+def test_remover_exige_entrar_com_uma_credencial_que_fica(tmp_identity):
+    _protegida("antiga")
+    custody.add_identity_unlocker(passphrase="antiga", new_keyfile=b"pendrive")
+    with pytest.raises(vault.VaultError):
+        custody.remove_identity_unlocker(0, "antiga")        # a propria credencial: recusado
+    custody.remove_identity_unlocker(0, keyfile=b"pendrive")  # entra com a que fica
+    assert custody.identity_unlockers() == [vault.KIND_KEYFILE]
+    assert custody.unlock_identity("antiga") is False
+    assert custody.unlock_identity(keyfile=b"pendrive")
+
+
+def test_nao_remove_a_ultima_credencial(tmp_identity):
+    _protegida("antiga")
+    custody.add_identity_unlocker(passphrase="antiga", new_password="segunda")
+    custody.remove_identity_unlocker(1, "antiga")
+    with pytest.raises(vault.VaultError):
+        custody.remove_identity_unlocker(0, "antiga")        # sobrou uma so
+    assert custody.unlock_identity("antiga")
+
+
+def test_se_o_cofre_novo_nao_abrir_volta_o_anterior(tmp_identity, monkeypatch):
+    """A prova (reler do disco e abrir com a credencial) falhou: o cofre anterior volta intacto e a
+    antiga continua abrindo — nenhuma mudanca de destravador tranca a pessoa para fora."""
+    _protegida("antiga")
+    antes = open(custody._vault_path(), "rb").read()
+    real = custody._open_protected
+
+    def falha_so_na_prova(passphrase=None, *, keyfile=None):
+        if passphrase == "nova":
+            raise vault.WrongPassword("simulado: o cofre gravado nao abre")
+        return real(passphrase, keyfile=keyfile)
+    monkeypatch.setattr(custody, "_open_protected", falha_so_na_prova)
+    with pytest.raises(vault.VaultError):
+        custody.change_identity_password("antiga", "nova")
+    assert open(custody._vault_path(), "rb").read() == antes
+    monkeypatch.setattr(custody, "_open_protected", real)
+    assert custody.unlock_identity("antiga")
+
+
+def test_adicionar_credencial_prova_que_a_nova_abre(tmp_identity, monkeypatch):
+    _protegida("antiga")
+    antes = open(custody._vault_path(), "rb").read()
+    real = custody._open_protected
+
+    def nova_nao_abre(passphrase=None, *, keyfile=None):
+        if keyfile == b"novo-kf":
+            raise vault.WrongPassword("simulado")
+        return real(passphrase, keyfile=keyfile)
+    monkeypatch.setattr(custody, "_open_protected", nova_nao_abre)
+    with pytest.raises(vault.VaultError):
+        custody.add_identity_unlocker(passphrase="antiga", new_keyfile=b"novo-kf")
+    assert open(custody._vault_path(), "rb").read() == antes

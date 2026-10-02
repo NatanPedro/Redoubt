@@ -354,3 +354,39 @@ def test_poison_curto_antes_do_real_ainda_abre():
     poison = vault._frame(vault.KIND_PASSWORD | (vault.KDF_ARGON2 << 4), os.urandom(49))
     blob = vault.reseal(SECRET, o.key, [poison, o.slots[0]])
     assert vault.decrypt(blob, "dono") == SECRET
+
+
+# --------------------------------------------------------------------------- #
+# Qual destravador abriu + remover destravador (base de "trocar senha" / "remover credencial")
+# --------------------------------------------------------------------------- #
+def _cofre_senha_e_keyfile():
+    blob = vault.new_vault("segredo", password="pw-a")
+    o = vault.open_vault(blob, password="pw-a")
+    slots = vault.add_unlocker(o.key, o.slots, keyfile=b"kf-b")
+    return vault.reseal(o.text, o.key, slots)
+
+
+def test_open_diz_qual_destravador_abriu():
+    blob = _cofre_senha_e_keyfile()
+    assert vault.open_vault(blob, password="pw-a").slot_index == 0
+    assert vault.open_vault(blob, keyfile=b"kf-b").slot_index == 1
+
+
+def test_remove_unlocker_tira_so_o_escolhido():
+    blob = _cofre_senha_e_keyfile()
+    o = vault.open_vault(blob, keyfile=b"kf-b")
+    novo = vault.reseal(o.text, o.key, vault.remove_unlocker(o.slots, 0))
+    assert vault.slot_kinds(novo) == [vault.KIND_KEYFILE]
+    assert vault.decrypt(novo, keyfile=b"kf-b") == "segredo"
+    with pytest.raises(vault.WrongPassword):
+        vault.decrypt(novo, password="pw-a")                 # o removido nao abre mais
+
+
+def test_remove_unlocker_recusa_o_ultimo_e_indice_invalido():
+    o = vault.open_vault(vault.new_vault("s", password="pw"), password="pw")
+    with pytest.raises(vault.VaultError):
+        vault.remove_unlocker(o.slots, 0)                    # cofre ficaria sem como abrir
+    o2 = vault.open_vault(_cofre_senha_e_keyfile(), password="pw-a")
+    for i in (-1, 2, 9):
+        with pytest.raises(vault.VaultError):
+            vault.remove_unlocker(o2.slots, i)

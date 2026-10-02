@@ -16,6 +16,26 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 
 ## [Nao lancado]
 
+### Added
+- **Credenciais da identidade pelo app** (*Segurança ▸ Identidade: …*): **trocar a senha** (a
+  antiga deixa de abrir), **adicionar senha**, **adicionar arquivo-chave** — gerado na hora, direto
+  no pendrive, e recusado na pasta de dados do Redoubt, onde não protegeria nada — e **remover
+  uma credencial**. Antes o app só sabia acrescentar senhas, e trocar exigia o Python. Cada mudança
+  regrava o cofre da identidade e só vale se, **relido do disco**, ele abrir a mesma chave com a
+  credencial que acabou de ser usada; senão o anterior volta. Remover exige entrar com **outra**
+  credencial, que fica: não há como remover a última nem se trancar para fora. A chave não muda
+  (mesmo fingerprint, assinaturas e backups seguem valendo).
+- **Backup cifrado da identidade pelo app** (*Segurança ▸ Identidade: fazer backup cifrado…* e
+  botão no painel de Custódia), pelo mesmo caminho da CLI. **Logo depois de proteger a identidade
+  com senha, o app oferece o backup na hora**, com a senha recém-digitada: é exatamente o momento
+  em que uma senha esquecida, sem cópia, perde a chave (como aconteceu com a `6b38433243e8f7e7`).
+
+### Fixed
+- **`backup_identity.py make -o <pasta>`:** o `-o` só aceitava o caminho do arquivo; com uma pasta
+  (ex.: `-o E:\` do pendrive), recusava com "já existe". Agora uma pasta existente recebe o pacote
+  com o nome padrão. E o pacote passa a ser verificado também **relido do disco**, não só na
+  memória.
+
 Visão (sem data):
 - Destravar a identidade com **FIDO2** / chave de hardware; **diff com proveniência**.
 
