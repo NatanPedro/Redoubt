@@ -17,6 +17,7 @@ from PyQt6.QtGui import QColor, QFontMetrics
 
 from . import config
 from . import redaction
+from .bgscan import SlicedJob
 from . import secrets as secrets_mod
 from . import theme
 from . import vault
@@ -37,8 +38,16 @@ SECRET_INDICATOR = 8   # sublinhado vermelho sob segredos
 REDACT_INDICATOR = 9   # tarja preta solida sobre segredos (modo redacao)
 EXPOSURE_MARKER = 0    # marcador na margem (mapa de exposicao: onde ha segredo)
 
-# Acima disso, nao varre a cada tecla (evita travar em arquivos enormes).
+# Ritmo da Sentinela por tamanho do texto (em caracteres):
+#   ate _SYNC_SCAN_LIMIT: na hora (~0,1 s);
+#   ate _SCAN_LIMIT com a Redacao LIGADA: na hora tambem — a tarja tem de vir antes de um segredo
+#     colado aparecer numa transmissao de tela (fatiar abriria uma janela de exposicao);
+#   ate _SCAN_CEILING: FATIADA (bgscan), sem congelar a janela; o selo mostra o progresso;
+#   acima: "nao verificado" (o mesmo teto do hook).
+_SYNC_SCAN_LIMIT = 256_000
 _SCAN_LIMIT = 2_000_000
+_SCAN_CEILING = 50_000_000
+_SLICE_WINDOW = 64_000          # uma janela por passo (~20-30 ms)
 
 # Letras de Ctrl+Shift+<letra> que o app reserva como QAction de janela. O editor
 # NAO deve reivindica-las (nem no keymap, nem via ShortcutOverride), senao a acao
@@ -97,6 +106,8 @@ class CodeEditor(QsciScintilla):
 
     # Emite o numero de segredos detectados sempre que o texto e revarrido.
     secretsChanged = pyqtSignal(int)
+    # Estado/progresso da varredura mudou (fatiada em andamento, terminou, nao verificado).
+    scanStateChanged = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,7 +126,13 @@ class CodeEditor(QsciScintilla):
         self._secret_byte_spans: list[tuple[int, int, str]] = []
         self._redaction_on: bool = False
         self._saved_hash: str | None = None
-        self._scan_skipped: bool = False   # True se o arquivo e grande demais p/ varrer
+        # Varredura: "done" (achados valem para o texto atual), "pending" (fatiada em andamento)
+        # ou "skipped" (grande demais: NAO verificado — o selo nunca finge "limpo").
+        self._scan_state: str = "done"
+        self._scan_progress: int = 0
+        self._scan_job: SlicedJob | None = None
+        self._text_version: int = 0          # cresce a cada edicao: descarta resultado velho
+        self._bulk_depth: int = 0            # edicao em lote (Substituir tudo): varre so no fim
 
         # Estado de cofre (.rdbt cifrado — envelope RDBT2 com key-slots).
         self.is_vault: bool = False
@@ -135,6 +152,9 @@ class CodeEditor(QsciScintilla):
         self._gated: bool = False
         self._gated_text: str | None = None
         self._gated_count: int = 0
+        self._gate_verifying: bool = False   # oculto enquanto a varredura fatiada roda
+        self._gate_progress: int = 0
+        self._gate_job: SlicedJob | None = None
 
         self._setup_appearance()
         self._setup_indicators()
@@ -278,6 +298,9 @@ class CodeEditor(QsciScintilla):
     # Sentinela de Segredos
     # ------------------------------------------------------------------ #
     def _on_text_changed(self) -> None:
+        self._text_version += 1
+        if self._bulk_depth:
+            return                       # edicao em lote: uma varredura so, no fim
         # Com a Redacao LIGADA (modo screen-share), varremos IMEDIATA e
         # sincronamente: senao um segredo COLADO fica visivel ~300ms (o debounce)
         # antes de ser tarjado — uma janela de exposicao numa transmissao de tela.
@@ -287,7 +310,26 @@ class CodeEditor(QsciScintilla):
         else:
             self._scan_timer.start()
 
+    def _set_scan_state(self, state: str, progress: int = 0) -> None:
+        if (state, progress) != (self._scan_state, self._scan_progress):
+            self._scan_state, self._scan_progress = state, progress
+            self.scanStateChanged.emit()
+
+    def _cancel_scan(self) -> None:
+        if self._scan_job is not None:
+            self._scan_job.cancel()
+            self._scan_job = None
+
+    def _clear_findings(self) -> None:
+        self._secret_matches = []
+        self._secret_byte_spans = []
+        self._clear_indicator(SECRET_INDICATOR)
+        self._clear_indicator(REDACT_INDICATOR)
+        self.markerDeleteAll(EXPOSURE_MARKER)
+        self.secretsChanged.emit(0)
+
     def _rescan_secrets(self) -> None:
+        self._cancel_scan()
         if self.is_vault or self._gated:
             # Cofre: o conteudo ja e protegido por cifragem; nao faz sentido
             # marca-lo como "exposto". Limpa qualquer indicador remanescente.
@@ -297,22 +339,85 @@ class CodeEditor(QsciScintilla):
                 self._clear_indicator(SECRET_INDICATOR)
                 self._clear_indicator(REDACT_INDICATOR)
             self.markerDeleteAll(EXPOSURE_MARKER)
+            self._set_scan_state("done")
             self.secretsChanged.emit(0)
             return
         text = self.text()
-        if len(text) > _SCAN_LIMIT:
-            # Grande demais p/ varrer (custo). Mas NAO fingimos "LIMPO": sinalizamos
-            # "nao verificado" para o selo nao dar falsa seguranca.
-            self._scan_skipped = True
-            self._secret_matches = []
-            self._secret_byte_spans = []
-            self._clear_indicator(SECRET_INDICATOR)
-            self._clear_indicator(REDACT_INDICATOR)
-            self.markerDeleteAll(EXPOSURE_MARKER)
-            self.secretsChanged.emit(0)
+        n = len(text)
+        if n > _SCAN_CEILING:
+            # Grande demais ate para a varredura fatiada. Mas NAO fingimos "LIMPO":
+            # sinalizamos "nao verificado" para o selo nao dar falsa seguranca.
+            self._set_scan_state("skipped")
+            self._clear_findings()
             return
-        self._scan_skipped = False
-        matches = secrets_mod.scan(text)
+        if n <= _SYNC_SCAN_LIMIT or (self._redaction_on and n <= _SCAN_LIMIT):
+            self._apply_scan(text, secrets_mod.scan(text))
+            self._set_scan_state("done")
+            return
+        self._start_sliced_scan(text)
+
+    def _start_sliced_scan(self, text: str) -> None:
+        """Varre em janelas, um lote por volta do loop de eventos: a janela segue respondendo.
+        Os achados de antes ficam ate o resultado novo chegar (o selo diz que esta verificando)."""
+        version = self._text_version
+
+        def work():
+            found: list[secrets_mod.Match] = []
+            total = len(text)
+            for pos, ms in secrets_mod.iter_windows(text, _SLICE_WINDOW):
+                found.extend(ms)
+                if len(found) >= secrets_mod.MAX_MATCHES:
+                    return found[:secrets_mod.MAX_MATCHES]
+                yield pos / total
+            return found
+
+        job = SlicedJob(work(), self)
+        job.progress.connect(lambda pct: self._set_scan_state("pending", pct))
+        job.finished.connect(lambda found: self._on_sliced_done(job, text, version, found))
+        self._scan_job = job
+        self._set_scan_state("pending", 0)
+        job.start()
+
+    def _on_sliced_done(self, job: SlicedJob, text: str, version: int, found) -> None:
+        if job is not self._scan_job:
+            return                       # foi substituida por uma varredura mais nova
+        self._scan_job = None
+        if found is None:                # a varredura falhou: fail-safe, nunca "limpo"
+            self._set_scan_state("skipped")
+            self._clear_findings()
+            return
+        if version != self._text_version:
+            return                       # o texto mudou no meio: a edicao ja agendou outra
+        self._apply_scan(text, found)
+        self._set_scan_state("done")
+
+    def finish_scan_now(self) -> None:
+        """Termina AGORA a varredura fatiada em andamento (quem precisa do resultado ja)."""
+        if self._scan_job is not None:
+            self._scan_job.run_to_end()
+
+    def scan_state(self) -> str:
+        return self._scan_state
+
+    def scan_progress(self) -> int:
+        return self._scan_progress
+
+    def begin_bulk_edit(self) -> None:
+        """Edicao em lote (ex.: Substituir tudo): nenhuma varredura por edicao — com a Redacao
+        ligada seriam N varreduras completas e sincronas. end_bulk_edit varre uma vez."""
+        self._bulk_depth += 1
+        self._scan_timer.stop()
+
+    def end_bulk_edit(self) -> None:
+        if self._bulk_depth == 0:
+            return
+        self._bulk_depth -= 1
+        if self._bulk_depth == 0:
+            self._rescan_secrets()
+
+    def _apply_scan(self, text: str, matches: list[secrets_mod.Match]) -> None:
+        """Publica os achados de `text`: lista de redacao, offsets em byte, tarjas, mapa."""
+        matches = list(matches)
         # Lista de redacao: segredos LITERAIS que o usuario registrou (cifrados; destravados na
         # sessao) entram como matches. snippet = o proprio trecho -> tarja, mapa de exposicao e
         # mascaramento de clipboard cobrem tambem o que voce cadastrou.
@@ -376,7 +481,7 @@ class CodeEditor(QsciScintilla):
         return self._redaction_on
 
     def scan_skipped(self) -> bool:
-        return self._scan_skipped
+        return self._scan_state == "skipped"
 
     def set_redaction(self, on: bool) -> None:
         self._redaction_on = on
@@ -462,19 +567,24 @@ class CodeEditor(QsciScintilla):
     def gated_count(self) -> int:
         return self._gated_count
 
-    def gate(self, text: str, count: int) -> None:
+    def gate(self, text: str, count: int, *, verifying: bool = False) -> None:
         """Esconde o conteudo (em claro) de um arquivo ate o usuario revelar. NAO
         cifra: e privacidade (nao joga segredo na tela ao restaurar). O texto real
         fica so em RAM e nunca e exibido.
 
         count > 0  -> tantas credenciais detectadas.
-        count == 0 -> arquivo grande demais p/ varrer: oculto por PRECAUCAO
+        verifying  -> arquivo grande sendo varrido aos poucos: oculto ATE a varredura acabar.
+        count == 0 -> grande demais p/ varrer (ou a varredura falhou): oculto por PRECAUCAO
                       (fail-safe — nunca abrir em claro algo que nao foi verificado)."""
         self._gated = True
         self._gated_text = text
         self._gated_count = count
+        self._gate_verifying = verifying
         if count > 0:
             head = f"🛡️ Este arquivo contem {count} credencial(is) detectada(s)."
+        elif verifying:
+            head = ("🛡️ Verificando este arquivo grande antes de mostrar — o conteudo fica oculto "
+                    "ate a varredura terminar (limpo, ele aparece sozinho).")
         else:
             head = "🛡️ Arquivo grande demais para verificar — oculto por precaucao."
         self.setReadOnly(False)
@@ -491,6 +601,10 @@ class CodeEditor(QsciScintilla):
         """Revela o conteudo oculto e devolve o texto (o chamador re-varre/lexa)."""
         if not self._gated or self._gated_text is None:
             return None
+        if self._gate_job is not None:       # revelou no meio da verificacao: ela para
+            self._gate_job.cancel()
+            self._gate_job = None
+        self._gate_verifying = False
         text = self._gated_text
         self.setReadOnly(False)
         self.setText(text)
@@ -500,6 +614,12 @@ class CodeEditor(QsciScintilla):
         self._gated_text = None
         self._gated_count = 0
         return text
+
+    def gate_verifying(self) -> bool:
+        return self._gated and self._gate_verifying
+
+    def gate_progress(self) -> int:
+        return self._gate_progress
 
     def restore_locked(self, blob: bytes) -> None:
         """Restaura um cofre de sessao em estado TRAVADO, SEM senha (zero-knowledge).

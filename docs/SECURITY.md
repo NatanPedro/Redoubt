@@ -62,8 +62,13 @@ O `CodeEditor` (`notepy/editor.py`) vigia o texto a cada alteração:
   evita reanalisar a cada tecla. **Exceção:** com o **Modo Redação ligado** a varredura
   roda **síncrona** (sem debounce), para não deixar o segredo visível em claro por ~300 ms
   antes da tarja.
-- **Limite de tamanho.** Arquivos acima de `_SCAN_LIMIT = 2_000_000` caracteres não são
-  varridos a cada alteração (para não travar o editor em arquivos enormes).
+- **Texto grande, sem travar.** Até 256 mil caracteres, a varredura é na hora. Acima, até
+  50 MB, ela é **fatiada** (`notepy/bgscan.py`): janelas de 64 mil caracteres, uma por volta do
+  loop de eventos, com o selo em `VERIFICANDO · N%` — a janela segue respondendo (num arquivo de
+  10 MB, a maior travada medida foi de 72 ms; antes eram 3,9 s parada). Um resultado que chega
+  depois de uma edição é **descartado** (vale para outro texto). **Com o Modo Redação ligado,
+  até 2 MB continua na hora**: fatiar deixaria um segredo colado visível até a varredura chegar
+  nele. Acima de 50 MB: `⚠ NÃO VERIFICADO` (antes, isso valia já acima de 2 MB).
 - **Marcação visual.** Cada segredo recebe o indicador `SECRET_INDICATOR = 8`
   (rabisco/sublinhado vermelho desenhado **sob** o texto). No Modo Redação, recebe
   também o `REDACT_INDICATOR = 9` (caixa preta sólida, alfa 255, desenhada **sobre** o
@@ -616,7 +621,11 @@ Reabre os arquivos da última sessão guardando **apenas os caminhos**, nunca o 
 reaparecem **TRAVADOS**, sem pedir senha (zero-knowledge). Um arquivo **em claro** onde a
 Sentinela detecta credencial reabre **OCULTO** (selo `🛡️ OCULTO`), com barra *Revelar* /
 *Selar como cofre*; salvar fica bloqueado enquanto oculto (a guarda `is_gated` está no
-chokepoint `_write`). Arquivo **> 2 MB** é ocultado por precaução (fail-safe).
+chokepoint `_write`). Arquivo **grande** (acima de 256 mil caracteres) abre **oculto** e é
+varrido **fatiado**, com a janela já na tela: limpo, ele aparece sozinho; com credencial, segue
+oculto com a contagem; se a varredura falhar, segue oculto como não verificado (fail-safe — o que
+não foi verificado nunca abre em claro). Acima de 50 MB, oculto e não verificado. E a sessão
+inteira é restaurada **depois** de a janela aparecer, um arquivo por vez.
 
 **A lista é assinada** (`notepy/session.py`). Ela vive nas configurações — no Windows, o
 **registro** (`HKCU\Software\Redoubt\Redoubt`); no Linux, `~/.config/Redoubt/Redoubt.conf` —,

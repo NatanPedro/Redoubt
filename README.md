@@ -336,6 +336,7 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── icons.py             Ícones desenhados em código (sem depender do QtSvg)
     ├── sentinel_view.py     O que a tela mostra de um segredo (sempre mascarado) + força de senha (sem Qt)
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
+    ├── bgscan.py            Varredura e Substituir tudo fatiados, sem travar a janela
     ├── preferences.py       Diálogo de preferências (Ctrl+,)
     ├── config.py            QSettings: auto-lock, fonte, tab, tema, sessão (sem Qt)
     ├── session.py           Assinatura (HMAC) da lista de sessão + filtros do restore (sem Qt)

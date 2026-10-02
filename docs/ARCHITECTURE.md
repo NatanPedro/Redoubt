@@ -117,6 +117,7 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     ├── icons.py             Ícones de traço desenhados com QPainter (sem QtSvg)
     ├── sentinel_view.py     Núcleo puro: o que a tela mostra de um segredo (máscara, camada) e força de senha
     ├── findbar.py           Barra Localizar/Substituir (regex, F3)
+    ├── bgscan.py            SlicedJob: trabalho pesado fatiado na thread da interface
     ├── preferences.py       Diálogo de Preferências (Ctrl+,)
     └── theme.py             paletas dark/light, QSS e re-tematização dos lexers
 ```
@@ -316,9 +317,12 @@ vigilância. Responsabilidades:
 - **Vigilância com debounce**: um `QTimer` *single-shot* de **300 ms** é
   reiniciado a cada `textChanged`; ao disparar chama `secrets.scan`, converte
   offsets de *caractere* → *byte*, preenche os indicadores e **emite
-  `secretsChanged(int)`**. Acima de `_SCAN_LIMIT` (2 000 000 chars) a varredura
-  por digitação é suspensa. Com a redação **ligada**, a varredura roda síncrona
-  (sem debounce) para não deixar janela de exposição.
+  `secretsChanged(int)`**. Até `_SYNC_SCAN_LIMIT` (256 mil chars) a varredura é na hora;
+  acima, até `_SCAN_CEILING` (50 MB), é **fatiada** por `bgscan.SlicedJob` sobre
+  `secrets.iter_windows` (estado `pending` + `scanStateChanged`; resultado de um texto que já
+  mudou é descartado por `_text_version`). Com a redação **ligada**, até `_SCAN_LIMIT` (2 MB)
+  roda síncrona (sem debounce) para não deixar janela de exposição. `begin_bulk_edit` /
+  `end_bulk_edit` (Substituir tudo) varrem uma vez só, no fim.
 - **Custódia**: `content_hash()` (SHA-256 do conteúdo **vivo**), `mark_saved()`,
   `saved_hash`; `custody_text` usa o texto real em RAM (não o banner de oculto).
 - **Cofre / oculto / burn**: `lock`/`unlock` (re-cifra em memória, esvazia o undo
@@ -362,7 +366,15 @@ os núcleos:
 #### `notepy/findbar.py`, `preferences.py`, `lexers.py`, `theme.py`
 
 - **`findbar.py`** — barra Localizar/Substituir com regex, *match* de largura
-  zero tratado (anti-loop) e teto `_REPLACE_CAP`.
+  zero tratado (anti-loop) e teto `_REPLACE_CAP`. **Substituir tudo** acha as ocorrências
+  com o motor do Scintilla (`SCI_SEARCHINTARGET`, os mesmos flags do `findFirst`) e troca o
+  documento numa **única edição** (um Ctrl+Z): trocar uma a uma ficava cada vez mais caro
+  (60 mil trocas: mais de 2 min → 0,2 s). Regex com `\` no substituto (`\1`, `\t`) segue troca a
+  troca, porque o Scintilla expande a cada achado. Documento grande: fatiado, com progresso e
+  Cancelar (na rota rápida, cancelar não deixa nada pela metade).
+- **`bgscan.py`** — `SlicedJob`: roda um gerador em fatias de ~30 ms na própria thread da
+  interface (thread não ajudaria: o `re` não solta o GIL). Usado pela Sentinela do editor, pelo
+  Substituir tudo e pela restauração da sessão.
 - **`preferences.py`** — diálogo `Ctrl+,` (auto-lock, fonte, tab, tema,
   restaurar sessão), aplicado ao vivo.
 - **`lexers.py`** — mapeia extensão/nome → classe de lexer do QScintilla
