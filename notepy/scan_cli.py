@@ -121,21 +121,13 @@ def _mask(snippet: str) -> str:
 
 
 def _matches(text: str) -> Iterator[secrets_mod.Match]:
-    """secrets.scan do texto inteiro — em janelas sobrepostas quando passa do teto do editor.
-
-    Cada janela "e dona" de [s, s + _WINDOW) e enxerga _OVERLAP a mais dos dois lados: um achado
-    que comeca na parte dela aparece INTEIRO e com o contexto de antes (atribuicao, SRI...), e o
-    que comeca fora e descartado ali, porque a janela vizinha o ve inteiro. Offsets absolutos,
-    em ordem."""
+    """secrets.scan do texto inteiro — em janelas sobrepostas (secrets.iter_windows) quando passa
+    do teto do editor. Offsets absolutos, em ordem."""
     if len(text) <= _SCAN_LIMIT:
         yield from secrets_mod.scan(text)
         return
-    for s in range(0, len(text), _WINDOW):
-        lo = max(0, s - _OVERLAP)
-        for m in secrets_mod.scan(text[lo:s + _WINDOW + _OVERLAP]):
-            a = lo + m.start
-            if s <= a < s + _WINDOW:
-                yield secrets_mod.Match(a, lo + m.end, m.kind, m.snippet)
+    for _pos, found in secrets_mod.iter_windows(text, _WINDOW, _OVERLAP):
+        yield from found
 
 
 def scan_text(text: str, path: str) -> list[Finding]:

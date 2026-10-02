@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 
@@ -376,3 +377,32 @@ def scan(text: str, *, entropy: bool = True) -> list[Match]:
 
     out.sort(key=lambda x: x.start)
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Texto grande: varredura em janelas sobrepostas
+# --------------------------------------------------------------------------- #
+WINDOW_OVERLAP = 4_096      # maior que qualquer credencial: nada se perde na emenda
+
+
+def iter_windows(text: str, window: int, overlap: int = WINDOW_OVERLAP
+                 ) -> Iterator[tuple[int, list[Match]]]:
+    """scan() do texto inteiro, uma janela por vez: devolve (ate_onde_ja_foi, achados_da_janela).
+
+    Cada janela "e dona" de [s, s + window) e enxerga `overlap` a mais dos dois lados: um achado
+    que comeca na parte dela aparece INTEIRO e com o contexto de antes (atribuicao, SRI...), e o
+    que comeca fora fica para a vizinha, que o ve inteiro. Offsets absolutos, em ordem. Quem
+    consome decide o ritmo (o hook vai de uma vez; o editor fatia entre eventos da interface) e
+    pode parar no meio. Cada janela respeita MAX_MATCHES; o total fica com quem consome."""
+    n = len(text)
+    if n == 0:
+        yield 0, []
+        return
+    for s in range(0, n, window):
+        lo = max(0, s - overlap)
+        owned = []
+        for m in scan(text[lo:s + window + overlap]):
+            a = lo + m.start
+            if s <= a < s + window:
+                owned.append(Match(a, lo + m.end, m.kind, m.snippet))
+        yield min(s + window, n), owned

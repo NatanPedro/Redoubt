@@ -645,9 +645,12 @@ Qt), o que facilita testá-los isolados. Regras ao estendê-los:
   preencher os indicators.
 - **Debounce de varredura.** A Sentinela roda a cada `textChanged`, mas com um
   `QTimer` *single-shot* de **300 ms** (não revarre a cada tecla) e emite
-  `secretsChanged(int)`. Acima de `_SCAN_LIMIT = 2_000_000` caracteres a varredura é
-  pulada (evita travar). **Com o Modo Redação ligado, a varredura roda síncrona** (sem
-  debounce) para não deixar um segredo colado visível por ~300 ms.
+  `secretsChanged(int)`. Acima de `_SYNC_SCAN_LIMIT` (256 mil) ela é **fatiada**
+  (`bgscan.SlicedJob`, estado `pending`), até `_SCAN_CEILING` (50 MB); acima, não verificado.
+  **Com o Modo Redação ligado, até `_SCAN_LIMIT` (2 MB) a varredura roda síncrona** (sem
+  debounce) para não deixar um segredo colado visível. Nos testes, `finish_scan_now()` termina
+  uma varredura fatiada na hora; trabalho fatiado novo = um gerador que faz um pedaço por
+  `yield` (o progresso, 0 a 1) e devolve o resultado no `return`.
 - **Custódia ≠ hash nu.** A barra mostra um SHA-256 de relance (`░ alterado` enquanto
   há edição não salva), mas a **prova** de integridade/autoria é a **assinatura
   Ed25519** + a trilha hash-chain (`notepy/custody.py`), não o hash sozinho — qualquer

@@ -30,7 +30,30 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   com senha, o app oferece o backup na hora**, com a senha recém-digitada: é exatamente o momento
   em que uma senha esquecida, sem cópia, perde a chave (como aconteceu com a `6b38433243e8f7e7`).
 
+### Changed
+- **Arquivos grandes sem travar a janela** (`notepy/bgscan.py`: trabalho fatiado na própria
+  thread da interface, ~30 ms por volta do loop de eventos — uma thread não ajudaria, porque o `re`
+  do Python não solta o GIL):
+  - **Sentinela no editor:** acima de 256 mil caracteres, a varredura é fatiada, com o selo em
+    `VERIFICANDO · N%`. Num arquivo de 10 MB a janela ficava **3,9 s parada** a cada pausa na
+    digitação; agora a maior travada medida é de **72 ms** (2 MB: 0,78 s → 49 ms). Arquivos de 2
+    a 50 MB, que eram `NÃO VERIFICADO`, passam a ser verificados. **Com o Modo Redação ligado,
+    até 2 MB segue na hora**: fatiar deixaria um segredo colado visível até a varredura chegar
+    nele.
+  - **Restaurar a sessão:** a janela aparece primeiro e os arquivos voltam um por vez (antes, até
+    50 arquivos eram lidos e varridos antes de qualquer janela). Arquivo grande abre oculto e é
+    verificado aos poucos: limpo, aparece sozinho; com credencial, segue oculto com a contagem.
+  - **Substituir tudo:** acha as ocorrências com o motor do Scintilla (mesma regex, maiúsculas e
+    palavra inteira que a busca mostra) e troca o documento numa **única edição**, um Ctrl+Z.
+    **60 mil trocas: de mais de 2 minutos para 0,2 s.** Em documento grande, com progresso e
+    Cancelar (cancelar antes do fim não deixa nada pela metade). Regex com `\` no substituto
+    (`\1`, `\t`) segue troca a troca, agora fatiada e cancelável.
+
 ### Fixed
+- **Substituir tudo com o Modo Redação ligado varria o documento inteiro a CADA troca** (a
+  varredura síncrona da Redação disparava em cada edição): agora é uma varredura só, no fim.
+- **Restaurar a sessão abria em claro um arquivo cuja varredura falhasse** (a exceção virava "0
+  segredos"). Agora ele abre oculto, como não verificado.
 - **`backup_identity.py make -o <pasta>`:** o `-o` só aceitava o caminho do arquivo; com uma pasta
   (ex.: `-o E:\` do pendrive), recusava com "já existe". Agora uma pasta existente recebe o pacote
   com o nome padrão. E o pacote passa a ser verificado também **relido do disco**, não só na
