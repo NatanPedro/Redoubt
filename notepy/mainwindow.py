@@ -39,8 +39,12 @@ from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool, ic
                textops, theme, transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
 
-# Acima deste tamanho nao varremos um arquivo na restauracao (mesmo limite do editor).
-_RESTORE_SCAN_LIMIT = 2_000_000
+# Restaurar a sessao: ate _RESTORE_SYNC_LIMIT o arquivo e varrido NA HORA (limpo abre normal; com
+# segredo, oculto). Maior, ate o teto: abre OCULTO e e varrido FATIADO (bgscan), sem travar a
+# janela — limpo, aparece sozinho; com segredo, segue oculto. Acima do teto: oculto, nao verificado.
+_RESTORE_SYNC_LIMIT = 256_000
+_RESTORE_SCAN_CEILING = 50_000_000
+_RESTORE_WINDOW = 64_000
 from .findbar import FindBar                      # noqa: E402  (apos as constantes acima)
 from .preferences import PreferencesDialog        # noqa: E402
 from .widgets import (CustodyDialog, CustodyReport, EditorChrome, Finding, Rail,  # noqa: E402
@@ -48,6 +52,7 @@ from .widgets import (CustodyDialog, CustodyReport, EditorChrome, Finding, Rail,
 from .titlebar import MnemonicFilter, TitleBar      # noqa: E402
 from . import winframe                             # noqa: E402
 from . import session                              # noqa: E402
+from .bgscan import SlicedJob                      # noqa: E402
 
 VAULT_FILTER = "Cofre Redoubt (*.rdbt)"
 
@@ -1095,6 +1100,8 @@ class MainWindow(QMainWindow):
         editor.cursorPositionChanged.connect(lambda *_: self._touch_idle())
         editor.textChanged.connect(self._touch_idle)
         editor.secretsChanged.connect(lambda n, e=editor: self._on_secrets_changed(e, n))
+        editor.scanStateChanged.connect(
+            lambda e=editor: self._update_seal() if e is self.current_editor() else None)
         editor._chrome = EditorChrome(editor)       # faixa de alerta + cartao de cofre travado
         editor._chrome.overlay.unlock_requested.connect(lambda pw, e=editor: self._overlay_unlock(e, pw))
         editor._chrome.overlay.keyfile_requested.connect(lambda e=editor: self._overlay_keyfile(e))
@@ -1164,6 +1171,9 @@ class MainWindow(QMainWindow):
         n = len(editor.secret_matches())
         if editor.is_burn:
             text, color, bg = "BURN · SÓ RAM", theme.RED, theme.RED_BG
+        elif editor.gate_verifying():
+            text, color, bg = (f"OCULTO · VERIFICANDO {editor.gate_progress()}%", theme.AMBER,
+                               theme.AMBER_BG)
         elif editor.is_gated():
             text, color, bg = f"OCULTO · {editor.gated_count()}", theme.AMBER, theme.AMBER_BG
         elif editor.is_vault and editor.is_locked():
@@ -1172,6 +1182,9 @@ class MainWindow(QMainWindow):
             text, color, bg = "COFRE", theme.GREEN, theme.GREEN_BG
         elif editor.scan_skipped():
             text, color, bg = "⚠ NAO VERIFICADO", theme.AMBER, theme.AMBER_BG
+        elif editor.scan_state() == "pending":
+            # varredura fatiada de um texto grande: ainda nao da para dizer "limpo"
+            text, color, bg = f"VERIFICANDO · {editor.scan_progress()}%", theme.AMBER, theme.AMBER_BG
         elif n == 0:
             text, color, bg = "● LIMPO", theme.GREEN, theme.GREEN_BG
         elif editor.is_redacted():
@@ -3114,10 +3127,12 @@ class MainWindow(QMainWindow):
                 paths.append(ed.path)
         config.save_session(paths, self.tabs.currentIndex())
 
-    def restore_session(self) -> int:
+    def restore_session(self, *, incremental: bool = False) -> int:
         """Reabre os arquivos da ultima sessao. Cofres reaparecem TRAVADOS (sem
         pedir senha). Arquivos sumidos sao ignorados em silencio. Retorna a qtd
-        reaberta.
+        reaberta — ou, com `incremental`, quantos foram AGENDADOS: um arquivo por volta do loop
+        de eventos, com a janela ja na tela (main.py; antes, ate 50 arquivos eram lidos e
+        varridos antes de a janela aparecer).
 
         A lista vem das configuracoes (no Windows, o registro) e vai assinada (session.py):
         se a assinatura nao confere, nada abre sem a pessoa ver os caminhos e confirmar. E
@@ -3129,26 +3144,40 @@ class MainWindow(QMainWindow):
         candidates = session.restorable(paths)
         if status == session.TAMPERED and not self._confirm_unsigned_session(candidates):
             return 0
+        job = SlicedJob(self._restore_steps(candidates, active), self)
+        if not incremental:
+            return job.run_to_end() or 0
+        self._restore_job = job
+        job.start()
+        return len(candidates)
+
+    def _restore_steps(self, candidates: list[str], active: int):
+        """Um arquivo por passo; no fim, fecha a aba vazia inicial e volta a aba ativa."""
         opened = 0
-        for p in candidates:
-            if not os.path.isfile(p):
-                continue
-            already = any(self.tabs.widget(i).path and
-                          os.path.normcase(self.tabs.widget(i).path) == os.path.normcase(p)
-                          for i in range(self.tabs.count()))
-            if already:
-                continue
-            try:
-                self._restore_one(p)
+        for i, p in enumerate(candidates):
+            if self._restore_path(p):
                 opened += 1
-            except Exception:
-                continue                            # um arquivo problematico nao derruba o resto
+            yield (i + 1) / len(candidates)
         if opened:
             self._maybe_close_initial_empty()
             if 0 <= active < self.tabs.count():
                 self.tabs.setCurrentIndex(active)
             self._update_gate_bar()
         return opened
+
+    def _restore_path(self, p: str) -> bool:
+        if not os.path.isfile(p):
+            return False
+        already = any(self.tabs.widget(i).path and
+                      os.path.normcase(self.tabs.widget(i).path) == os.path.normcase(p)
+                      for i in range(self.tabs.count()))
+        if already:
+            return False
+        try:
+            self._restore_one(p)
+        except Exception:
+            return False                            # um arquivo problematico nao derruba o resto
+        return True
 
     def _confirm_unsigned_session(self, paths: list[str]) -> bool:
         """Lista cuja assinatura nao confere: mostra os caminhos e so reabre se a pessoa
@@ -3184,37 +3213,91 @@ class MainWindow(QMainWindow):
             text, encoding = read_text(path)
         except OSError:
             return
-        too_big = len(text) > _RESTORE_SCAN_LIMIT
-        try:
-            hits = 0 if too_big else len(secrets_mod.scan(text))
-        except Exception:
+        n = len(text)
+        if n <= _RESTORE_SYNC_LIMIT:
+            try:
+                hits: int | None = len(secrets_mod.scan(text))
+            except Exception:
+                hits = None                         # nao deu para varrer: oculto (fail-safe)
+            if hits == 0:                           # varrido e limpo -> abre normal
+                self.open_path(path)
+                return
+        # FAIL-SAFE: o que NAO foi varrido e esta limpo nunca abre em claro (poderia jogar
+        # credencial na tela ao restaurar).
+        editor = self._new_editor()
+        editor.path = path
+        editor.encoding = encoding
+        editor.apply_lexer_for_path(path)
+        if n <= _RESTORE_SYNC_LIMIT:
+            editor.gate(text, hits or 0)            # com segredo (ou varredura falhou)
+        elif n <= _RESTORE_SCAN_CEILING:
+            self._gate_and_verify(editor, text)     # grande: oculto ATE a varredura acabar
+        else:
+            editor.gate(text, 0)                    # enorme: oculto, nao verificado
+        self._add_tab(editor)
+
+    def _gate_and_verify(self, editor: CodeEditor, text: str) -> None:
+        """Oculta o arquivo grande e o varre FATIADO, com a janela respondendo. Limpo, ele aparece
+        sozinho (como o pequeno limpo); com segredo, segue oculto com a contagem; se a varredura
+        falhar, segue oculto como nao verificado."""
+        editor.gate(text, 0, verifying=True)
+
+        def work():
             hits = 0
-        # FAIL-SAFE: arquivo grande demais p/ varrer NAO abre em claro (poderia jogar
-        # credencial na tela ao restaurar) — oculta por precaucao. So abre normal o
-        # que foi varrido e esta limpo.
-        if too_big or hits > 0:
-            editor = self._new_editor()
-            editor.path = path
-            editor.encoding = encoding
-            editor.apply_lexer_for_path(path)
-            editor.gate(text, hits)                 # hits==0 + too_big -> "nao verificado"
-            self._add_tab(editor)
-        else:                                       # varrido e limpo -> abre normal
-            self.open_path(path)
+            for pos, found in secrets_mod.iter_windows(text, _RESTORE_WINDOW):
+                hits += len(found)
+                yield pos / max(1, len(text))
+            return hits
+
+        job = SlicedJob(work(), editor)              # filho da aba: some se ela fechar
+        editor._gate_job = job
+        job.progress.connect(lambda pct, e=editor: self._on_gate_progress(e, pct))
+        job.finished.connect(lambda hits, e=editor, t=text: self._on_gate_verified(e, t, hits))
+        job.start()
+
+    def _on_gate_progress(self, editor: CodeEditor, pct: int) -> None:
+        editor._gate_progress = pct
+        if editor is self.current_editor():
+            self._update_seal()
+
+    def _on_gate_verified(self, editor: CodeEditor, text: str, hits) -> None:
+        editor._gate_job = None
+        if not editor.is_gated() or editor._gated_text is not text:
+            return                                  # revelado/selado no meio: nada a fazer
+        if hits:
+            editor.gate(text, hits)                 # segue oculto, agora com a contagem
+        elif hits is None:
+            editor.gate(text, 0)                    # a varredura falhou: nao verificado
+        else:
+            self._reveal_editor(editor, known_clean=True)   # verificado e limpo: aparece
+        if editor is self.current_editor():
+            self._update_gate_bar()
+            self._update_status()
 
     def reveal_current(self) -> None:
         """Revela o conteudo de uma aba OCULTA (privacidade, sem senha)."""
         editor = self.current_editor()
         if editor is None or not editor.is_gated():
             return
+        self._reveal_editor(editor)
+
+    def _reveal_editor(self, editor: CodeEditor, *, known_clean: bool = False) -> None:
         editor.reveal()
         editor.apply_lexer_for_path(editor.path or "")
         editor.setModified(False)
         editor.mark_saved()                         # baseline de custodia = conteudo do arquivo
-        editor._rescan_secrets()                    # agora marca/tarja os segredos normalmente
-        self._update_gate_bar()
-        self._update_status()
-        self._update_window_title()
+        editor._scan_timer.stop()                   # a revelacao agendou uma; ja fazemos aqui
+        if known_clean:
+            # acabou de ser varrido por inteiro e esta limpo: nao varre de novo (so a lista de
+            # segredos registrados, que e rapida, entra pelo _apply_scan)
+            editor._apply_scan(editor.text(), [])
+            editor._set_scan_state("done")
+        else:
+            editor._rescan_secrets()                # agora marca/tarja os segredos normalmente
+        if editor is self.current_editor():
+            self._update_gate_bar()
+            self._update_status()
+            self._update_window_title()
 
     def _gate_seal(self) -> None:
         """Botao 'Selar como cofre' da aba OCULTA: pede a senha ANTES de revelar.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
@@ -60,10 +61,12 @@ def main() -> int:
         opened_any = True
     if opened_any:
         window._maybe_close_initial_empty()
-    else:
-        window.restore_session()
 
     window.show()
+    if not opened_any:
+        # Com a janela JA na tela: um arquivo por volta do loop de eventos, e os grandes varridos
+        # fatiados (antes, ate 50 arquivos eram lidos e varridos antes de a janela aparecer).
+        QTimer.singleShot(0, lambda: window.restore_session(incremental=True))
     return app.exec()
 
 
