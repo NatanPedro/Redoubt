@@ -11,6 +11,9 @@ e nao ao espaco livre entre os grupos, e encolhe/vira icone conforme a largura:
   720-960       paleta ate 240 px, impressao digital so com icone;
   < 720         menus num botao so e a paleta vira um botao de icone.
 
+Os menus tambem vao para o botao unico quando, na largura que for, nao cabem por extenso junto
+das acoes (outra fonte, outra escala de tela): os limites acima sao o caso tipico, nao uma garantia.
+
 No Windows, as regioes vazias viram HTCAPTION e o maximizar vira HTMAXBUTTON (winframe.py).
 Fora dele, a janela mantem a moldura nativa (respeita a ordem de botoes de cada desktop) e a
 barra esconde icone e controles de janela.
@@ -424,26 +427,9 @@ class TitleBar(QWidget):
             self._render_redact()
             self._render_seal()
             self._render_identity()
-        tiny = mode == MODE_TINY
         cy = (HEIGHT - ACTION_H) // 2
 
-        x = 10
-        if not self.native_frame:
-            self.sys_icon.move(x, (HEIGHT - 18) // 2)
-            x += 18 + 8
-        self._menubar.setVisible(not tiny)
-        self.hamburger.setVisible(tiny)
-        if tiny:
-            self.hamburger.move(x, cy)
-            x += self.hamburger.width() + 8
-        else:
-            # o QMenuBar desenha os itens no topo: centraliza a faixa dele na barra
-            hint = self._menubar.sizeHint()
-            mw, mh = hint.width(), min(hint.height(), HEIGHT)
-            self._menubar.setGeometry(x, (HEIGHT - mh) // 2, mw, mh)
-            x += mw + 8
-        left_end = x
-
+        # Grupo da direita primeiro: o espaco que ele deixa decide se os menus cabem por extenso.
         right = width
         if not self.native_frame:
             for b in (self.btn_close, self.btn_max, self.btn_min):
@@ -461,6 +447,25 @@ class TitleBar(QWidget):
             b.setGeometry(right, cy, b.width(), ACTION_H)
             right -= GAP
         right_start = right + GAP
+
+        x = 10
+        if not self.native_frame:
+            self.sys_icon.move(x, (HEIGHT - 18) // 2)
+            x += 18 + 8
+        hint = self._menubar.sizeHint()
+        # menus + folga + a paleta em icone (o minimo dela) + folga, antes das acoes
+        tiny = mode == MODE_TINY or x + hint.width() + 8 + ACTION_H + 4 + 8 > right_start
+        self._menubar.setVisible(not tiny)
+        self.hamburger.setVisible(tiny)
+        if tiny:
+            self.hamburger.move(x, cy)
+            x += self.hamburger.width() + 8
+        else:
+            # o QMenuBar desenha os itens no topo: centraliza a faixa dele na barra
+            mw, mh = hint.width(), min(hint.height(), HEIGHT)
+            self._menubar.setGeometry(x, (HEIGHT - mh) // 2, mw, mh)
+            x += mw + 8
+        left_end = x
 
         want = {MODE_FULL: 560, MODE_MID: 440, MODE_SMALL: 240}.get(mode, 0)
         minimum = {MODE_FULL: 320, MODE_MID: 240, MODE_SMALL: 100}.get(mode, 0)

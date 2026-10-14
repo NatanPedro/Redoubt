@@ -309,6 +309,11 @@ class CodeEditor(QsciScintilla):
             self._rescan_secrets()
         else:
             self._scan_timer.start()
+            # Texto grande: o resultado anterior ja nao vale. "Verificando" desde ja (antes, um
+            # arquivo grande recem-aberto passava os 300 ms do debounce como "LIMPO").
+            if (self._scan_state == "done" and not (self.is_vault or self._gated)
+                    and self.length() > _SYNC_SCAN_LIMIT):
+                self._set_scan_state("pending", 0)
 
     def _set_scan_state(self, state: str, progress: int = 0) -> None:
         if (state, progress) != (self._scan_state, self._scan_progress):

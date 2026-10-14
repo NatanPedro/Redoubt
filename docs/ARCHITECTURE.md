@@ -298,7 +298,7 @@ tipo e prévia mascarada `●●●`).
 - **`palette.py`** — busca fuzzy da paleta de comandos (`fuzzy_score`/`rank`).
 - **`difftool.py`** — *unified diff* estilo git via `difflib`.
 - **`config.py`** — wrapper de `QSettings` (auto-lock, fonte, largura de tab,
-  tema, sessão); clampa inteiros e coage tipos (defesa contra registro adulterado);
+  tema, trilho/painel abertos, geometria da janela, sessão); clampa inteiros e coage tipos (defesa contra registro adulterado);
   `save_session`/`load_session` guardam **só caminhos**, nunca conteúdo. `save_session`
   grava junto um HMAC-SHA256 (`session.sign`), e `load_session_checked` devolve o estado da
   assinatura (`session.OK`/`LEGACY`/`EMPTY`/`TAMPERED`). A chave é `session.key`, na pasta de
@@ -389,7 +389,9 @@ os núcleos:
 - **`theme.py`** — paletas `dark` (carbono) e `light`, ambas semânticas (âmbar =
   atenção/marca, verde = selado/limpo, vermelho = exposto), QSS via
   `string.Template`, `apply_app`/`apply_editor_theme`/`retheme_lexer` e
-  `set_theme` (re-tematização ao vivo). Detalhado na
+  `set_theme` (re-tematização ao vivo). A escolha `system` (padrão) resolve para `dark`/`light`
+  pelo `QStyleHints.colorScheme()`; `current_theme()` é a paleta em uso e `theme_choice()` o que
+  foi pedido. A janela reaplica o tema no `colorSchemeChanged` quando a escolha é `system`. Detalhado na
   [seção 4](#4-re-tematização-de-lexer-via-description).
 
 ---

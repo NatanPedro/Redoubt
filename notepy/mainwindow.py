@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import html
 import os
+import re
 
-from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QClipboard, QColor, QKeySequence, QShortcut
+from PyQt6.QtCore import QByteArray, QEvent, Qt, QTimer
+from PyQt6.QtGui import (QAction, QActionGroup, QClipboard, QColor, QGuiApplication, QKeySequence,
+                         QShortcut)
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -69,6 +71,12 @@ def _display_name(name: str, limit: int = 60) -> str:
     return limpo if len(limpo) <= limit else limpo[:limit - 1] + "…"
 
 
+def _has_focus_in(widget: QWidget) -> bool:
+    """O foco do teclado esta em `widget` ou num filho dele?"""
+    fw = QApplication.focusWidget()
+    return fw is not None and (fw is widget or widget.isAncestorOf(fw))
+
+
 class CommandBar(QLineEdit):
     """Barra de comando ':' — Esc devolve o foco ao editor."""
 
@@ -114,8 +122,11 @@ class SearchDialog(QDialog):
 
         row = QHBoxLayout()
         self.q = QLineEdit(); self.q.setPlaceholderText("Texto ou expressao regular…")
+        self.q.setAccessibleName("Texto a buscar")
         self.cb_case = QCheckBox("Aa"); self.cb_case.setToolTip("Diferenciar maiusculas/minusculas")
+        self.cb_case.setAccessibleName("Diferenciar maiúsculas e minúsculas")
         self.cb_regex = QCheckBox(".*"); self.cb_regex.setToolTip("Expressao regular")
+        self.cb_regex.setAccessibleName("Expressão regular")
         btn = QPushButton("Buscar")
         row.addWidget(self.q, 1); row.addWidget(self.cb_case)
         row.addWidget(self.cb_regex); row.addWidget(btn)
@@ -123,13 +134,16 @@ class SearchDialog(QDialog):
 
         row2 = QHBoxLayout()
         self.folder = QLineEdit(start_dir); self.folder.setPlaceholderText("Pasta a varrer…")
+        self.folder.setAccessibleName("Pasta a varrer")
         browse = QPushButton("Pasta…")
-        row2.addWidget(QLabel("Em:")); row2.addWidget(self.folder, 1); row2.addWidget(browse)
+        em = QLabel("&Em:"); em.setBuddy(self.folder)
+        row2.addWidget(em); row2.addWidget(self.folder, 1); row2.addWidget(browse)
         lay.addLayout(row2)
 
         self.tree = QTreeWidget(); self.tree.setHeaderHidden(True)
+        self.tree.setAccessibleName("Resultados da busca")
         lay.addWidget(self.tree, 1)
-        self.status = QLabel(""); lay.addWidget(self.status)
+        self.status = QLabel("Escolha a pasta e o texto, e Enter busca."); lay.addWidget(self.status)
 
         btn.clicked.connect(self.run_search)
         self.q.returnPressed.connect(self.run_search)
@@ -144,11 +158,30 @@ class SearchDialog(QDialog):
     def run_search(self) -> int:
         root, query = self.folder.text().strip(), self.q.text()
         self.tree.clear()
-        if not (root and os.path.isdir(root) and query):
-            self.status.setText("Informe uma pasta valida e um texto.")
+        if not query:
+            self.status.setText("Digite o texto a buscar.")
             return 0
-        hits = searchfiles.search_in_dir(root, query,
-                                         regex=self.cb_regex.isChecked(), case=self.cb_case.isChecked())
+        if not (root and os.path.isdir(root)):
+            self.status.setText("Pasta inexistente: use o botão Pasta… para escolher.")
+            return 0
+        if self.cb_regex.isChecked():
+            try:
+                re.compile(query)
+            except re.error as exc:
+                self.status.setText(f"Expressão regular inválida: {exc}")
+                return 0
+        # A busca roda aqui mesmo (leitura de disco): avisa e mostra o cursor de espera antes.
+        self.status.setText("Buscando…")
+        self.status.repaint()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            hits = searchfiles.search_in_dir(root, query, regex=self.cb_regex.isChecked(),
+                                             case=self.cb_case.isChecked())
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not hits:
+            self.status.setText(f"Nada encontrado em {os.path.basename(root) or root}.")
+            return 0
         by_file: dict[str, list] = {}
         for h in hits:
             by_file.setdefault(h.path, []).append(h)
@@ -166,6 +199,8 @@ class SearchDialog(QDialog):
 
     def _activate(self, item, _col=0) -> None:
         data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not data and item.childCount():          # linha do arquivo: abre na 1a ocorrencia
+            data = item.child(0).data(0, Qt.ItemDataRole.UserRole)
         if data:
             self._on_open(*data)
 
@@ -217,10 +252,12 @@ class CommandPalette(QDialog):
         ic.setPixmap(icons.pixmap("cmd", theme.AMBER, 18, 2.0))
         hl.addWidget(ic)
         self.edit = QLineEdit(); self.edit.setPlaceholderText("Digite um comando…")
+        self.edit.setAccessibleName("Buscar comando")
         hl.addWidget(self.edit, 1)
         esc = QLabel("Esc"); esc.setObjectName("Muted")
         hl.addWidget(esc)
         self.list = QListWidget()
+        self.list.setAccessibleName("Comandos")
         self.list.setItemDelegate(_ShortcutDelegate(self.list))
         lay.addWidget(head)
         body = QWidget()
@@ -256,18 +293,23 @@ class CommandPalette(QDialog):
             item = QListWidgetItem(lbl)
             item.setData(Qt.ItemDataRole.UserRole, fn)
             item.setData(Qt.ItemDataRole.UserRole + 1, sc)
+            if sc:                                  # o atalho e so desenhado pelo delegate
+                item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{lbl}, atalho {sc}")
             self.list.addItem(item)
         if self.list.count():
             self.list.setCurrentRow(0)
+        else:
+            empty = QListWidgetItem(f"Nenhum comando com “{text}”")
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.list.addItem(empty)
 
     def _run_current(self) -> None:
         item = self.list.currentItem()
-        if item is None:
-            return
-        fn = item.data(Qt.ItemDataRole.UserRole)
+        fn = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not callable(fn):
+            return                                  # nada escolhido: a paleta continua aberta
         self.accept()
-        if callable(fn):
-            fn()
+        fn()
 
 
 class DiffDialog(QDialog):
@@ -281,12 +323,19 @@ class DiffDialog(QDialog):
         self.a = QLineEdit(default_a); self.a.setPlaceholderText("Arquivo A (original)…")
         self.b = QLineEdit(); self.b.setPlaceholderText("Arquivo B (modificado)…")
         ba = QPushButton("A…"); bb = QPushButton("B…")
+        self.a.setAccessibleName("Arquivo A (original)")
+        self.b.setAccessibleName("Arquivo B (modificado)")
+        ba.setAccessibleName("Escolher o arquivo A"); bb.setAccessibleName("Escolher o arquivo B")
         btn = QPushButton("Comparar")
-        r1 = QHBoxLayout(); r1.addWidget(QLabel("A:")); r1.addWidget(self.a, 1); r1.addWidget(ba)
-        r2 = QHBoxLayout(); r2.addWidget(QLabel("B:")); r2.addWidget(self.b, 1); r2.addWidget(bb)
+        la = QLabel("&A:"); la.setBuddy(self.a)
+        lb = QLabel("&B:"); lb.setBuddy(self.b)
+        r1 = QHBoxLayout(); r1.addWidget(la); r1.addWidget(self.a, 1); r1.addWidget(ba)
+        r2 = QHBoxLayout(); r2.addWidget(lb); r2.addWidget(self.b, 1); r2.addWidget(bb)
         r2.addWidget(btn)
         lay.addLayout(r1); lay.addLayout(r2)
         self.view = QTextEdit(); self.view.setReadOnly(True)
+        self.view.setAccessibleName("Diferenças")
+        self.view.setPlaceholderText("Escolha os dois arquivos e clique em Comparar.")
         self.view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         lay.addWidget(self.view, 1)
         self.status = QLabel(""); lay.addWidget(self.status)
@@ -300,12 +349,21 @@ class DiffDialog(QDialog):
             field.setText(path)
 
     def compare(self) -> int:
-        ta = difftool.read_file(self.a.text().strip())
-        tb = difftool.read_file(self.b.text().strip())
-        if ta is None or tb is None:
-            self.view.clear()
-            self.status.setText("Nao foi possivel ler um dos arquivos (inexistente ou binario).")
-            return -1
+        texts = []
+        for side, field in (("A", self.a), ("B", self.b)):
+            path = field.text().strip()
+            if not path:
+                self.view.clear()
+                self.status.setText(f"Escolha o arquivo {side}.")
+                return -1
+            t = difftool.read_file(path)
+            if t is None:
+                self.view.clear()
+                self.status.setText(f"Nao foi possivel ler o arquivo {side} (inexistente, binario "
+                                    "ou sem permissao).")
+                return -1
+            texts.append(t)
+        ta, tb = texts
         diff = difftool.unified(ta, tb, os.path.basename(self.a.text()) or "A",
                                 os.path.basename(self.b.text()) or "B")
         colors = {"add": theme.GREEN, "del": theme.RED, "hunk": theme.AMBER,
@@ -336,7 +394,7 @@ class RedactionListDialog(QDialog):
         lay.addWidget(self.listw)
         row = QHBoxLayout()
         b_add = QPushButton("Adicionar…", self)
-        b_rem = QPushButton("Remover", self)
+        self.b_rem = b_rem = QPushButton("Remover", self)
         b_lock = QPushButton("Bloquear", self)
         b_close = QPushButton("Fechar", self)
         for b in (b_add, b_rem, b_lock, b_close):
@@ -346,12 +404,23 @@ class RedactionListDialog(QDialog):
         b_rem.clicked.connect(self._remove)
         b_lock.clicked.connect(self._lock)
         b_close.clicked.connect(self.accept)
+        self.listw.currentRowChanged.connect(self._sync_remove)
         self._refresh()
 
     def _refresh(self) -> None:
         self.listw.clear()
-        for i, s in enumerate(redaction.entries(), 1):
+        ents = redaction.entries()
+        for i, s in enumerate(ents, 1):
             self.listw.addItem(f"Segredo #{i} — {len(s)} caractere(s)")
+        if not ents:
+            empty = QListWidgetItem("A lista está vazia. Use Adicionar… para o primeiro segredo.")
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.listw.addItem(empty)
+        self._sync_remove()
+
+    def _sync_remove(self, *_) -> None:
+        """Remover so vale com um segredo escolhido (antes, sem selecao, nao fazia nada)."""
+        self.b_rem.setEnabled(0 <= self.listw.currentRow() < len(redaction.entries()))
 
     def _persist(self) -> bool:
         try:
@@ -419,6 +488,7 @@ class MainWindow(QMainWindow):
         if winframe.supported(QApplication.instance()):
             self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.resize(1360, 860)
+        self.setMinimumSize(600, 400)
         self.setAcceptDrops(True)
 
         self._untitled_counter = 0
@@ -481,7 +551,11 @@ class MainWindow(QMainWindow):
         self.sentinel.finding_activated.connect(self._goto_offset)
         self.sentinel.redact_all.connect(lambda: self._set_redaction(True))
         self.sentinel.report_requested.connect(self.show_secret_report)
-        self.rail.set_sentinel_open(True)
+        self.sentinel.dismissed.connect(self._focus_editor)
+        # Trilho e painel lembram se estavam abertos (Exibir ▸ ..., Ctrl+B).
+        self.rail.setVisible(config.get("rail_visible"))
+        self.sentinel.setVisible(config.get("sentinel_open"))
+        self.rail.set_sentinel_open(config.get("sentinel_open"))
 
         body = QWidget()
         bl = QHBoxLayout(body)
@@ -528,10 +602,20 @@ class MainWindow(QMainWindow):
         self._mnemonics = MnemonicFilter(self._menubar, self)
         self._mnemonics_on = False
         QShortcut(QKeySequence("F10"), self, activated=self._focus_menubar)
+        # F6: alterna o foco entre o editor e o painel da Sentinela (como entre paineis no Windows).
+        QShortcut(QKeySequence("F6"), self, activated=self._cycle_focus)
+        # Tema "seguir o sistema": o Windows/Linux trocou entre claro e escuro com o app aberto.
+        # (O sinal e do Qt 6.5+; antes disso, "sistema" vale como escuro e nao acompanha.)
+        scheme_changed = getattr(QGuiApplication.styleHints(), "colorSchemeChanged", None)
+        if scheme_changed is not None:
+            scheme_changed.connect(self._on_system_scheme)
 
         self.new_file()
         self._update_identity_chip()
         QTimer.singleShot(0, self._update_chain_label)
+        # Por ULTIMO: restaurar maximizada dispara redimensionamentos, e eles precisam da
+        # interface inteira montada (no comeco do construtor, derrubava o app).
+        self._restore_window_geometry()
 
     def _sanitize_clipboard(self, mode: QClipboard.Mode = QClipboard.Mode.Clipboard) -> None:
         if self._clip_guard:
@@ -732,6 +816,29 @@ class MainWindow(QMainWindow):
 
         self.act_about = make(f"Sobre o {APP_NAME}", SP.SP_MessageBoxInformation, None, self._about)
 
+        # Exibir: painel, trilho e tema (o estado de cada um fica salvo nas preferencias). Sem
+        # icone: nos itens de ligar/desligar, o que importa e a marca de ativo.
+        self.act_toggle_sentinel = QAction("Painel da &Sentinela", self, checkable=True)
+        self.act_toggle_sentinel.setShortcut(QKeySequence("Ctrl+B"))
+        self.act_toggle_sentinel.setChecked(config.get("sentinel_open"))
+        self.act_toggle_sentinel.triggered.connect(self._set_sentinel_open)
+        self.act_toggle_rail = QAction("&Trilho lateral", self, checkable=True)
+        self.act_toggle_rail.setChecked(config.get("rail_visible"))
+        self.act_toggle_rail.triggered.connect(self._set_rail_visible)
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self._theme_actions: dict[str, QAction] = {}
+        for key, label in (("system", "Tema: seguir o sistema"), ("dark", "Tema: escuro (Carbono)"),
+                           ("light", "Tema: claro")):
+            act = QAction(label, self, checkable=True)
+            act.setData(key)
+            act.triggered.connect(lambda _c=False, k=key: self.set_theme_choice(k))
+            self._theme_group.addAction(act)
+            self._theme_actions[key] = act
+        self.act_theme_toggle = QAction("Alternar tema claro/escuro", self)
+        self.act_theme_toggle.triggered.connect(lambda *_: self.toggle_theme())
+        self._sync_theme_actions()
+
     def _create_menus(self) -> None:
         bar = QMenuBar()        # vai DENTRO da barra superior (menus + busca + acoes numa linha so)
 
@@ -767,6 +874,14 @@ class MainWindow(QMainWindow):
         self._create_generate_menu(m_edit)
         m_edit.addSeparator()
         m_edit.addAction(self.act_settings)
+
+        m_view = bar.addMenu("E&xibir")
+        m_view.addAction(self.act_toggle_sentinel)
+        m_view.addAction(self.act_toggle_rail)
+        m_view.addSeparator()
+        for act in self._theme_actions.values():
+            m_view.addAction(act)
+        m_view.addAction(self.act_theme_toggle)
 
         self._create_language_menu(bar)
 
@@ -1104,11 +1219,11 @@ class MainWindow(QMainWindow):
         editor.cursorPositionChanged.connect(lambda *_: self._touch_idle())
         editor.textChanged.connect(self._touch_idle)
         editor.secretsChanged.connect(lambda n, e=editor: self._on_secrets_changed(e, n))
-        editor.scanStateChanged.connect(
-            lambda e=editor: self._update_seal() if e is self.current_editor() else None)
+        editor.scanStateChanged.connect(lambda e=editor: self._on_scan_state(e))
         editor._chrome = EditorChrome(editor)       # faixa de alerta + cartao de cofre travado
         editor._chrome.overlay.unlock_requested.connect(lambda pw, e=editor: self._overlay_unlock(e, pw))
         editor._chrome.overlay.keyfile_requested.connect(lambda e=editor: self._overlay_keyfile(e))
+        editor._chrome.overlay.recipient_requested.connect(lambda e=editor: self._overlay_recipient(e))
         return editor
 
     def _add_tab(self, editor: CodeEditor, make_current: bool = True) -> None:
@@ -1237,6 +1352,11 @@ class MainWindow(QMainWindow):
         else:
             self.gate_bar.hide()
 
+    def _on_scan_state(self, editor: CodeEditor) -> None:
+        if editor is self.current_editor():
+            self._update_seal()
+            self._update_chrome()                   # o painel diz "verificando"/"nao verificado"
+
     def _on_secrets_changed(self, editor: CodeEditor, count: int) -> None:
         editor._last_secret_count = count
         self._refresh_tab(editor)
@@ -1273,10 +1393,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     def _on_rail(self, key: str) -> None:
         if key == "sentinela":
-            on = self.sentinel.isHidden()
-            self.sentinel.setVisible(on)
-            self.rail.set_sentinel_open(on)
-            self.rail.update()
+            self._set_sentinel_open(self.sentinel.isHidden())
         elif key == "busca":
             self.search_in_files()
         elif key == "diff":
@@ -1285,6 +1402,60 @@ class MainWindow(QMainWindow):
             self.verify_custody()
         elif key == "prefs":
             self.open_preferences()
+
+    def _set_sentinel_open(self, on: bool) -> None:
+        """Abre/fecha o painel da Sentinela (trilho, Exibir, Ctrl+B) e lembra a escolha."""
+        on = bool(on)
+        if not on and _has_focus_in(self.sentinel):
+            self._focus_editor()                    # o foco nao some junto com o painel
+        self.sentinel.setVisible(on)
+        self.rail.set_sentinel_open(on)
+        self.rail.update()
+        self.act_toggle_sentinel.setChecked(on)
+        config.set_("sentinel_open", on)
+
+    def _set_rail_visible(self, on: bool) -> None:
+        """Mostra/recolhe o trilho de icones (Exibir ▸ Trilho lateral) e lembra a escolha.
+        Recolhido, o painel e as ferramentas continuam no menu, nos atalhos e na paleta."""
+        on = bool(on)
+        if not on and _has_focus_in(self.rail):
+            self._focus_editor()
+        self.rail.setVisible(on)
+        self.act_toggle_rail.setChecked(on)
+        config.set_("rail_visible", on)
+
+    def _focus_editor(self) -> None:
+        ed = self.current_editor()
+        if ed is not None:
+            ed.setFocus()
+
+    def _cycle_focus(self) -> None:
+        """F6: do editor para o painel da Sentinela (abrindo-o) e de volta."""
+        if _has_focus_in(self.sentinel):
+            self._focus_editor()
+            return
+        if self.sentinel.isHidden():
+            self._set_sentinel_open(True)
+        lst = self.sentinel.list
+        target = lst if lst.isVisibleTo(self.sentinel) else self.sentinel.btn_report
+        target.setFocus(Qt.FocusReason.TabFocusReason)
+        if target is lst and lst.currentRow() < 0 and lst.count():
+            lst.setCurrentRow(0)
+
+    def _sentinel_state(self, ed: CodeEditor) -> tuple[str, str]:
+        """O que o painel pode afirmar sobre a aba (ver SentinelPanel.set_state)."""
+        if ed.is_vault:
+            return ("locked" if ed.is_locked() else "vault"), ""
+        if ed.gate_verifying():
+            return "pending", str(ed.gate_progress())
+        if ed.is_gated():
+            n = ed.gated_count()
+            return ("hidden", str(n)) if n else ("hidden_big", "")
+        if ed.scan_skipped():
+            return "skipped", ""
+        if ed.scan_state() == "pending":
+            return "pending", str(ed.scan_progress())
+        return "done", ""
 
     def _goto_offset(self, byte_pos: int) -> None:
         ed = self.current_editor()
@@ -1301,16 +1472,19 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if ed is None:
             self.sentinel.set_findings([], False)
+            self.sentinel.set_state("done")
             self.rail.set_badge(0)
             self.top_bar.set_vault_state("none")
             return
         self.top_bar.set_vault_state(
             ("locked" if ed.is_locked() else "open") if ed.is_vault else "none")
+        state, detail = self._sentinel_state(ed)
+        self.sentinel.set_state(state, detail)     # barato: o percentual nao refaz a lista
         matches = ed.secret_matches()
         spans = getattr(ed, "_secret_byte_spans", [])
         n = len(matches)
         locked = ed.is_vault and ed.is_locked()
-        key = (id(ed), n, ed.is_redacted(), locked, ed.is_burn,
+        key = (id(ed), n, ed.is_redacted(), locked, ed.is_burn, state,
                tuple(s[0] for s in spans[:500]))
         if key == self._chrome_key:
             return
@@ -1320,7 +1494,7 @@ class MainWindow(QMainWindow):
         for m, (bstart, _blen, _k) in zip(matches[:500], spans[:500], strict=False):
             line, _ = ed.lineIndexFromPosition(bstart)
             findings.append(Finding(m.kind, line + 1, bstart, m.snippet))
-        self.sentinel.set_findings(findings, ed.is_redacted())
+        self.sentinel.set_findings(findings, ed.is_redacted(), total=n)
         chrome = getattr(ed, "_chrome", None)
         if chrome is None:
             return
@@ -1374,18 +1548,24 @@ class MainWindow(QMainWindow):
             reason = "O conteúdo saiu da memória."
             if mins:
                 reason += f" Trava sozinho após {mins} min sem uso."
-            chrome.overlay.set_info(self._name_for(editor), reason, fmt, " · ".join(parts) or "—")
+            chrome.overlay.set_info(self._name_for(editor), reason, fmt, " · ".join(parts) or "—",
+                                    recipient=vault.KIND_X25519 in kinds)
         chrome.show_overlay(locked)
 
     def _overlay_unlock(self, editor: CodeEditor, pw: str) -> None:
+        overlay = editor._chrome.overlay
+        overlay.set_busy(True)                       # o Argon2id leva ~1 s: diz que esta indo
         try:
             ok = editor.unlock(pw)
         except vault.WrongPassword:
-            editor._chrome.overlay.show_error("Senha incorreta.")
+            overlay.set_busy(False)
+            overlay.show_error("Senha incorreta.")
             return
         except vault.VaultError as exc:
-            editor._chrome.overlay.show_error(f"Cofre inválido ou adulterado: {exc}")
+            overlay.set_busy(False)
+            overlay.show_error(f"Cofre inválido ou adulterado: {exc}")
             return
+        overlay.set_busy(False)
         if not ok:
             return
         self._refresh_tab(editor)
@@ -1396,6 +1576,11 @@ class MainWindow(QMainWindow):
     def _overlay_keyfile(self, editor: CodeEditor) -> None:
         self.tabs.setCurrentWidget(editor)
         self.unlock_with_keyfile()
+
+    def _overlay_recipient(self, editor: CodeEditor) -> None:
+        """Cofre selado para a sua chave de destinatario: o cartao so pedia senha (beco sem saida)."""
+        self.tabs.setCurrentWidget(editor)
+        self.unlock_current()
 
     def _update_identity_chip(self) -> None:
         try:
@@ -1409,7 +1594,10 @@ class MainWindow(QMainWindow):
         try:
             ok, _idx = custody.verify_chain()
         except Exception:
-            self.lbl_chain.setText("")
+            # ilegivel (permissao, disco) nao e "integra": diz que nao deu para conferir
+            self.lbl_chain.setText("⚠ trilha ilegível")
+            self.lbl_chain.setToolTip("Não foi possível ler a trilha de auditoria.")
+            self.lbl_chain.setStyleSheet(f"color:{theme.AMBER};")
             return
         color = theme.GREEN if ok else theme.AMBER
         self.lbl_chain.setText("✓ trilha íntegra" if ok else "⚠ trilha quebrada")
@@ -1490,9 +1678,15 @@ class MainWindow(QMainWindow):
         if editor is None:
             return
         matches = editor.secret_matches()
+        title = f"{APP_NAME} — Relatorio de segredos"
+        state, detail = self._sentinel_state(editor)
+        if not matches and state != "done":
+            # So "limpo" depois de uma varredura completa: o resto diz o que ainda falta.
+            _ic, _color, head, text = SentinelPanel.STATES[state]
+            QMessageBox.information(self, title, f"{head.format(d=detail)}\n\n{text.format(d=detail)}")
+            return
         if not matches:
-            QMessageBox.information(self, f"{APP_NAME} — Cadeia de custodia",
-                                    "Nenhum segredo detectado. Documento LIMPO. ●")
+            QMessageBox.information(self, title, "Nenhum segredo detectado. Documento LIMPO. ●")
             return
         # Reusa os byte-offsets ja computados (lineares, ordenados) em vez de re-codificar
         # text[:start] por match (era O(n*m)); e limita as linhas exibidas (lista de redacao
@@ -1510,7 +1704,7 @@ class MainWindow(QMainWindow):
             lines.append(f"  • linha {line + 1}: {m.kind}")
             shown += 1
         lines.append("\nCtrl+Shift+R tarja todos para compartilhar a tela com seguranca.")
-        QMessageBox.warning(self, f"{APP_NAME} — Relatorio de segredos", "\n".join(lines))
+        QMessageBox.warning(self, title, "\n".join(lines))
 
     def _ask_seal_password(self, editor: CodeEditor) -> str | None:
         """Avisa + pede/confirma a senha-mestra. Devolve a senha, ou None se
@@ -1551,6 +1745,11 @@ class MainWindow(QMainWindow):
         editor = self.current_editor()
         if editor is None:
             return False
+        if editor.is_gated():
+            # Aba OCULTA (barra de titulo, Ctrl+Shift+L, :seal): o caminho que pede a senha ANTES de
+            # revelar. Selar direto cifraria o texto de aviso no lugar do conteudo.
+            self._gate_seal()
+            return editor.is_vault
         pw = self._ask_seal_password(editor)
         if pw is None:
             return False
@@ -1755,9 +1954,13 @@ class MainWindow(QMainWindow):
             except (OSError, ValueError):   # ValueError cobre UnicodeDecodeError: .sig binario/nao-UTF8
                 sig_state = "none"          # escapava do slot Qt e ABORTAVA o processo
 
-        ok_chain, idx = custody.verify_chain()
-        st = custody.audit_stats()
         warnings = []
+        try:
+            ok_chain, idx = custody.verify_chain()
+            st = custody.audit_stats()
+        except Exception as exc:                # OSError no slot derrubaria o processo
+            ok_chain, idx, st = False, 0, {"total": 0, "signed": 0}
+            warnings.append(f"⚠ Não foi possível ler a trilha de auditoria: {exc}")
         if custody.identity_has_orphan_pem():
             warnings.append("⚠ Há uma cópia EM CLARO da chave (identity.ed25519) junto da identidade "
                             "protegida — proteger/desproteger interrompido. Assine algo (pede a senha) "
@@ -2533,9 +2736,32 @@ class MainWindow(QMainWindow):
                 self.tabs.widget(i).apply_prefs()
             self.statusBar().showMessage("Preferencias aplicadas.", 3000)
 
+    def set_theme_choice(self, choice: str) -> None:
+        """Escolha manual do tema (menu Exibir, paleta): salva e aplica na hora."""
+        config.set_("theme", choice)
+        self.apply_theme()
+        names = {"system": "seguir o sistema", "dark": "escuro (Carbono)", "light": "claro"}
+        self.statusBar().showMessage(f"Tema: {names.get(choice, choice)}", 3000)
+
+    def toggle_theme(self) -> None:
+        """Alterna claro <-> escuro a partir do que esta NA TELA (com 'sistema' tambem) e salva."""
+        self.set_theme_choice("light" if theme.current_theme() == "dark" else "dark")
+
+    def _on_system_scheme(self, *_) -> None:
+        try:
+            if theme.theme_choice() == "system" and theme.system_scheme() != theme.current_theme():
+                self.apply_theme()
+        except RuntimeError:                    # janela ja destruida (sinal do app sobreviveu)
+            pass
+
+    def _sync_theme_actions(self) -> None:
+        act = self._theme_actions.get(config.get("theme")) or self._theme_actions["system"]
+        act.setChecked(True)
+
     def apply_theme(self) -> None:
         """Aplica o tema das preferencias ao app, a todas as abas e aos lexers (ao vivo)."""
         theme.set_theme(config.get("theme"))
+        self._sync_theme_actions()
         app = QApplication.instance()
         if app is not None:
             theme.apply_app(app)
@@ -2554,6 +2780,9 @@ class MainWindow(QMainWindow):
             chrome = getattr(ed, "_chrome", None)
             if chrome is not None:
                 chrome.overlay.retheme()
+            close = self.tabs.tabBar().tabButton(i, QTabBar.ButtonPosition.RightSide)
+            if isinstance(close, QToolButton):
+                close.setIcon(icons.icon("x", theme.DIM, 12, 2.0))
             self._refresh_tab(ed)
         self._chrome_key = None                 # forca redesenhar faixa/painel nas cores novas
         self._update_identity_chip()
@@ -2627,17 +2856,21 @@ class MainWindow(QMainWindow):
         """Comandos da paleta = (label, atalho, callable). Reúne as QActions de menu
         MAIS comandos que só existem como botão/preferência (tema, revelar oculto)."""
         cmds, seen = [], set()
+        self._refresh_identity_actions()            # o menu so atualiza isto ao abrir
         for a in self.findChildren(QAction):
             lbl = a.text().replace("&", "").strip()
             if not lbl or a is self.act_palette or lbl in seen:
+                continue
+            # Fora: o titulo de cada menu/submenu (executar so fechava a paleta), o que esta
+            # desligado agora (o Qt ignora trigger()) e o que nao esta em menu nenhum (DPAPI no Linux).
+            if a.menu() is not None or not a.isEnabled() or not a.associatedObjects():
                 continue
             seen.add(lbl)
             sc = a.shortcut().toString() if not a.shortcut().isEmpty() else ""
             cmds.append((lbl, sc, a.trigger))
         extras = [
-            ("Tema: claro", "", lambda: self._palette_set_theme("light")),
-            ("Tema: escuro", "", lambda: self._palette_set_theme("dark")),
             ("Revelar conteudo oculto", "", self.reveal_current),
+            ("Ir para o painel da Sentinela", "F6", self._cycle_focus),
         ]
         for lbl, sc, fn in extras:
             if lbl not in seen:
@@ -2645,11 +2878,6 @@ class MainWindow(QMainWindow):
                 cmds.append((lbl, sc, fn))
         cmds.sort(key=lambda c: c[0].lower())
         return cmds
-
-    def _palette_set_theme(self, name: str) -> None:
-        config.set_("theme", name)
-        self.apply_theme()
-        self.statusBar().showMessage(f"Tema aplicado: {name}", 3000)
 
     def command_palette(self) -> None:
         dlg = CommandPalette(self.palette_commands(), self)
@@ -2688,10 +2916,11 @@ class MainWindow(QMainWindow):
             self.seal_current()
         elif ed.is_locked():
             chrome = getattr(ed, "_chrome", None)
-            if chrome is not None and not chrome.overlay.isHidden():
+            if (chrome is not None and not chrome.overlay.isHidden()
+                    and chrome.overlay.btn_recipient.isHidden()):
                 chrome.overlay.password.setFocus()      # o cartao de destravar ja esta ali
             else:
-                self.unlock_current()
+                self.unlock_current()                   # inclui o cofre selado PARA VOCE (X25519)
         else:
             self.lock_current()
         self._update_chrome()
@@ -3183,12 +3412,24 @@ class MainWindow(QMainWindow):
                 ed.deleteLater()
                 return
 
+    def _restore_window_geometry(self) -> None:
+        """Volta tamanho, posicao e estado maximizado da ultima execucao. O restoreGeometry valida
+        o formato e, se a posicao era de um monitor que nao esta mais conectado, traz a janela para
+        uma tela que existe."""
+        raw = config.load_window()
+        if raw:
+            self.restoreGeometry(QByteArray(raw))
+
+    def _save_window_geometry(self) -> None:
+        config.save_window(bytes(self.saveGeometry()))
+
     def closeEvent(self, event) -> None:
         for i in range(self.tabs.count()):
             if not self._maybe_save(self.tabs.widget(i)):
                 event.ignore()
                 return
         self._save_session()                      # so caminhos (antes de apagar burns)
+        self._save_window_geometry()
         for i in range(self.tabs.count()):        # apaga notas de queima ao sair
             ed = self.tabs.widget(i)
             if ed.is_burn:

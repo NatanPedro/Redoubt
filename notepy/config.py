@@ -7,7 +7,7 @@ Cada chave tem um default em DEFAULTS; os getters fazem a coercao de tipo.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QByteArray, QSettings
 from PyQt6.QtGui import QFont, QFontDatabase
 
 _ORG, _APP = "Redoubt", "Redoubt"
@@ -18,7 +18,9 @@ DEFAULTS = {
     "font_size": 11,
     "tab_width": 4,
     "restore_session": True,  # reabrir os arquivos que estavam abertos ao iniciar
-    "theme": "dark",          # 'dark' (carbono) | 'light' (claro)
+    "theme": "system",        # 'system' (segue o sistema) | 'dark' (carbono) | 'light' (claro)
+    "rail_visible": True,     # trilho lateral (icones) a esquerda
+    "sentinel_open": True,    # painel da Sentinela aberto
 }
 
 # Preferencia de fontes monoespacadas (a 1a instalada vence). Windows primeiro; depois as que as
@@ -100,6 +102,20 @@ def editor_font() -> QFont:
 # Cofres guardam so o caminho (o .rdbt no disco ja e cifrado; a senha nunca e
 # persistida — zero-knowledge).
 # --------------------------------------------------------------------------- #
+def save_window(geometry: bytes) -> None:
+    """Tamanho, posicao e estado maximizado da janela (o `saveGeometry` do Qt inclui os tres)."""
+    _s().setValue("window/geometry", QByteArray(geometry))
+
+
+def load_window() -> bytes | None:
+    """O que save_window gravou, ou None. Tipo trocado ou tamanho absurdo (registro adulterado)
+    viram None; o formato em si o `restoreGeometry` do Qt valida."""
+    raw = _s().value("window/geometry")
+    if isinstance(raw, (QByteArray, bytes, bytearray)) and 0 < len(raw) <= 4096:
+        return bytes(raw)
+    return None
+
+
 def save_session(paths: list[str], active: int = 0) -> None:
     """Grava a lista com um HMAC (ver session.py): quem so escreve nas configuracoes nao
     consegue mais escolher o que o Redoubt reabre sozinho."""

@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -83,6 +84,7 @@ class RailButton(QToolButton):
         super().__init__(parent)
         self.key = key
         self.icon_name = icon_name
+        self.tip = tip
         self.badge = 0
         self.setObjectName("RailButton")
         self.setToolTip(tip)
@@ -121,9 +123,9 @@ class Rail(QWidget):
     e Preferencias embaixo. Emite `triggered(chave)`."""
 
     triggered = pyqtSignal(str)
-    ITEMS = (("sentinela", "shield", "Sentinela (painel de segredos)"),
+    ITEMS = (("sentinela", "shield", "Sentinela: painel de segredos (Ctrl+B)"),
              ("busca", "search", "Buscar em arquivos (Ctrl+Shift+F)"),
-             ("diff", "diff", "Comparar arquivos (diff)"),
+             ("diff", "diff", "Comparar arquivos (Ctrl+Shift+D)"),
              ("custodia", "finger", "Custódia (Ctrl+Shift+H)"))
 
     def __init__(self, parent: QWidget | None = None):
@@ -154,6 +156,8 @@ class Rail(QWidget):
         if b.badge != n:
             b.badge = n
             b.update()
+            # o numero e so desenhado: o leitor de tela o recebe pelo nome acessivel
+            b.setAccessibleName(f"{b.tip} — {n} achado(s)" if n else b.tip)
 
     def set_sentinel_open(self, on: bool) -> None:
         b = self.buttons["sentinela"]
@@ -226,11 +230,33 @@ class FindingRow(QWidget):
 
 class SentinelPanel(QWidget):
     """Lista ao vivo dos segredos do arquivo atual, sempre mascarados (a tela e o que se
-    compartilha). Clique leva ao segredo; os filtros separam credenciais de PII."""
+    compartilha). Clique leva ao segredo; os filtros separam credenciais de PII.
+
+    O painel so diz "nenhum segredo" quando a varredura TERMINOU: verificando, nao verificado,
+    conteudo oculto e cofre tem cada um a sua mensagem (ver `set_state`)."""
 
     finding_activated = pyqtSignal(int)      # offset em caracteres
     redact_all = pyqtSignal()
     report_requested = pyqtSignal()
+    dismissed = pyqtSignal()                 # Esc dentro do painel: o foco volta ao editor
+
+    # estado -> (icone, cor do tema, titulo, texto). {d} = detalhe (percentual, contagem).
+    STATES: ClassVar[dict[str, tuple[str, str, str, str]]] = {
+        "pending": ("clock", "AMBER", "Verificando… {d}%",
+                    "Arquivo grande: a varredura roda em partes, sem travar a janela."),
+        "skipped": ("alert", "AMBER", "Não verificado",
+                    "Grande demais para varrer ao vivo, ou a varredura falhou. Não o trate como "
+                    "limpo."),
+        "hidden": ("eyeoff", "AMBER", "Conteúdo oculto",
+                   "{d} credencial(is) detectada(s). Revele para ver onde estão, ou sele como "
+                   "cofre."),
+        "hidden_big": ("eyeoff", "AMBER", "Conteúdo oculto",
+                       "Grande demais para verificar: fica oculto por precaução."),
+        "vault": ("lock", "GREEN", "Cofre",
+                  "Cofres não são varridos: no disco, o conteúdo é cifrado."),
+        "locked": ("lock", "AMBER", "Cofre travado",
+                   "O conteúdo saiu da memória. Destrave para ver e editar."),
+    }
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -238,8 +264,11 @@ class SentinelPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedWidth(320)
         self._findings: list[Finding] = []
+        self._total = 0
         self._redacted = False
         self._filter = "todos"
+        self._state = "done"
+        self._detail = ""
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -277,8 +306,15 @@ class SentinelPanel(QWidget):
         hl.addLayout(chips)
         outer.addWidget(head)
 
+        # Linha de aviso sobre a lista: varredura em andamento (lista da anterior) ou teto atingido.
+        self.note = _label("", "Muted", wrap=True)
+        self.note.setContentsMargins(14, 8, 14, 0)
+        self.note.hide()
+        outer.addWidget(self.note)
+
         self.list = QListWidget()
         self.list.setObjectName("Findings")
+        self.list.setAccessibleName("Achados da Sentinela")
         self.list.setSpacing(1)
         self.list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.list.itemClicked.connect(self._activate)
@@ -295,14 +331,15 @@ class SentinelPanel(QWidget):
         el.setSpacing(10)
         self._empty_icon = _icon_label("shieldcheck", theme.GREEN, 28)
         el.addWidget(self._empty_icon, 0, Qt.AlignmentFlag.AlignHCenter)
-        et = _label("Nenhum segredo neste arquivo")
-        et.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        el.addWidget(et)
-        es = _label("A Sentinela varre enquanto você digita.", "Muted", wrap=True)
-        es.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        el.addWidget(es)
+        self._empty_title = _label("Nenhum segredo neste arquivo")
+        self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        el.addWidget(self._empty_title)
+        self._empty_text = _label("A Sentinela varre enquanto você digita.", "Muted", wrap=True)
+        self._empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        el.addWidget(self._empty_text)
         el.addStretch(1)
         outer.addWidget(self.empty, 1)
+        self._empty_key: tuple = ()
 
         foot = QWidget()
         foot.setObjectName("PanelFooter")
@@ -317,12 +354,29 @@ class SentinelPanel(QWidget):
         fl.addWidget(self.btn_redact, 1)
         fl.addWidget(self.btn_report)
         outer.addWidget(foot)
+        esc = QShortcut(QKeySequence("Escape"), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self.dismissed.emit)
         self._render()
 
-    def set_findings(self, findings: list[Finding], redacted: bool) -> None:
+    def set_findings(self, findings: list[Finding], redacted: bool, total: int | None = None) -> None:
+        """`findings` pode vir cortada (teto de exibicao); `total` e quantos ha de verdade."""
         self._findings = list(findings)
+        self._total = len(self._findings) if total is None else max(total, len(self._findings))
         self._redacted = redacted
         self._render()
+
+    def set_state(self, state: str, detail: str = "") -> None:
+        """O que o painel pode afirmar sobre a aba: 'done' (varredura completa), 'pending',
+        'skipped', 'hidden', 'hidden_big', 'vault' ou 'locked'. Barato: nao refaz a lista."""
+        if state not in self.STATES:
+            state = "done"
+        if (state, detail) != (self._state, self._detail):
+            self._state, self._detail = state, detail
+            self._sync_view()
+
+    def state(self) -> str:
+        return self._state
 
     def _set_filter(self, key: str) -> None:
         self._filter = key
@@ -348,15 +402,49 @@ class SentinelPanel(QWidget):
         for f in shown[:500]:                   # teto: lista de redacao com literal comum
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, f.offset)
+            # a linha e um widget desenhado: o leitor de tela le este texto (nunca o segredo)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                         f"{sentinel_view.display(f.kind)}, linha {f.line}")
             row = FindingRow(f, self._redacted)
             item.setSizeHint(QSize(0, row.sizeHint().height() + 12))   # borda+margem do item
             self.list.addItem(item)
             self.list.setItemWidget(item, row)
         has = bool(self._findings)
-        self.list.parentWidget().setVisible(has)
-        self.empty.setVisible(not has)
         self.btn_redact.setEnabled(has and not self._redacted)
         self.btn_redact.setText("Tarjados" if self._redacted else "Tarjar todos")
+        self._sync_view()
+
+    def _sync_view(self) -> None:
+        """Lista ou mensagem, conforme o estado da varredura e o filtro."""
+        st, d = self._state, self._detail
+        listing = st in ("done", "pending") and self.list.count() > 0
+        self.list.parentWidget().setVisible(listing)
+        self.empty.setVisible(not listing)
+        notes = []
+        if listing and st == "pending":
+            notes.append(f"Verificando… {d}% · a lista é da varredura anterior.")
+        if listing and self._total > len(self._findings):
+            notes.append(f"Mostrando {len(self._findings)} de {self._total}. F8 percorre todos.")
+        self.note.setText("  ".join(notes))
+        self.note.setVisible(bool(notes))
+        if listing:
+            return
+        if st in self.STATES:
+            ic, color, title, text = self.STATES[st]
+            title, text = title.format(d=d), text.format(d=d)
+        elif self._findings:                   # ha achados, mas nenhum deste filtro
+            ic, color = "shield", "DIM"
+            title = "Nenhuma credencial" if self._filter == "credencial" else "Nenhum dado pessoal (PII)"
+            text = "Os outros achados estão em Todos."
+        else:
+            ic, color = "shieldcheck", "GREEN"
+            title, text = "Nenhum segredo neste arquivo", "A Sentinela varre enquanto você digita."
+        key = (ic, getattr(theme, color), title, text)
+        if key != self._empty_key:
+            self._empty_key = key
+            self._empty_icon.setPixmap(icons.pixmap(ic, key[1], 28, 2.0))
+            self._empty_title.setText(title)
+            self._empty_text.setText(text)
 
     def _activate(self, item: QListWidgetItem) -> None:
         off = item.data(Qt.ItemDataRole.UserRole)
@@ -365,7 +453,7 @@ class SentinelPanel(QWidget):
 
     def retheme(self) -> None:
         self._shield.setPixmap(icons.pixmap("shield", theme.AMBER, 16, 2.0))
-        self._empty_icon.setPixmap(icons.pixmap("shieldcheck", theme.GREEN, 28, 2.0))
+        self._empty_key = ()                   # redesenha o icone da mensagem nas cores novas
         self.btn_redact.setIcon(icons.icon("eyeoff", theme.AMBER_INK, 16, 1.9))
         self._render()
 
@@ -426,6 +514,7 @@ class Banner(QWidget):
 class LockedOverlay(QWidget):
     unlock_requested = pyqtSignal(str)
     keyfile_requested = pyqtSignal()
+    recipient_requested = pyqtSignal()       # cofre selado PARA VOCE: destrava com a sua chave
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -469,11 +558,14 @@ class LockedOverlay(QWidget):
             self._chip_values.append(val)
             chips.addWidget(c, 1)
         cl.addLayout(chips)
-        cl.addWidget(_label("Senha do cofre"))
+        pw_label = _label("Senha do cofre")
+        cl.addWidget(pw_label)
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.setPlaceholderText("Digite a senha")
+        self.password.setAccessibleName("Senha do cofre")
         self.password.returnPressed.connect(self._submit)
+        pw_label.setBuddy(self.password)
         cl.addWidget(self.password)
         self.error = _label("", wrap=True)
         self.error.setStyleSheet(f"color:{theme.RED};")
@@ -482,10 +574,15 @@ class LockedOverlay(QWidget):
         row = QHBoxLayout()
         self.btn_keyfile = _button("Usar arquivo-chave", "Link", "key", theme.CYAN)
         self.btn_keyfile.clicked.connect(self.keyfile_requested.emit)
+        self.btn_recipient = _button("Usar minha chave", "Link", "user", theme.CYAN)
+        self.btn_recipient.setToolTip("Este cofre foi selado para a sua chave de destinatário (X25519)")
+        self.btn_recipient.clicked.connect(self.recipient_requested.emit)
+        self.btn_recipient.hide()
         self.btn_unlock = _button("Destravar", "Primary")
         self.btn_unlock.setMinimumHeight(36)
         self.btn_unlock.clicked.connect(self._submit)
         row.addWidget(self.btn_keyfile)
+        row.addWidget(self.btn_recipient)
         row.addStretch(1)
         row.addWidget(self.btn_unlock)
         cl.addLayout(row)
@@ -499,11 +596,13 @@ class LockedOverlay(QWidget):
         outer.addStretch(1)
         self.retheme()
 
-    def set_info(self, name: str, reason: str, formato: str, destravadores: str) -> None:
+    def set_info(self, name: str, reason: str, formato: str, destravadores: str,
+                 recipient: bool = False) -> None:
         self.title.setText(f"{name} está travado")
         self.subtitle.setText(reason)
         for lbl, val in zip(self._chip_values, (formato, "AES-256-GCM", destravadores), strict=True):
             lbl.setText(val)
+        self.btn_recipient.setVisible(recipient)
 
     def reset(self) -> None:
         self.password.clear()
@@ -515,10 +614,23 @@ class LockedOverlay(QWidget):
         self.password.selectAll()
         self.password.setFocus()
 
+    def set_busy(self, on: bool) -> None:
+        """Enquanto o Argon2id deriva a chave (~1 s): botao inerte e o motivo na tela."""
+        self.btn_unlock.setEnabled(not on)
+        self.btn_unlock.setText("Destravando…" if on else "Destravar")
+        self.password.setEnabled(not on)
+        if on:
+            self.setCursor(Qt.CursorShape.WaitCursor)
+            self.btn_unlock.repaint()          # o trabalho e sincrono: pinta antes de comecar
+        else:
+            self.unsetCursor()
+
     def _submit(self) -> None:
         pw = self.password.text()
         if pw:
             self.unlock_requested.emit(pw)
+        else:
+            self.show_error("Digite a senha do cofre.")
 
     def paintEvent(self, ev) -> None:
         p = QPainter(self)
@@ -536,6 +648,7 @@ class LockedOverlay(QWidget):
         self.badge.setPixmap(icons.pixmap("lock", theme.AMBER, 24, 2.0))
         self.badge.setStyleSheet(f"background:{theme.AMBER_BG}; border-radius:12px;")
         self.btn_keyfile.setIcon(icons.icon("key", theme.CYAN, 16, 1.9))
+        self.btn_recipient.setIcon(icons.icon("user", theme.CYAN, 16, 1.9))
         self.error.setStyleSheet(f"color:{theme.RED};")
 
 
@@ -779,17 +892,23 @@ class SealDialog(QDialog):
         bl.setContentsMargins(24, 20, 24, 20)
         bl.setSpacing(12)
         bl.addWidget(section_title("Senha principal"))
-        bl.addWidget(_label("Senha"))
+        l1 = _label("Senha")
+        bl.addWidget(l1)
         self.pw1 = QLineEdit()
         self.pw1.setEchoMode(QLineEdit.EchoMode.Password)
         self.pw1.setPlaceholderText("Senha forte ou frase longa")
+        self.pw1.setAccessibleName("Senha")
+        l1.setBuddy(self.pw1)
         bl.addWidget(self.pw1)
         self.meter = StrengthMeter()
         bl.addWidget(self.meter)
-        bl.addWidget(_label("Confirmar senha"))
+        l2 = _label("Confirmar senha")
+        bl.addWidget(l2)
         self.pw2 = QLineEdit()
         self.pw2.setEchoMode(QLineEdit.EchoMode.Password)
         self.pw2.setPlaceholderText("Repita a senha")
+        self.pw2.setAccessibleName("Confirmar senha")
+        l2.setBuddy(self.pw2)
         bl.addWidget(self.pw2)
         self.mismatch = _label("As senhas não conferem.")
         self.mismatch.setStyleSheet(f"color:{theme.RED};")

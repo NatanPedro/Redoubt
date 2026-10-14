@@ -7,10 +7,10 @@ Concentra a paleta, a folha de estilo (QSS) do chrome e as funcoes que pintam
 o editor e os lexers do QScintilla — para o app NAO herdar as cores default do
 Scintilla (que sao a cara do Notepad++).
 
-Dois temas: 'dark' (carbono, padrao) e 'light' (claro), com a MESMA semantica de
-cor. `set_theme(nome)` troca a paleta ativa em tempo de execucao reescrevendo as
-constantes de modulo (BG, AMBER, ...) — por isso o resto do app deve ler
-`theme.AMBER` (acesso por atributo), nunca `from theme import AMBER`.
+Dois temas: 'dark' (carbono) e 'light' (claro), com a MESMA semantica de cor, e a escolha
+'system' (padrao), que segue o modo claro/escuro do sistema. `set_theme(nome)` troca a paleta
+ativa em tempo de execucao reescrevendo as constantes de modulo (BG, AMBER, ...) — por isso o
+resto do app deve ler `theme.AMBER` (acesso por atributo), nunca `from theme import AMBER`.
 
 As pecas da interface (barra superior, trilho lateral, painel da Sentinela, faixas de
 alerta, cartoes) sao estilizadas por `objectName` no QSS abaixo: o codigo das telas so diz
@@ -60,6 +60,8 @@ TEXT = TEXT2 = DIM = AMBER = AMBER_INK = AMBER_BG = GREEN = GREEN_BG = ""
 RED = RED_INK = RED_BG = CYAN = VIOLET = TERRACOTA = ""
 KEYWORD = STRING = NUMBER = CARET_LN = SELECTION = ""
 _ACTIVE = "dark"
+_CHOICE = "dark"               # o que foi pedido: 'system' | 'dark' | 'light'
+CHOICES = ("system", "dark", "light")
 HIGH_CONTRAST = False          # Windows em alto contraste: as cores viram as do SISTEMA
 
 # Fonte da INTERFACE (o editor usa a monoespacada das preferencias, a parte).
@@ -138,12 +140,19 @@ QPushButton#Chip { border-radius: 13px; padding: 3px 11px; color: $TEXT2; }
 QPushButton#Chip:checked { background: $AMBER_BG; border-color: $AMBER; color: $AMBER; }
 QPushButton#Ghost { border: none; color: $TEXT2; padding: 4px 8px; }
 QPushButton#Ghost:hover { color: $TEXT; background: $RAISED; }
+/* Foco do teclado SEMPRE visivel (navegar com Tab nao pode ser as cegas). */
+QPushButton:focus { border-color: $AMBER; }
+QPushButton#Primary:focus, QPushButton#Danger:focus { border-color: $TEXT; }
+QPushButton#Link:focus { text-decoration: underline; }
+QPushButton#Ghost:focus { background: $RAISED; color: $TEXT; }
+QCheckBox:focus { color: $AMBER; }
 
 /* ---------- trilho lateral ---------- */
 #Rail { background: $APP; border-right: 1px solid $BORDER; }
 QToolButton#RailButton { background: transparent; border: none; border-radius: 8px; padding: 10px; }
 QToolButton#RailButton:hover { background: $RAISED; }
 QToolButton#RailButton:checked { background: $RAISED; }
+QToolButton#RailButton:focus { border: 1px solid $AMBER; }
 
 /* ---------- painel da Sentinela ---------- */
 #SidePanel { background: $PANEL; border-right: 1px solid $BORDER; }
@@ -154,6 +163,7 @@ QListWidget#Findings { background: transparent; border: none; outline: none; }
 QListWidget#Findings::item { border: 1px solid transparent; border-radius: 8px; margin: 1px 0; }
 QListWidget#Findings::item:selected { background: $RAISED; border-color: $BORDER2; }
 QListWidget#Findings::item:hover:!selected { background: $SURFACE; }
+QListWidget#Findings::item:focus { border-color: $AMBER; }
 #FindingRow, #FindingRow QLabel { background: transparent; }
 
 /* ---------- abas ---------- */
@@ -167,6 +177,7 @@ QTabBar::tab:selected { background: $BG; color: $TEXT; border-top: 2px solid $AM
 QTabBar::tab:hover:!selected { color: $TEXT2; background: $PANEL; }
 QToolButton#TabClose { background: transparent; border: none; border-radius: 4px; padding: 2px; }
 QToolButton#TabClose:hover { background: $RAISED; }
+QToolButton#TabClose:focus { border: 1px solid $AMBER; }
 
 /* ---------- faixa de alerta (dentro do editor) ---------- */
 #Banner { border-bottom: 1px solid $BORDER; }
@@ -284,13 +295,38 @@ def _apply_palette(name: str) -> None:
     g["QSS"] = _QSS_TEMPLATE.substitute(MONO=_MONO_CSS, **pal)
 
 
+def system_scheme() -> str:
+    """'dark' ou 'light' conforme o modo do sistema (Windows: Configuracoes ▸ Cores; Linux: o
+    portal/ambiente grafico). Sem como saber (sem app Qt, plataforma que nao informa): 'dark'."""
+    try:
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QGuiApplication
+
+        if QGuiApplication.instance() is None:
+            return "dark"
+        scheme = QGuiApplication.styleHints().colorScheme()
+    except Exception:
+        return "dark"
+    return "light" if scheme == Qt.ColorScheme.Light else "dark"
+
+
 def set_theme(name: str) -> None:
-    """Troca o tema ativo ('dark' | 'light'). Use antes de apply_app/apply_editor_theme."""
-    _apply_palette(name)        # _apply_palette ja sanitiza tipo/valor invalido
+    """Troca o tema ativo: 'system' (segue o sistema), 'dark' ou 'light'. Use antes de
+    apply_app/apply_editor_theme. Valor invalido vira 'dark'."""
+    global _CHOICE
+    choice = name if (isinstance(name, str) and name in CHOICES) else "dark"
+    _CHOICE = choice
+    _apply_palette(system_scheme() if choice == "system" else choice)
 
 
 def current_theme() -> str:
+    """A paleta EM USO ('dark' | 'light'), ja resolvida quando a escolha e 'system'."""
     return _ACTIVE
+
+
+def theme_choice() -> str:
+    """O que foi escolhido: 'system' | 'dark' | 'light'."""
+    return _CHOICE
 
 
 _apply_palette("dark")     # inicializa as constantes no import
