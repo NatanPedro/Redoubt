@@ -86,6 +86,9 @@ def win(qapp, monkeypatch):
     monkeypatch.setattr(widgets.CustodyDialog, "exec", lambda self: 0)
 
     theme.apply_app(qapp)
+    # Cada janela de teste nasce no tamanho padrao: o close() da anterior grava a geometria (e o
+    # offscreen ainda a encolhe para a tela virtual de 800x600), o que vazaria de um teste a outro.
+    _config._s().remove("window/geometry")
     w = MainWindow()
     w._inbox = inbox
     yield w

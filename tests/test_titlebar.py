@@ -84,7 +84,8 @@ def test_altura_de_40px(win):
 
 
 def test_largura_cheia(win):
-    tb = _at(win, 1440)
+    # 1600, nao 1440: as fontes do offscreen sao bem mais largas que as do Windows (la, 1440 sobra)
+    tb = _at(win, 1600)
     tb.set_identity("6b38433243e8f7e7", True)
     tb._relayout()
     assert tb.redact.text() == "Tarjar" and tb.seal.text() == "Selar cofre"
@@ -122,6 +123,17 @@ def test_largura_pequena_paleta_240_e_digital_so_icone(win):
     tb.set_identity("6b38433243e8f7e7", True)
     tb._relayout()
     assert tb.search.width() <= 240 and tb.identity.text() == ""
+
+
+def test_menus_vao_para_o_botao_quando_nao_cabem(win):
+    """Pela largura (faixa pequena) os menus iriam por extenso, mas nao cabem junto das acoes:
+    botao unico, sem nada sobreposto (antes, perto do limite, os menus encostavam nos botoes)."""
+    tb = _at(win, 760)
+    assert titlebar.mode_for(760) == titlebar.MODE_SMALL
+    assert tb._menubar.isHidden() and not tb.hamburger.isHidden()
+    assert tb.search.x() > tb.hamburger.geometry().right()
+    assert tb.search.geometry().right() < tb.redact.x()
+    assert not tb.search.compact                              # o espaco dos menus vai para a paleta
 
 
 def test_largura_minima_menus_no_hamburguer(win):

@@ -96,7 +96,7 @@ def test_session_vazia(temp_settings):
 
 
 def test_theme_default_e_roundtrip(temp_settings):
-    assert config.get("theme") == "dark"
+    assert config.get("theme") == "system"            # segue o sistema por padrao
     config.set_("theme", "light")
     assert config.get("theme") == "light"
 

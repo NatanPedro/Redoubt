@@ -7,6 +7,8 @@ e palavra inteira.
 
 from __future__ import annotations
 
+import re
+
 from PyQt6.Qsci import QsciScintilla
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -29,6 +31,17 @@ _REPLACE_CAP = 500_000
 _REPLACE_SYNC_LIMIT = 256_000
 _FIND_STEP = 2_000             # ocorrencias achadas entre um ponto de progresso e o proximo
 _REPLACE_BUDGET_MS = 30        # trabalho por volta do loop de eventos antes de devolver a janela
+
+
+def _valid_regex(expr: str) -> bool:
+    """Aproximacao: o Scintilla usa a propria sintaxe, mas o que nem o `re` aceita (parenteses
+    soltos, quantificador sem alvo) quase sempre e erro de digitacao. So e consultado quando a
+    busca NAO achou nada — nunca impede uma busca."""
+    try:
+        re.compile(expr)
+    except re.error:
+        return False
+    return True
 
 
 class FindBar(QWidget):
@@ -67,6 +80,15 @@ class FindBar(QWidget):
         self.btn_cancel.setToolTip("Para o Substituir tudo (o que ja foi feito sai com um Ctrl+Z)")
         self.btn_cancel.hide()
         btn_close = QToolButton(); btn_close.setText("✕"); btn_close.setToolTip("Fechar (Esc)")
+
+        # Simbolos e placeholders nao sao nomes: o leitor de tela precisa do que cada um faz.
+        for w, name in ((self.find_edit, "Localizar"), (self.replace_edit, "Substituir por"),
+                        (btn_prev, "Ocorrência anterior"), (btn_next, "Próxima ocorrência"),
+                        (self.btn_repall, "Substituir todas"),
+                        (self.cb_case, "Diferenciar maiúsculas e minúsculas"),
+                        (self.cb_word, "Palavra inteira"), (self.cb_regex, "Expressão regular"),
+                        (btn_close, "Fechar a barra de localizar")):
+            w.setAccessibleName(name)
 
         for w in (self.find_edit, btn_prev, btn_next, self.replace_edit, self.btn_rep,
                   self.btn_repall, self.cb_case, self.cb_word, self.cb_regex, self.status,
@@ -141,11 +163,22 @@ class FindBar(QWidget):
             self._active = bool(found)
             self._expr = expr
             self._forward = forward
-        self.status.setText("" if found else "sem ocorrencias")
+        if found:
+            self.status.setText("")
+        elif re_ and not _valid_regex(expr):
+            self.status.setText("expressão regular inválida")
+        else:
+            self.status.setText("sem ocorrencias")
+
+    def _read_only(self, ed) -> bool:
+        if ed.isReadOnly():
+            self.status.setText("aba somente leitura (oculta ou travada)")
+            return True
+        return False
 
     def replace_one(self) -> None:
         ed = self._get_editor()
-        if ed is None or ed.isReadOnly():
+        if ed is None or self._read_only(ed):
             return
         if self._active and ed.hasSelectedText():
             ed.replace(self.replace_edit.text())
@@ -158,7 +191,7 @@ class FindBar(QWidget):
         no fim (antes, com a Redacao ligada, varria o documento inteiro a CADA substituicao)."""
         ed = self._get_editor()
         expr = self.find_edit.text()
-        if ed is None or ed.isReadOnly() or not expr or self._replace_job is not None:
+        if ed is None or not expr or self._replace_job is not None or self._read_only(ed):
             return 0
         re_, cs, wo = self._opts()
         job = SlicedJob(self._replace_steps(ed, expr, re_, cs, wo, self.replace_edit.text()), self,

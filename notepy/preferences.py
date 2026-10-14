@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QRectF, QSize, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -23,7 +23,8 @@ from .widgets import dialog_footer, dialog_header, section_title
 
 
 class ThemeCard(QPushButton):
-    """Cartao de tema com uma miniatura desenhada nas cores DAQUELE tema."""
+    """Cartao de tema com uma miniatura desenhada nas cores DAQUELE tema ('system': metade de
+    cada, porque o resultado depende do sistema)."""
 
     def __init__(self, key: str, title: str, subtitle: str, parent: QWidget | None = None):
         super().__init__(parent)
@@ -33,17 +34,11 @@ class ThemeCard(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAccessibleName(f"Tema {title}")
-        self.setMinimumSize(QSize(260, 150))
+        self.setAccessibleDescription(subtitle)
+        self.setMinimumSize(QSize(200, 150))
 
-    def paintEvent(self, ev) -> None:
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pal = theme._PALETTES[self.key]
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        p.setPen(QColor(theme.AMBER if self.isChecked() else theme.BORDER2))
-        p.setBrush(QColor(theme.BG))
-        p.drawRoundedRect(r, 10, 10)
-        prev = QRectF(r.left() + 10, r.top() + 10, r.width() - 20, 88)
+    @staticmethod
+    def _preview(p: QPainter, prev: QRectF, pal: dict) -> None:
         p.setPen(QColor(pal["BORDER"]))
         p.setBrush(QColor(pal["BG"]))
         p.drawRoundedRect(prev, 6, 6)
@@ -57,6 +52,29 @@ class ThemeCard(QPushButton):
             c.setAlphaF(alpha)
             p.setBrush(c)
             p.drawRoundedRect(QRectF(x0, prev.top() + 14 + i * 17, (prev.width() - 50) * w, 6), 3, 3)
+
+    def paintEvent(self, ev) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(3, 3, -3, -3)
+        p.setPen(QColor(theme.AMBER if self.isChecked() else theme.BORDER2))
+        p.setBrush(QColor(theme.BG))
+        p.drawRoundedRect(r, 10, 10)
+        if self.hasFocus():                    # foco pelo teclado: anel tracejado por fora
+            pen = QPen(QColor(theme.AMBER), 1.5, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 12, 12)
+        prev = QRectF(r.left() + 10, r.top() + 10, r.width() - 20, 88)
+        if self.key == "system":               # metade escura, metade clara
+            half = prev.width() / 2
+            for i, name in enumerate(("dark", "light")):
+                p.save()
+                p.setClipRect(QRectF(prev.left() + i * half, prev.top() - 1, half, prev.height() + 2))
+                self._preview(p, prev, theme._PALETTES[name])
+                p.restore()
+        else:
+            self._preview(p, prev, theme._PALETTES[self.key])
         p.setPen(QColor(theme.TEXT))
         f = QFont(self.font())
         f.setWeight(QFont.Weight.DemiBold)
@@ -105,10 +123,11 @@ class PreferencesDialog(QDialog):
 
         # O combo continua sendo a fonte do valor salvo; os cartoes so o escolhem.
         self.cb_theme = QComboBox()
+        self.cb_theme.addItem("Seguir o sistema", "system")
         self.cb_theme.addItem("Escuro (carbono)", "dark")
         self.cb_theme.addItem("Claro", "light")
         idx = self.cb_theme.findData(config.get("theme"))
-        self.cb_theme.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cb_theme.setCurrentIndex(idx if idx >= 0 else self.cb_theme.findData("dark"))
         self.cb_theme.hide()
 
         outer = QVBoxLayout(self)
@@ -125,7 +144,8 @@ class PreferencesDialog(QDialog):
         cards.setSpacing(12)
         self._cards = QButtonGroup(self)
         self._cards.setExclusive(True)
-        for key, title, sub in (("dark", "Carbono", "escuro · padrão"),
+        for key, title, sub in (("system", "Sistema", "segue o sistema · padrão"),
+                                ("dark", "Carbono", "escuro"),
                                 ("light", "Claro", "para ambientes iluminados")):
             c = ThemeCard(key, title, sub)
             c.setChecked(self.cb_theme.currentData() == key)
@@ -134,6 +154,12 @@ class PreferencesDialog(QDialog):
             cards.addWidget(c, 1)
         bl.addSpacing(8)
         bl.addLayout(cards)
+        if theme.HIGH_CONTRAST:
+            hc = QLabel("O alto contraste do Windows está ligado: as cores dele valem por cima do tema.")
+            hc.setObjectName("Muted")
+            hc.setWordWrap(True)
+            bl.addSpacing(6)
+            bl.addWidget(hc)
         bl.addSpacing(8)
         bl.addWidget(self._row("Fonte do editor", "Monoespaçadas instaladas nesta máquina", self.cb_font))
         bl.addWidget(self._row("Tamanho da fonte", "Pontos", self.sp_size))
@@ -169,6 +195,10 @@ class PreferencesDialog(QDialog):
         col.addWidget(t)
         col.addWidget(s)
         lay.addLayout(col, 1)
+        t.setBuddy(control)                    # leitor de tela le o rotulo ao focar o controle
+        if not isinstance(control, QCheckBox):
+            control.setAccessibleName(title)
+        control.setAccessibleDescription(subtitle)
         control.setMinimumWidth(220 if isinstance(control, (QFontComboBox, QComboBox)) else 140)
         lay.addWidget(control)
         return w
