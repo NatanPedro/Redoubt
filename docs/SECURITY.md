@@ -758,7 +758,11 @@ cofre**.
 
 A chave Ed25519 de custódia/release é, por padrão, **local e sem senha** — quem tem a
 máquina do autor assina como ele. O opt-in *Proteger identidade* (embrulha a privada num
-Cofre RDBT2) fecha isso, ao custo de pedir a credencial ao **assinar**.
+Cofre RDBT2) fecha isso, ao custo de pedir a credencial ao **assinar**. No Windows, o destravador
+**"esta conta do Windows" (DPAPI)** tira esse custo: a identidade abre sozinha **nesta conta**, e
+uma cópia do arquivo em outra máquina não abre. Mas qualquer programa rodando como você também abre,
+e uma redefinição da senha da conta por um administrador o inutiliza — por isso é opcional e convém
+manter junto uma senha, um arquivo-chave ou o backup cifrado.
 
 ### (f) Tudo roda local, sem rede
 

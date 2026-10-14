@@ -327,6 +327,7 @@ Notepad/                     ← pasta histórica do projeto (o produto é o "Re
     ├── editor.py            CodeEditor (QsciScintilla): vigilância + hash + encoding
     ├── secrets.py           Sentinela de Segredos — scan(text) (testável sem Qt)
     ├── vault.py             Cofre++ .rdbt — AES-256-GCM, envelope RDBT4 (Argon2id + destinatário X25519, sem Qt)
+    ├── dpapi.py             DPAPI do Windows via ctypes: identidade que abre nesta conta (sem Qt)
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria (sem Qt)
     ├── scan_cli.py          CLI da Sentinela + hook git pre-commit (sem Qt)
     ├── searchfiles.py       Busca em arquivos / grep na pasta (sem Qt)
