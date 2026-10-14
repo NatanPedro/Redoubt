@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidTag
@@ -67,6 +68,10 @@ _X25519_INFO = b"redoubt-x25519-v1"
 KIND_PASSWORD = 0
 KIND_KEYFILE = 1
 KIND_X25519 = 2
+# "Esta conta do Windows": a KEK (aleatoria) vai protegida pelo DPAPI do usuario (notepy/dpapi.py);
+# a CK e embrulhada por ela como nos outros slots. Fora do Windows, o slot e pulado (nao abre).
+KIND_DPAPI = 3
+_DPAPI_ENTROPY = b"redoubt-vault-dpapi-v1"
 # Nibble alto do byte `kind` (senha/keyfile): qual KDF derivou a KEK.
 KDF_SCRYPT = 0
 KDF_ARGON2 = 1
@@ -212,7 +217,7 @@ def _convert_legacy_slot(slot80: bytes) -> bytes:
 def _slot_kdf_work(slot: bytes) -> int:
     """Custo estimado do KDF do slot (0 se X25519/invalido — nao soma ao orcamento anti-DoS)."""
     kind_byte = slot[0]
-    if _base_kind(kind_byte) == KIND_X25519:
+    if _base_kind(kind_byte) in (KIND_X25519, KIND_DPAPI):
         return 0
     meta = _slot_meta(slot)
     if len(meta) < 3:
@@ -291,6 +296,38 @@ def _open_x25519(slot: bytes, x25519_private: bytes) -> bytes:
     return AESGCM(kek).decrypt(wrap_nonce, _slot_wrapped(slot), _slot_wrap_aad(slot))
 
 
+def make_dpapi_slot(ck: bytes, protect: Callable[[bytes, bytes], bytes]) -> bytes:
+    """Slot "esta conta do Windows". `protect(dados, entropia)` e o dpapi.protect (injetado: o
+    nucleo segue puro e testavel em qualquer sistema). Metadata = blob DPAPI da KEK + nonce; a AAD
+    do embrulho cobre o blob, entao adulterar o blob tambem falha no GCM."""
+    kek = os.urandom(_KEY_LEN)
+    wrap_nonce = os.urandom(_NONCE_LEN)
+    meta = protect(kek, _DPAPI_ENTROPY) + wrap_nonce
+    wrapped = AESGCM(kek).encrypt(wrap_nonce, ck, bytes([KIND_DPAPI]) + meta)
+    payload = meta + wrapped
+    if len(payload) > _MAX_SLOT_PAYLOAD:
+        raise VaultError("blob do DPAPI grande demais para um slot")
+    return _frame(KIND_DPAPI, payload)
+
+
+def _open_dpapi(slot: bytes, unprotect: Callable[[bytes, bytes], bytes]) -> bytes:
+    meta = _slot_meta(slot)
+    if len(meta) <= _NONCE_LEN:
+        raise VaultError("slot DPAPI malformado")
+    kek = unprotect(meta[:-_NONCE_LEN], _DPAPI_ENTROPY)   # OSError: outra conta/maquina
+    if len(kek) != _KEY_LEN:
+        raise VaultError("slot DPAPI malformado")
+    return AESGCM(kek).decrypt(meta[-_NONCE_LEN:], _slot_wrapped(slot), _slot_wrap_aad(slot))
+
+
+def add_dpapi(ck: bytes, slots: list[bytes], protect: Callable[[bytes, bytes], bytes]) -> list[bytes]:
+    """Devolve a lista de slots com o destravador "esta conta do Windows"."""
+    new = [*slots, make_dpapi_slot(ck, protect)]
+    if len(new) > _MAX_SLOTS:
+        raise VaultError(f"maximo de {_MAX_SLOTS} destravadores por cofre")
+    return new
+
+
 def add_unlocker(ck: bytes, slots: list[bytes], *, password: str | None = None,
                  keyfile: bytes | None = None) -> list[bytes]:
     """Devolve a lista de slots com um novo destravador (senha ou arquivo-chave), em Argon2id."""
@@ -344,13 +381,17 @@ def _assemble(ck: bytes, slots: list[bytes], plaintext: str) -> bytes:
 
 
 def new_vault(plaintext: str, *, password: str | None = None,
-              keyfile: bytes | None = None, recipient: bytes | None = None) -> bytes:
-    """Cria um cofre RDBT4 novo com os destravadores dados (>=1): senha, arquivo-chave e/ou
-    destinatario X25519 (`recipient` = chave publica de 32 bytes)."""
+              keyfile: bytes | None = None, recipient: bytes | None = None,
+              dpapi_protect: Callable[[bytes, bytes], bytes] | None = None) -> bytes:
+    """Cria um cofre RDBT4 novo com os destravadores dados (>=1): senha, arquivo-chave,
+    destinatario X25519 (`recipient` = chave publica de 32 bytes) e/ou esta conta do Windows
+    (`dpapi_protect` = dpapi.protect)."""
     ck = generate_key()
     slots = add_unlocker(ck, [], password=password, keyfile=keyfile)
     if recipient:
         slots = add_recipient(ck, slots, recipient)
+    if dpapi_protect is not None:
+        slots = add_dpapi(ck, slots, dpapi_protect)
     return _assemble(ck, slots, plaintext)
 
 
@@ -389,7 +430,8 @@ def _parse_slots(blob: bytes, nslots: int, magic: bytes) -> tuple[list[bytes], i
 
 
 def open_vault(blob: bytes, *, password: str | None = None,
-               keyfile: bytes | None = None, x25519_private: bytes | None = None) -> Opened:
+               keyfile: bytes | None = None, x25519_private: bytes | None = None,
+               dpapi_unprotect: Callable[[bytes, bytes], bytes] | None = None) -> Opened:
     """Abre um cofre (RDBT4/RDBT3/RDBT2 ou RDBT1 legado). Levanta NotAVault/WrongPassword/VaultError.
 
     Cada slot e aberto pelo seu tipo: senha/keyfile (KDF do nibble alto) ou X25519 (ECDH com a
@@ -417,7 +459,8 @@ def open_vault(blob: bytes, *, password: str | None = None,
         kb = _base_kind(s[0])
         return ((kb == KIND_PASSWORD and password is not None)
                 or (kb == KIND_KEYFILE and keyfile is not None)
-                or (kb == KIND_X25519 and x25519_private is not None))
+                or (kb == KIND_X25519 and x25519_private is not None)
+                or (kb == KIND_DPAPI and dpapi_unprotect is not None))
 
     # Anti-DoS: recusa ANTES de derivar se o custo agregado de KDF dos slots que casam exceder o teto.
     if sum(_slot_kdf_work(s) for s in slots if _matches(s)) > _MAX_TOTAL_KDF_WORK:
@@ -434,6 +477,10 @@ def open_vault(blob: bytes, *, password: str | None = None,
                 if x25519_private is None:                     # garantido por _matches; guarda
                     continue                                    # explicita (nao usamos assert)
                 ck = _open_x25519(slot, x25519_private)
+            elif _base_kind(slot[0]) == KIND_DPAPI:
+                if dpapi_unprotect is None:
+                    continue
+                ck = _open_dpapi(slot, dpapi_unprotect)
             else:
                 meta = _slot_meta(slot)
                 if len(meta) < 3 + _SALT_LEN + _NONCE_LEN:    # params+salt+nonce: slot curto demais
@@ -443,7 +490,7 @@ def open_vault(blob: bytes, *, password: str | None = None,
                 ck = AESGCM(kek).decrypt(meta[19:31], _slot_wrapped(slot), _slot_wrap_aad(slot))
             opened_at = i
             break
-        except (VaultError, InvalidTag, ValueError, IndexError):
+        except (VaultError, InvalidTag, ValueError, IndexError, OSError):
             # QUALQUER slot malformado (params/nonce/ponto X25519 invalido) e PULADO, nunca fatal.
             ck = None
             continue

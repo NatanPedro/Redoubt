@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool, icons,
+from . import (APP_NAME, APP_TAGLINE, APP_VERSION, config, custody, difftool, dpapi, icons,
                idbackup, palette, passgen, redaction, seal, searchfiles, secrets as secrets_mod,
                textops, theme, transforms, vault)
 from .editor import CodeEditor, ENCODING_LABELS, detect_eol, read_text
@@ -715,6 +715,8 @@ class MainWindow(QMainWindow):
                                   SP.SP_DialogYesButton, None, self.add_identity_password)
         self.act_id_add_keyfile = make("Identidade: adicionar arquivo-chave…",
                                        SP.SP_DriveHDIcon, None, self.add_identity_keyfile)
+        self.act_id_dpapi = make("Identidade: abrir sem senha nesta conta do Windows (DPAPI)…",
+                                 SP.SP_ComputerIcon, None, self.enable_identity_dpapi)
         self.act_id_remove = make("Identidade: remover credencial…",
                                   SP.SP_DialogDiscardButton, None, self.remove_identity_credential)
         self.act_id_backup = make("Identidade: fazer backup cifrado…",
@@ -777,7 +779,9 @@ class MainWindow(QMainWindow):
         m_sec.addAction(self.act_sign)
         m_sec.addAction(self.act_protect_id)
         for act in (self.act_id_change_pw, self.act_id_add_pw, self.act_id_add_keyfile,
-                    self.act_id_remove, self.act_id_backup):
+                    self.act_id_dpapi, self.act_id_remove, self.act_id_backup):
+            if act is self.act_id_dpapi and not dpapi.available():
+                continue                       # DPAPI so existe no Windows
             m_sec.addAction(act)
         m_sec.aboutToShow.connect(self._refresh_identity_actions)
         m_sec.addAction(self.act_export_anchor)
@@ -1784,6 +1788,7 @@ class MainWindow(QMainWindow):
                            else "changed" if full != editor.saved_hash else "ok"),
             signature_state=sig_state, signature_file=sig_file,
             fingerprint=fp, public_key=pub, identity_protected=custody.is_protected(),
+            identity_dpapi=custody.identity_has_dpapi(),
             warnings=warnings, chain_ok=ok_chain, chain_break_at=idx,
             events_total=st["total"], events_signed=st["signed"], recent=recent)
         CustodyDialog(report, {
@@ -1867,6 +1872,14 @@ class MainWindow(QMainWindow):
     def _unlock_identity_dialog(self) -> bool:
         """Pede a senha (ou arquivo-chave) da identidade protegida e destrava por esta sessao."""
         kinds = custody.identity_unlockers()
+        if vault.KIND_DPAPI in kinds and custody.unlock_identity():
+            return True                        # abriu nesta conta do Windows, sem perguntar
+        if kinds == [vault.KIND_DPAPI]:
+            QMessageBox.warning(
+                self, APP_NAME, "A identidade so abre nesta conta do Windows, e o Windows recusou "
+                "(outra conta ou maquina, ou a senha da conta foi redefinida por um administrador). "
+                "Restaure a identidade do backup cifrado (.rdbtbak).")
+            return False
         if vault.KIND_PASSWORD in kinds:
             pw, ok = QInputDialog.getText(
                 self, "Identidade protegida",
@@ -1958,7 +1971,9 @@ class MainWindow(QMainWindow):
         for act in (self.act_id_change_pw, self.act_id_add_pw, self.act_id_add_keyfile,
                     self.act_id_remove):
             act.setEnabled(protected)
-        self.act_id_backup.setEnabled(idbackup.local_identity_exists())
+        exists = idbackup.local_identity_exists()
+        self.act_id_backup.setEnabled(exists)
+        self.act_id_dpapi.setEnabled(dpapi.available() and exists and not custody.identity_has_dpapi())
 
     def _read_keyfile(self, title: str) -> bytes | None:
         path, _ = QFileDialog.getOpenFileName(self, title)
@@ -1976,21 +1991,24 @@ class MainWindow(QMainWindow):
         return kf
 
     def _ask_identity_credential(self, title: str, prompt: str, *,
-                                 kinds: list[int] | None = None
-                                 ) -> tuple[str | None, bytes | None] | None:
-        """Pede UMA credencial da identidade: a senha, se ha destravador de senha entre `kinds`;
-        senao (ou se a senha ficar em branco), o arquivo-chave. None = cancelou."""
+                                 kinds: list[int] | None = None) -> dict | None:
+        """Pede UMA credencial da identidade e devolve os argumentos para o custody
+        (`passphrase=`, `keyfile=` ou `use_dpapi=True`). Se ela abre nesta conta do Windows (e o
+        DPAPI esta entre `kinds`), nao pergunta nada. Senao, a senha; em branco, o arquivo-chave.
+        None = cancelou."""
         kinds = custody.identity_unlockers() if kinds is None else kinds
+        if vault.KIND_DPAPI in kinds and dpapi.available() and custody.unlock_identity():
+            return {"use_dpapi": True}
         if vault.KIND_PASSWORD in kinds:
             pw, ok = QInputDialog.getText(self, title, prompt, QLineEdit.EchoMode.Password)
             if not ok:
                 return None
             if pw:
-                return pw, None
+                return {"passphrase": pw}
         if vault.KIND_KEYFILE in kinds:
             kf = self._read_keyfile(f"{title}: arquivo-chave")
             if kf:
-                return None, kf
+                return {"keyfile": kf}
         return None
 
     def _ask_new_password(self, title: str, prompt: str) -> str | None:
@@ -2054,7 +2072,7 @@ class MainWindow(QMainWindow):
         if new is None:
             return
         try:
-            custody.add_identity_unlocker(passphrase=cred[0], keyfile=cred[1], new_password=new)
+            custody.add_identity_unlocker(**cred, new_password=new)
         except vault.WrongPassword:
             QMessageBox.warning(self, APP_NAME, "Credencial atual incorreta. Nada mudou.")
             return
@@ -2111,7 +2129,7 @@ class MainWindow(QMainWindow):
         else:
             return
         try:
-            custody.add_identity_unlocker(passphrase=cred[0], keyfile=cred[1], new_keyfile=kf)
+            custody.add_identity_unlocker(**cred, new_keyfile=kf)
         except vault.WrongPassword:
             QMessageBox.warning(self, APP_NAME, "Credencial atual incorreta. Nada mudou." +
                                 (f"\n\n(O arquivo gerado em {generated} nao abre nada.)"
@@ -2124,6 +2142,67 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, APP_NAME, "Arquivo-chave adicionado: ele abre a identidade "
                                 f"sozinho.{onde}\n\nGuarde-o fora desta maquina, longe da senha.")
 
+    def enable_identity_dpapi(self) -> None:
+        """A identidade passa a abrir SEM senha nesta conta do Windows (DPAPI) — um destravador a
+        mais. Em claro, ela e protegida so por ele, e o backup e oferecido na hora."""
+        if not dpapi.available():
+            QMessageBox.information(self, APP_NAME, "O DPAPI so existe no Windows.")
+            return
+        if not idbackup.local_identity_exists():
+            QMessageBox.information(self, APP_NAME, "Ainda nao ha identidade nesta instalacao.")
+            return
+        if custody.identity_has_dpapi():
+            QMessageBox.information(self, APP_NAME, "A identidade ja abre nesta conta do Windows. "
+                                    "Para desligar: Identidade: remover credencial.")
+            return
+        protected = custody.is_protected()
+        title = "Abrir sem senha nesta conta do Windows"
+        resp = QMessageBox.question(
+            self, title,
+            "Assinar deixa de pedir senha AQUI: o Windows abre a chave para a sua conta (DPAPI). Uma "
+            "copia do arquivo em outro PC, num backup ou num disco roubado nao abre.\n\n"
+            "Mas qualquer programa rodando como voce tambem abre. E se um ADMINISTRADOR redefinir a "
+            "sua senha do Windows, este destravador para de funcionar.\n\n"
+            + ("A sua senha continua valendo como alternativa." if protected else
+               "A identidade fica SO com ele: mantenha um backup cifrado (oferecido em seguida).")
+            + "\n\nContinuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if resp != QMessageBox.StandardButton.Yes:
+            return
+        if protected:
+            cred = self._ask_identity_credential(title, "Senha ATUAL da identidade:")
+            if cred is None:
+                return
+            try:
+                custody.add_identity_unlocker(**cred, new_dpapi=True)
+            except vault.WrongPassword:
+                QMessageBox.warning(self, APP_NAME, "Credencial atual incorreta. Nada mudou.")
+                return
+            except vault.VaultError as exc:
+                QMessageBox.critical(self, APP_NAME, f"Nao foi possivel ativar:\n{exc}")
+                return
+            QMessageBox.information(self, APP_NAME, "Pronto: nesta conta do Windows a identidade abre "
+                                    "sem senha. A senha continua valendo em qualquer outro lugar.")
+            return
+        try:
+            custody.protect_identity(use_dpapi=True)
+        except custody.IdentityClearCopyRemains as exc:
+            QMessageBox.warning(self, APP_NAME, f"⚠ Protegida, com pendencia:\n\n{exc}")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME, f"Nao foi possivel proteger:\n{exc}")
+            return
+        resp = QMessageBox.question(
+            self, APP_NAME,
+            f"Identidade ({custody.fingerprint()}) protegida nesta conta do Windows. Ela nao tem outra "
+            "credencial: perder esta conta, ou uma redefinicao da senha dela por um administrador, "
+            "perde a identidade se nao houver backup.\n\nFazer o backup cifrado agora?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if resp == QMessageBox.StandardButton.Yes:
+            self.backup_identity()
+
     def remove_identity_credential(self) -> None:
         """Remove uma credencial. Pede outra — uma que FICA — e o nucleo prova que ela ainda abre:
         nao ha como remover a ultima nem se trancar para fora."""
@@ -2135,7 +2214,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP_NAME, "A identidade tem uma credencial so. Adicione "
                                     "outra antes; sem nenhuma, ela ficaria sem como abrir.")
             return
-        names = {vault.KIND_PASSWORD: "Senha", vault.KIND_KEYFILE: "Arquivo-chave"}
+        names = {vault.KIND_PASSWORD: "Senha", vault.KIND_KEYFILE: "Arquivo-chave",
+                 vault.KIND_DPAPI: "Esta conta do Windows (DPAPI)"}
         items = [f"{i + 1}. {names.get(k, 'Outra')}" for i, k in enumerate(kinds)]
         item, ok = QInputDialog.getItem(self, title, "Qual credencial sai?", items, 0, False)
         if not ok or item not in items:
@@ -2153,7 +2233,7 @@ class MainWindow(QMainWindow):
         if resp != QMessageBox.StandardButton.Yes:
             return
         try:
-            custody.remove_identity_unlocker(index, passphrase=cred[0], keyfile=cred[1])
+            custody.remove_identity_unlocker(index, **cred)
         except vault.WrongPassword:
             QMessageBox.warning(self, APP_NAME, "Credencial incorreta. Nada mudou.")
             return
@@ -2173,12 +2253,12 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         title = "Backup da identidade"
-        id_pw, id_kf = identity_password, None
-        if custody.is_protected() and id_pw is None:
-            cred = self._ask_identity_credential(title, "Senha da identidade (para ler a chave):")
-            if cred is None:
+        cred: dict = {"passphrase": identity_password} if identity_password else {}
+        if custody.is_protected() and not cred:
+            asked = self._ask_identity_credential(title, "Senha da identidade (para ler a chave):")
+            if asked is None:
                 return
-            id_pw, id_kf = cred
+            cred = asked                       # use_dpapi: o collect_local abre sozinho (sem senha)
         x_pw = None
         if custody.recipient_exists() and not custody.recipient_unlocked():
             x_pw, ok = QInputDialog.getText(
@@ -2187,7 +2267,8 @@ class MainWindow(QMainWindow):
             if not ok or not x_pw:
                 return
         try:
-            payload = idbackup.collect_local(id_pw, keyfile=id_kf, recipient_passphrase=x_pw)
+            payload = idbackup.collect_local(cred.get("passphrase"), keyfile=cred.get("keyfile"),
+                                             recipient_passphrase=x_pw)
         except idbackup.BackupError as exc:
             QMessageBox.warning(self, APP_NAME, f"Backup nao feito:\n{exc}")
             return

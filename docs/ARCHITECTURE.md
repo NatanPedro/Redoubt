@@ -94,7 +94,8 @@ Notepad/                     (pasta do projeto — o produto é o "Redoubt")
     │   ── núcleos puros (sem Qt) ──
     ├── secrets.py           Sentinela de Segredos — scan(text)
     ├── redaction.py         Lista de Redacao — segredos literais cifrados que a Redacao tarja
-    ├── vault.py             Cofre++ .rdbt — AES-256-GCM, envelope RDBT4 (senha/arquivo-chave Argon2id + destinatário X25519)
+    ├── vault.py             Cofre++ .rdbt — AES-256-GCM, envelope RDBT4 (senha/arquivo-chave Argon2id + destinatário X25519 + conta do Windows)
+    ├── dpapi.py             Núcleo: DPAPI do Windows via ctypes (destravador "esta conta do Windows")
     ├── custody.py           Custódia assinada Ed25519 + trilha de auditoria + chave de destinatário X25519
     ├── release.py           Manifesto de release assinado (RDBT-REL1)
     ├── seal.py              Selo de proveniência de arquivo (RDBT-SEAL1)
@@ -223,7 +224,11 @@ X25519** (KEK por **ECDH efêmero + HKDF-SHA256**, cifrar para a pública de alg
 estilo `age`). A AAD do slot exclui o prefixo de tamanho, então slots fixos de 80 bytes
 de cofres RDBT3/RDBT2 são **re-enquadrados sem reembrulhar**. Teto de custo **por slot e
 agregado** (anti-DoS) checado antes de derivar; slot malformado / ponto de ordem baixa é
-**pulado**. API: `new_vault` / `open_vault` / `reseal` / `add_unlocker` / `add_recipient`
+**pulado**. Tipo 3, **"esta conta do Windows"** (`make_dpapi_slot`): uma KEK aleatória protegida
+pelo DPAPI do usuário embrulha a CK como nos outros slots (a AAD cobre o blob do DPAPI). As
+funções de proteger/desproteger são **injetadas** (`dpapi_protect` / `dpapi_unprotect`), então
+o núcleo segue puro e testável em qualquer sistema; fora do Windows o slot é pulado.
+API: `new_vault` / `open_vault` / `reseal` / `add_unlocker` / `add_recipient` / `add_dpapi`
 / `make_x25519_slot` / `slot_kinds` (e `encrypt`/`decrypt` por retrocompatibilidade). Lê e
 migra **RDBT1** legado. Detalhado na
 [seção 6](#o-cofre--confidencialidade-em-repouso) e na

@@ -246,3 +246,84 @@ def test_painel_de_custodia_tem_o_botao_de_backup(win):
     (btn,) = [b for b in dlg.findChildren(QPushButton) if b.objectName() == "CustodyBackup"]
     btn.click()
     assert chamado == [1]
+
+
+# --------------------------------------------------------------------------- #
+# Abrir sem senha nesta conta do Windows (DPAPI) — com um DPAPI simulado
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def conta(monkeypatch):
+    """DPAPI simulado: so a 'conta' que protegeu abre; `estado['outra']=True` simula outra conta."""
+    import hashlib
+
+    from notepy import dpapi
+    estado = {"outra": False}
+
+    def _chave(entropy):
+        return hashlib.sha256((b"outra" if estado["outra"] else b"conta") + entropy).digest()
+
+    def protect(data, entropy):
+        k = _chave(entropy)
+        return b"DP" + k[:4] + bytes(a ^ b for a, b in zip(data, k * 4, strict=False))
+
+    def unprotect(blob, entropy):
+        k = _chave(entropy)
+        if blob[:2] != b"DP" or blob[2:6] != k[:4]:
+            raise OSError("o Windows recusou")
+        return bytes(a ^ b for a, b in zip(blob[6:], k * 4, strict=False))
+
+    monkeypatch.setattr(dpapi, "available", lambda: True)
+    monkeypatch.setattr(dpapi, "protect", protect)
+    monkeypatch.setattr(dpapi, "unprotect", unprotect)
+    return estado
+
+
+def test_ativar_dpapi_em_identidade_em_claro_oferece_backup_sem_pedir_senha(win, ident, conta,
+                                                                            monkeypatch):
+    _, pen = ident
+    fp = custody.fingerprint()
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(pen)))
+    win._inbox += [("senha-bk", True), ("senha-bk", True)]      # so a senha DO backup
+    win.enable_identity_dpapi()
+    assert custody.identity_unlockers() == [vault.KIND_DPAPI]
+    (nome,) = _backups(pen)
+    assert idbackup.verify_blob((pen / nome).read_bytes(), password="senha-bk",
+                                expected_ed_fingerprint=fp)
+    assert win._inbox == []
+
+
+def test_ativar_dpapi_em_identidade_com_senha(win, ident, conta, monkeypatch):
+    _protegida("antiga")
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
+    win._inbox += [("antiga", True)]
+    win.enable_identity_dpapi()
+    assert custody.identity_unlockers() == [vault.KIND_PASSWORD, vault.KIND_DPAPI]
+    custody.lock_identity()
+    assert custody.unlock_identity()                             # nesta conta, sem senha
+
+
+def test_remover_a_senha_entra_pela_conta_sem_perguntar(win, ident, conta, monkeypatch):
+    custody.protect_identity("antiga", use_dpapi=True)
+    custody.lock_identity()
+    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("1. Senha", True)))
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
+    win.remove_identity_credential()                             # nenhuma senha na fila: nao pediu
+    assert custody.identity_unlockers() == [vault.KIND_DPAPI]
+
+
+def test_so_dpapi_e_o_windows_recusa_avisa_para_restaurar_o_backup(win, ident, conta, monkeypatch):
+    custody.protect_identity(use_dpapi=True)
+    custody.lock_identity()
+    conta["outra"] = True                                        # outra conta / senha redefinida
+    vistos = _avisos(monkeypatch)
+    assert win._unlock_identity_dialog() is False
+    assert any(n == "warning" and "backup" in m for n, m in vistos)
+
+
+def test_menu_dpapi_some_depois_de_ativado(win, ident, conta, monkeypatch):
+    win._refresh_identity_actions()
+    assert win.act_id_dpapi.isEnabled()
+    custody.protect_identity(use_dpapi=True)
+    win._refresh_identity_actions()
+    assert not win.act_id_dpapi.isEnabled()

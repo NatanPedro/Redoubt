@@ -17,6 +17,15 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 ### Added
+- **Identidade que abre sem senha nesta conta do Windows (DPAPI)** (*Segurança ▸ Identidade: abrir
+  sem senha nesta conta do Windows…*). Um destravador novo no cofre da identidade: uma chave
+  aleatória, protegida pelo DPAPI da sua conta (`notepy/dpapi.py`, via `ctypes`, sem dependência
+  nova), embrulha a chave do cofre. Nesta conta, assinar não pede senha; uma cópia do arquivo em
+  outro PC, num backup ou num disco roubado não abre. Numa identidade com senha, é um destravador a
+  mais; em claro, ela passa a ser protegida só por ele, e o backup é oferecido na hora. **Opcional
+  de propósito:** qualquer programa rodando como você também abre, e uma redefinição da senha do
+  Windows por um administrador o inutiliza — por isso nunca vira o padrão silencioso, e o app avisa
+  e manda restaurar do backup quando o Windows recusar. Fora do Windows, o slot é ignorado.
 - **Credenciais da identidade pelo app** (*Segurança ▸ Identidade: …*): **trocar a senha** (a
   antiga deixa de abrir), **adicionar senha**, **adicionar arquivo-chave** — gerado na hora, direto
   no pendrive, e recusado na pasta de dados do Redoubt, onde não protegeria nada — e **remover

@@ -864,6 +864,7 @@ class CustodyReport:
     events_total: int
     events_signed: int
     recent: list[tuple[str, str, str, str]]   # (seq, evento, arquivo, quando)
+    identity_dpapi: bool = False               # abre sem senha nesta conta do Windows
 
 
 def _state(ok: bool | None, text: str) -> QWidget:
@@ -985,7 +986,9 @@ class CustodyDialog(QDialog):
             wl.setStyleSheet(f"color:{theme.AMBER};")
             id_rows.append(wl)
         bl.addWidget(_card("Identidade Ed25519",
-                           _state(True, "protegida por senha") if r.identity_protected
+                           _state(True, "protegida · abre nesta conta do Windows"
+                                  if r.identity_dpapi else "protegida por senha")
+                           if r.identity_protected
                            else _state(False, "sem senha"), id_rows))
 
         ev_rows: list[QWidget] = []

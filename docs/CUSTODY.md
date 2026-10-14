@@ -24,14 +24,15 @@ Veja o *fingerprint* da sua identidade em **Verificar custódia** (`Ctrl+Shift+H
 
 ### Credenciais da identidade protegida
 
-Uma identidade protegida abre com **qualquer** um dos seus destravadores (senhas e/ou
-arquivos-chave). Tudo pelo menu **Segurança**:
+Uma identidade protegida abre com **qualquer** um dos seus destravadores (senhas,
+arquivos-chave e/ou esta conta do Windows). Tudo pelo menu **Segurança**:
 
 | Ação | O que faz |
 | --- | --- |
 | **Identidade: trocar senha…** | Pede a senha atual e a nova (2×). A antiga **deixa de abrir**; os outros destravadores ficam. |
 | **Identidade: adicionar senha…** | Uma senha a mais (entra com uma credencial atual). |
 | **Identidade: adicionar arquivo-chave…** | **Gera** um arquivo-chave novo (64 bytes aleatórios) onde você escolher — direto no pendrive — ou usa um que você já tem. Recusa salvar na pasta de dados do Redoubt: ao lado do cofre, ele não protege nada. Ele abre a identidade **sozinho**, como uma senha: guarde-o longe dela. |
+| **Identidade: abrir sem senha nesta conta do Windows (DPAPI)…** | Só no Windows. A identidade passa a abrir **sozinha nesta conta**: assinar não pede senha aqui. Numa identidade com senha, é um destravador a mais (a senha segue valendo em outro lugar). Em claro, ela é protegida **só** por ele, e o backup é oferecido na hora. Veja as ressalvas abaixo. |
 | **Identidade: remover credencial…** | Escolhe qual sai e pede **outra, que fica**, para entrar. |
 | **Identidade: fazer backup cifrado…** | O mesmo backup da CLI (veja *Backup e rotação*), pela janela. Também no painel de Custódia. |
 
@@ -41,6 +42,16 @@ fica, na remoção) **abrir a mesma chave**. Se não abrir, o cofre anterior vol
 isso não há como remover a **última** credencial, nem a que você usou para entrar, nem se trancar
 para fora. A chave Ed25519 não muda: o *fingerprint*, o que você já assinou e os backups
 `.rdbtbak` continuam valendo.
+
+**O destravador "esta conta do Windows" (DPAPI)** (`notepy/dpapi.py`, via `ctypes`, sem
+dependência nova): uma chave aleatória embrulha a chave do cofre, e o Windows a protege com as
+credenciais da **sua conta** (CryptProtectData, escopo do usuário). Protege contra uma cópia do
+arquivo levada para **outro PC**, um backup vazado ou um disco roubado. **Não** protege contra um
+programa rodando **como você** (ele abre igual). E tem um risco próprio: se um **administrador
+redefinir** a senha da sua conta do Windows (diferente de você mesmo trocá-la), o Windows perde as
+chaves do DPAPI dela e este destravador para de abrir. Por isso ele é **opcional** e nunca o padrão
+silencioso: mantenha uma senha ou um arquivo-chave, ou ao menos o backup cifrado. Fora do Windows,
+o slot é ignorado.
 
 ## Assinar um arquivo
 
