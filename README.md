@@ -102,7 +102,8 @@ As abas com segredo ganham um **▲** no título, e a janela carrega `[▲ EXPOS
 - **Localizar/Substituir** (`Ctrl+F` / `Ctrl+H`, com regex), **Busca em arquivos** (`Ctrl+Shift+F`, grep recursivo na pasta com resultados clicáveis), **Paleta de comandos** (`Ctrl+Shift+P`, busca fuzzy de qualquer comando) e **Diff** entre arquivos (`Ctrl+Shift+D`, estilo *git*).
 - **Codec — codificar/decodificar** (*Editar ▸ Codificar/Decodificar*): **Base64**, **Base64 URL**, **Hex**, **URL**, **Quoted-printable** e **decode de JWT** — tudo **local**, sem colar segredo em site. Bloqueado em aba oculta/cofre travado e **re-varre a Sentinela após decodar** (uma credencial revelada já fica flagrável).
 - **Operações de linha** (*Editar ▸ Linha*): ordenar, remover duplicadas/linhas em branco, *trim* à direita, MAIÚSC/minúsc — e um **gerador de senha/passphrase** (*Editar ▸ Gerar*) com CSPRNG (`secrets`) e a entropia em bits à mostra.
-- **Tema claro e escuro** (alterna em Preferências, `Ctrl+,`), HUD carbono+âmbar onde a cor é semântica: âmbar = atenção, verde = selado, vermelho = exposto.
+- **Tema que segue o sistema** (claro ou escuro, como o Windows/o ambiente gráfico) ou fixo em Carbono/Claro, escolhido em *Exibir* ou nas Preferências (`Ctrl+,`) e lembrado. HUD carbono+âmbar onde a cor é semântica: âmbar = atenção, verde = selado, vermelho = exposto.
+- **Painel da Sentinela** (`Ctrl+B`) e **trilho lateral** recolhíveis (*Exibir*), e a janela volta com o mesmo tamanho, posição e estado maximizado. `F6` leva o foco do editor ao painel e de volta.
 - Abas fecháveis/arrastáveis, *drag & drop*, **encoding** (UTF-8/BOM/UTF-16/Windows-1252/Latin-1) e EOL (CRLF/LF/CR) automáticos, *folding*, *auto-indent*, guias de indentação, casamento de chaves.
 - Preferências persistentes (auto-lock, fonte, largura de tab, tema, restaurar sessão) e aviso ao fechar com alterações não salvas.
 
@@ -280,6 +281,8 @@ assinatura não confere com a âncora), e o `RELEASE.json` falha se qualquer has
 | **Comparar arquivos** (diff) | `Ctrl+Shift+D` |
 | Barra de comando `:` | `Ctrl+P` |
 | Preferências (tema, fonte, auto-lock…) | `Ctrl+,` |
+| **Painel da Sentinela** (mostrar/esconder) | `Ctrl+B` |
+| Foco: editor ⇄ painel da Sentinela | `F6` (`Esc` volta ao editor) |
 | **Modo Redação** (tarjar segredos) | `Ctrl+Shift+R` |
 | **Ir ao próximo segredo** | `F8` |
 | **Relatório de segredos** | `Ctrl+Shift+E` |

@@ -17,6 +17,19 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
 ## [Nao lancado]
 
 ### Added
+- **Tema "Sistema", o novo padrão:** segue o modo claro/escuro do Windows (no Linux, o do
+  ambiente gráfico) e troca sozinho se o sistema trocar com o app aberto. A escolha manual
+  (Carbono ou Claro) fica salva e vale por cima do sistema: terceiro cartão nas Preferências,
+  *Exibir ▸ Tema: …*, *Exibir ▸ Alternar tema claro/escuro* ou a paleta. Quem já tinha salvo um
+  tema nas Preferências continua com ele.
+- **Menu Exibir**, com o **painel da Sentinela** (`Ctrl+B`, também pelo trilho) e o **trilho
+  lateral** recolhíveis. Os dois lembram se estavam abertos. Com o trilho recolhido, o que ele
+  oferece continua no menu, nos atalhos e na paleta.
+- **A janela lembra tamanho, posição e se estava maximizada** entre uma execução e outra, e tem
+  um tamanho mínimo (600×400). Uma geometria inválida no registro é ignorada.
+- **Teclado:** `F6` leva o foco do editor ao painel da Sentinela (abrindo-o) e de volta; `Esc` no
+  painel volta ao editor. Antes, painel, filtros e Tarjar/Relatório só respondiam ao mouse: o
+  editor fica com o Tab para indentar.
 - **Identidade que abre sem senha nesta conta do Windows (DPAPI)** (*Segurança ▸ Identidade: abrir
   sem senha nesta conta do Windows…*). Um destravador novo no cofre da identidade: uma chave
   aleatória, protegida pelo DPAPI da sua conta (`notepy/dpapi.py`, via `ctypes`, sem dependência
@@ -40,6 +53,34 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
   em que uma senha esquecida, sem cópia, perde a chave (como aconteceu com a `6b38433243e8f7e7`).
 
 ### Changed
+- **O painel da Sentinela só diz "Nenhum segredo" depois de uma varredura completa.** Antes, ele
+  mostrava o mesmo escudo verde num arquivo grande ainda em verificação, num não verificado, numa
+  aba oculta com credenciais e num cofre. Cada um tem agora a sua mensagem: *Verificando… N%*
+  (com a lista anterior, avisada, se houver), *Não verificado*, *Conteúdo oculto* (com a
+  contagem), *Cofre* e *Cofre travado*. Um filtro sem achados explica que os outros estão em
+  Todos, e acima de 500 achados o painel avisa "Mostrando 500 de N". O **Relatório de segredos**
+  segue a mesma regra, e tinha o título "Cadeia de custodia".
+- **Estados de carregando, vazio e erro nas telas de dados:**
+  - **Busca em arquivos:** "Buscando…" com cursor de espera, e mensagens próprias para regex
+    inválida (antes, "0 resultados"), nada encontrado e pasta inexistente;
+  - **Comparar:** diz qual arquivo (A ou B) faltou ou não pôde ser lido;
+  - **Localizar:** avisa regex inválida e aba somente leitura (oculta ou travada), em vez de não
+    fazer nada;
+  - **Paleta:** "Nenhum comando com …", e Enter sem resultado não fecha mais a paleta;
+  - **Lista de redação:** mensagem quando está vazia, e Remover só fica ativo com um item escolhido;
+  - **Cartão do cofre travado:** "Destravando…" enquanto o Argon2id trabalha, e aviso quando a
+    senha está vazia.
+- **Acessibilidade:**
+  - o foco do teclado fica visível em botões, trilho, botão de fechar aba, caixas de seleção, lista
+    de achados e cartões de tema;
+  - nomes acessíveis nos campos e botões de símbolo da barra Localizar (`▲`, `▼`, `✕`, `Aa`,
+    `\b`, `.*`), da Busca em arquivos, do Comparar e da paleta (o atalho também é lido);
+  - rótulos ligados aos campos nas Preferências, no cartão do cofre e no Selar como cofre;
+  - o leitor de tela recebe a contagem do trilho e cada achado da Sentinela pelo tipo e linha,
+    nunca o segredo.
+- **Barra de título:** os menus vão para o botão único sempre que não cabem por extenso junto das
+  ações, e não só abaixo de 720 px. Com o menu Exibir, entre 720 e 780 px eles encostavam nos
+  botões da direita.
 - **Arquivos grandes sem travar a janela** (`notepy/bgscan.py`: trabalho fatiado na própria
   thread da interface, ~30 ms por volta do loop de eventos — uma thread não ajudaria, porque o `re`
   do Python não solta o GIL):
@@ -59,6 +100,20 @@ e o projeto adota o [Versionamento Semantico](https://semver.org/lang/pt-BR/).
     (`\1`, `\t`) segue troca a troca, agora fatiada e cancelável.
 
 ### Fixed
+- **Selar uma aba oculta pelo botão da barra, por `Ctrl+Shift+L` ou por `:seal` cifrava o texto de
+  aviso no lugar do conteúdo**, e salvar era recusado. Agora segue o caminho do botão da faixa: pede
+  a senha com a aba ainda oculta e só então revela e sela.
+- **Cofre selado só para você (X25519) travado:** o cartão de destravar e o botão "Abrir cofre" da
+  barra só pediam senha, que esse cofre não tem. O cartão ganhou **Usar minha chave**, e o botão da
+  barra passa a destravar com ela.
+- **Paleta de comandos com entradas mortas:** listava o título de cada menu e submenu (executar só
+  fechava a paleta), ações desligadas no momento e, no Linux, a do DPAPI.
+- **Busca em arquivos:** a linha do arquivo nos resultados não fazia nada; agora abre na primeira
+  ocorrência.
+- **Custódia:** uma falha ao ler a trilha de auditoria escapava do painel (e derrubaria o app). Na
+  barra de status, o rótulo sumia sem aviso; agora mostra "⚠ trilha ilegível".
+- Um arquivo grande recém-aberto aparecia como **LIMPO** nos 300 ms antes de a varredura começar.
+- Os ícones de fechar aba não mudavam de cor ao trocar o tema.
 - **Substituir tudo com o Modo Redação ligado varria o documento inteiro a CADA troca** (a
   varredura síncrona da Redação disparava em cada edição): agora é uma varredura só, no fim.
 - **Restaurar a sessão abria em claro um arquivo cuja varredura falhasse** (a exceção virava "0
