@@ -1095,10 +1095,10 @@ def test_se_o_cofre_novo_nao_abrir_volta_o_anterior(tmp_identity, monkeypatch):
     antes = open(custody._vault_path(), "rb").read()
     real = custody._open_protected
 
-    def falha_so_na_prova(passphrase=None, *, keyfile=None):
+    def falha_so_na_prova(passphrase=None, *, keyfile=None, use_dpapi=False):
         if passphrase == "nova":
             raise vault.WrongPassword("simulado: o cofre gravado nao abre")
-        return real(passphrase, keyfile=keyfile)
+        return real(passphrase, keyfile=keyfile, use_dpapi=use_dpapi)
     monkeypatch.setattr(custody, "_open_protected", falha_so_na_prova)
     with pytest.raises(vault.VaultError):
         custody.change_identity_password("antiga", "nova")
@@ -1112,10 +1112,10 @@ def test_adicionar_credencial_prova_que_a_nova_abre(tmp_identity, monkeypatch):
     antes = open(custody._vault_path(), "rb").read()
     real = custody._open_protected
 
-    def nova_nao_abre(passphrase=None, *, keyfile=None):
+    def nova_nao_abre(passphrase=None, *, keyfile=None, use_dpapi=False):
         if keyfile == b"novo-kf":
             raise vault.WrongPassword("simulado")
-        return real(passphrase, keyfile=keyfile)
+        return real(passphrase, keyfile=keyfile, use_dpapi=use_dpapi)
     monkeypatch.setattr(custody, "_open_protected", nova_nao_abre)
     with pytest.raises(vault.VaultError):
         custody.add_identity_unlocker(passphrase="antiga", new_keyfile=b"novo-kf")

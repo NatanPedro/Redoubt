@@ -49,7 +49,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from . import vault
+from . import dpapi, vault
 
 _ORG, _APP = "Redoubt", "Redoubt"
 
@@ -696,13 +696,31 @@ def _load_legacy() -> Ed25519PrivateKey | None:
     return key
 
 
-def _open_protected(passphrase: str | None = None, *,
-                    keyfile: bytes | None = None) -> Ed25519PrivateKey:
-    """Abre o cofre da identidade e reconstroi a chave.
-    Levanta vault.VaultError (WrongPassword/NotAVault/conteudo invalido) em qualquer falha."""
+def _open_protected(passphrase: str | None = None, *, keyfile: bytes | None = None,
+                    use_dpapi: bool = False) -> Ed25519PrivateKey:
+    """Abre o cofre da identidade e reconstroi a chave. `use_dpapi`: pelo destravador "esta conta
+    do Windows". Levanta vault.VaultError (WrongPassword/NotAVault/conteudo invalido) em qualquer falha."""
     with open(_vault_path(), "rb") as fh:
         blob = fh.read()
-    return _key_from_vault_text(vault.open_vault(blob, password=passphrase, keyfile=keyfile).text)
+    opened = vault.open_vault(blob, password=passphrase, keyfile=keyfile,
+                              dpapi_unprotect=dpapi.unprotect if use_dpapi else None)
+    return _key_from_vault_text(opened.text)
+
+
+def identity_has_dpapi() -> bool:
+    """A identidade tem o destravador "esta conta do Windows" (DPAPI)?"""
+    return vault.KIND_DPAPI in identity_unlockers()
+
+
+def _open_with_dpapi() -> Ed25519PrivateKey | None:
+    """A chave pelo DPAPI, SEM pedir nada; None se nao houver o destravador, fora do Windows, ou se
+    o Windows recusar (outra conta/maquina, senha da conta redefinida por um administrador)."""
+    if not (dpapi.available() and identity_has_dpapi()):
+        return None
+    try:
+        return _open_protected(use_dpapi=True)
+    except (OSError, vault.VaultError):
+        return None
 
 
 def _key_from_vault_text(raw_b64: str) -> Ed25519PrivateKey:
@@ -722,6 +740,9 @@ def _private_key(passphrase: str | None = None) -> Ed25519PrivateKey:
         if _session_key is not None:
             return _session_key
         if passphrase is None:
+            # sem credencial: o destravador "esta conta do Windows", se houver, abre sem perguntar
+            if unlock_identity() and _session_key is not None:
+                return _session_key
             raise IdentityLocked("identidade protegida por senha")
         _session_key = _open_protected(passphrase)
         return _session_key
@@ -736,14 +757,21 @@ def load_or_create_key() -> Ed25519PrivateKey:
 def unlock_identity(passphrase: str | None = None, *, keyfile: bytes | None = None) -> bool:
     """Destrava e cacheia a chave por esta sessao. Devolve False se a credencial estiver errada
     (ou o cofre estiver corrompido). Ao destravar, re-grava identity.pub a partir da chave REAL,
-    corrigindo qualquer adulteracao da publica em claro (binding pub <-> chave)."""
+    corrigindo qualquer adulteracao da publica em claro (binding pub <-> chave). Sem credencial
+    nenhuma, tenta o destravador "esta conta do Windows" (DPAPI), se a identidade tiver."""
     global _session_key
     if not is_protected():
         return True
-    try:
-        key = _open_protected(passphrase, keyfile=keyfile)
-    except vault.VaultError:
-        return False
+    key: Ed25519PrivateKey | None
+    if passphrase is None and keyfile is None:
+        key = _open_with_dpapi()
+        if key is None:
+            return False
+    else:
+        try:
+            key = _open_protected(passphrase, keyfile=keyfile)
+        except vault.VaultError:
+            return False
     _session_key = key
     _write_pub(_pub_b64_of(key))
     _heal_orphan_pem(key)               # limpa PEM nu residual de operacao interrompida (mesma chave)
@@ -817,23 +845,28 @@ def _local_fingerprint_or_none() -> str | None:
 # --------------------------------------------------------------------------- #
 # Proteger / destravar a identidade (opt-in, reusa o Cofre RDBT2)
 # --------------------------------------------------------------------------- #
-def protect_identity(passphrase: str | None = None, *, keyfile: bytes | None = None) -> None:
-    """Protege a identidade ATUAL (preserva o fingerprint) embrulhando a chave num Cofre.
+def protect_identity(passphrase: str | None = None, *, keyfile: bytes | None = None,
+                     use_dpapi: bool = False) -> None:
+    """Protege a identidade ATUAL (preserva o fingerprint) embrulhando a chave num Cofre — com
+    senha, arquivo-chave e/ou `use_dpapi` ("esta conta do Windows": abre sem perguntar nesta conta).
 
     Remove o PEM em claro. Levanta vault.VaultError se ja protegida ou sem credencial.
     """
     global _session_key
     if is_protected():
         raise vault.VaultError("identidade ja esta protegida (use add_identity_unlocker)")
-    if not passphrase and not keyfile:
+    if not passphrase and not keyfile and not use_dpapi:
         raise vault.VaultError("forneca uma senha ou um arquivo-chave")
+    if use_dpapi and not dpapi.available():
+        raise vault.VaultError("o DPAPI so existe no Windows")
     key = _load_legacy() or _new_key()         # a chave atual — preserva a identidade
     raw = key.private_bytes(serialization.Encoding.Raw,
                             serialization.PrivateFormat.Raw,
                             serialization.NoEncryption())
     try:
         blob = vault.new_vault(base64.b64encode(raw).decode(),
-                               password=passphrase or None, keyfile=keyfile)
+                               password=passphrase or None, keyfile=keyfile,
+                               dpapi_protect=dpapi.protect if use_dpapi else None)
         _atomic_write(_vault_path(), blob)     # cofre gravado atomicamente
     except OSError as exc:
         raise vault.VaultError(f"nao consegui gravar o cofre da identidade: {exc}") from exc
@@ -843,7 +876,13 @@ def protect_identity(passphrase: str | None = None, *, keyfile: bytes | None = N
     # Windows — wipe OK, remove bloqueado por AV — levava o rollback a apagar o cofre DEPOIS de
     # sobrescrever o PEM: a identidade Ed25519 ficava IRRECUPERAVEL, matando a cadeia de custodia.)
     try:
-        if _pub_b64_of(_open_protected(passphrase, keyfile=keyfile)) != _pub_b64_of(key):
+        # cada credencial dada tem de abrir a MESMA chave (a senha/keyfile E o DPAPI, se pedidos)
+        provas = []
+        if passphrase or keyfile:
+            provas.append(_open_protected(passphrase, keyfile=keyfile))
+        if use_dpapi:
+            provas.append(_open_protected(use_dpapi=True))
+        if any(_pub_b64_of(k) != _pub_b64_of(key) for k in provas):
             raise vault.VaultError("o cofre da identidade nao devolveu a mesma chave")
     except BaseException as exc:
         try:
@@ -922,19 +961,21 @@ def unprotect_identity(passphrase: str | None = None, *, keyfile: bytes | None =
     _session_key = key
 
 
-def _open_identity_vault(passphrase: str | None, keyfile: bytes | None
+def _open_identity_vault(passphrase: str | None, keyfile: bytes | None, use_dpapi: bool = False
                          ) -> tuple[bytes, vault.Opened, Ed25519PrivateKey]:
     """(cofre cru, cofre aberto, chave) — para mudar os destravadores. WrongPassword se errar."""
     if not is_protected():
         raise vault.VaultError("identidade nao esta protegida")
     with open(_vault_path(), "rb") as fh:
         blob = fh.read()
-    opened = vault.open_vault(blob, password=passphrase, keyfile=keyfile)
+    opened = vault.open_vault(blob, password=passphrase, keyfile=keyfile,
+                              dpapi_unprotect=dpapi.unprotect if use_dpapi else None)
     return blob, opened, _key_from_vault_text(opened.text)
 
 
 def _rewrite_identity_vault(old_blob: bytes, new_blob: bytes, key: Ed25519PrivateKey, *,
-                            passphrase: str | None = None, keyfile: bytes | None = None) -> None:
+                            passphrase: str | None = None, keyfile: bytes | None = None,
+                            use_dpapi: bool = False) -> None:
     """Grava o cofre novo da identidade e PROVA, relendo do disco, que `passphrase`/`keyfile` abre a
     MESMA chave. Se a prova falhar, regrava o cofre anterior e erra: nenhuma mudanca de destravador
     deixa a identidade sem uma credencial que a pessoa ACABOU de usar.
@@ -946,7 +987,8 @@ def _rewrite_identity_vault(old_blob: bytes, new_blob: bytes, key: Ed25519Privat
     except OSError as exc:
         raise vault.VaultError(f"nao consegui gravar o cofre da identidade: {exc}") from exc
     try:
-        ok = _pub_b64_of(_open_protected(passphrase, keyfile=keyfile)) == _pub_b64_of(key)
+        ok = (_pub_b64_of(_open_protected(passphrase, keyfile=keyfile, use_dpapi=use_dpapi))
+              == _pub_b64_of(key))
     except (OSError, vault.VaultError):
         ok = False
     if ok:
@@ -962,17 +1004,26 @@ def _rewrite_identity_vault(old_blob: bytes, new_blob: bytes, key: Ed25519Privat
 
 
 def add_identity_unlocker(passphrase: str | None = None, *, keyfile: bytes | None = None,
-                          new_password: str | None = None, new_keyfile: bytes | None = None) -> None:
-    """Adiciona uma senha/arquivo-chave EXTRA ao cofre da identidade (destrava com a credencial
-    atual) e prova que a credencial NOVA abre a mesma identidade."""
-    if not new_password and not new_keyfile:
+                          use_dpapi: bool = False, new_password: str | None = None,
+                          new_keyfile: bytes | None = None, new_dpapi: bool = False) -> None:
+    """Adiciona uma senha/arquivo-chave/"esta conta do Windows" EXTRA ao cofre da identidade
+    (destrava com a credencial atual) e prova que a credencial NOVA abre a mesma identidade."""
+    if not new_password and not new_keyfile and not new_dpapi:
         raise vault.VaultError("forneca a nova senha ou o novo arquivo-chave")
-    blob, opened, key = _open_identity_vault(passphrase, keyfile)
-    slots = vault.add_unlocker(opened.key, opened.slots,
-                               password=new_password, keyfile=new_keyfile)
+    if new_dpapi and not dpapi.available():
+        raise vault.VaultError("o DPAPI so existe no Windows")
+    if new_dpapi and identity_has_dpapi():
+        raise vault.VaultError("a identidade ja abre nesta conta do Windows")
+    blob, opened, key = _open_identity_vault(passphrase, keyfile, use_dpapi)
+    slots = opened.slots
+    if new_password or new_keyfile:
+        slots = vault.add_unlocker(opened.key, slots, password=new_password, keyfile=new_keyfile)
+    if new_dpapi:
+        slots = vault.add_dpapi(opened.key, slots, dpapi.protect)
     _rewrite_identity_vault(blob, vault.reseal(opened.text, opened.key, slots), key,
                             passphrase=new_password or None,
-                            keyfile=None if new_password else new_keyfile)
+                            keyfile=None if new_password else new_keyfile,
+                            use_dpapi=new_dpapi and not (new_password or new_keyfile))
 
 
 def change_identity_password(passphrase: str, new_password: str) -> None:
@@ -988,21 +1039,22 @@ def change_identity_password(passphrase: str, new_password: str) -> None:
 
 
 def remove_identity_unlocker(index: int, passphrase: str | None = None, *,
-                             keyfile: bytes | None = None) -> None:
+                             keyfile: bytes | None = None, use_dpapi: bool = False) -> None:
     """Remove o destravador `index` (a posicao em identity_unlockers()).
 
     Exige entrar com OUTRA credencial — uma que fica — e prova depois que ela ainda abre: nao ha
     como remover a credencial que se acabou de usar, nem a ultima, nem se trancar para fora."""
-    blob, opened, key = _open_identity_vault(passphrase, keyfile)
+    blob, opened, key = _open_identity_vault(passphrase, keyfile, use_dpapi)
     if opened.slot_index == index:
         raise vault.VaultError("essa e a credencial que voce quer remover: entre com uma das que ficam")
     slots = vault.remove_unlocker(opened.slots, index)
     _rewrite_identity_vault(blob, vault.reseal(opened.text, opened.key, slots), key,
-                            passphrase=passphrase, keyfile=keyfile)
+                            passphrase=passphrase, keyfile=keyfile, use_dpapi=use_dpapi)
 
 
 def identity_unlockers() -> list[int]:
-    """Tipos de destravador da identidade (0=senha, 1=arquivo-chave). [] se nao protegida."""
+    """Tipos de destravador da identidade (0=senha, 1=arquivo-chave, 3=esta conta do Windows).
+    [] se nao protegida."""
     if not is_protected():
         return []
     with open(_vault_path(), "rb") as fh:
