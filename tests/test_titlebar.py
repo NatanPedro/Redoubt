@@ -84,8 +84,9 @@ def test_altura_de_40px(win):
 
 
 def test_largura_cheia(win):
-    # 1600, nao 1440: as fontes do offscreen sao bem mais largas que as do Windows (la, 1440 sobra)
-    tb = _at(win, 1600)
+    # 1920 (Full HD), nao 1440: as fontes do offscreen sao bem mais largas que as do Windows (la,
+    # 1440 sobra), e a DejaVu do CI do Arch mais ainda — a 1600 a folga da paleta era de 72 px.
+    tb = _at(win, 1920)
     tb.set_identity("6b38433243e8f7e7", True)
     tb._relayout()
     assert tb.redact.text() == "Tarjar" and tb.seal.text() == "Selar cofre"
