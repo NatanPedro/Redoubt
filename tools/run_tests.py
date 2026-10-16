@@ -5,6 +5,8 @@ Isola CADA arquivo de teste num processo e tolera o crash flaky de teardown do Q
 offscreen (exit 0xC0000005 no shutdown do interpretador): se o junit XML nao sair,
 re-tenta 1x. Soma os resultados e sai != 0 se qualquer teste falhar/erro — entao
 serve tanto para rodar a suite a mao quanto como guarda do hook git `pre-push`.
+Cada teste que falhar sai com o nome e o fim do relato do pytest (lido do XML): sem isso,
+uma falha que so acontece no CI nao dizia QUAL teste era.
 
 Uso:
     python tools/run_tests.py            # roda toda a suite (tests/test_*.py)
@@ -36,6 +38,18 @@ def _run_once(test_path: str, xml_path: str) -> None:
 
 def _has_xml(path: str) -> bool:
     return os.path.exists(path) and os.path.getsize(path) > 0
+
+
+def _failures(xml_path: str, max_lines: int = 15) -> list[str]:
+    """Linhas para exibir: o nome de cada teste que falhou e o fim do relato do pytest."""
+    out: list[str] = []
+    for case in ET.parse(xml_path).getroot().iter("testcase"):
+        for bad in list(case.findall("failure")) + list(case.findall("error")):
+            msg = (bad.get("message") or "").strip().splitlines()
+            out.append(f"      x {case.get('name', '?')}: {msg[0][:200] if msg else ''}")
+            body = (bad.text or "").strip().splitlines()[-max_lines:]
+            out.extend(f"          {ln}" for ln in body)
+    return out
 
 
 def _parse(xml_path: str) -> tuple[int, int, int]:
@@ -73,6 +87,9 @@ def main() -> int:
             if f + e:
                 bad.append(name)
             print(f"  {'FALHOU' if f + e else 'ok':<6} {name:<26} {t:>3} testes")
+            if f + e:
+                for line in _failures(xml_path):
+                    print(line)
         finally:
             try:
                 os.remove(xml_path)

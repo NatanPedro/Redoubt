@@ -150,6 +150,8 @@ A suíte combinada às vezes sofre um **crash de teardown do Qt offscreen** (exi
 no shutdown do interpretador) — *flaky*, não é falha de teste. Por isso `tools/run_tests.py`
 **isola cada arquivo** num processo, lê o resultado por `--junitxml` e **re-tenta 1×** se o XML
 não sair; soma tudo e sai `!= 0` se algo falhar. Use-o quando o `pytest` combinado der esse crash.
+A saída do `pytest` fica escondida, mas cada teste que falhar aparece com o nome e o fim do relato
+(lidos do mesmo XML), inclusive no log do CI.
 
 `install-hooks.bat` instala um hook **`pre-push`** (em `.git/hooks/`, coexistindo com o
 `pre-commit` anti-segredo) que roda, **nesta ordem**, `ruff check .` → `mypy` → o runner da suíte,
