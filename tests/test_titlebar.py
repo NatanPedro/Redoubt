@@ -1,6 +1,7 @@
 """Barra de titulo unificada: hit-test da moldura (puro), faixas de largura, paleta centrada,
 estados dos botoes, impressao digital, botoes de janela, janela inativa e mnemonicos."""
 
+import pytest
 from PyQt6.QtWidgets import QApplication, QStyle
 
 from notepy import theme, titlebar
@@ -128,13 +129,27 @@ def test_largura_pequena_paleta_240_e_digital_so_icone(win):
 
 def test_menus_vao_para_o_botao_quando_nao_cabem(win):
     """Pela largura (faixa pequena) os menus iriam por extenso, mas nao cabem junto das acoes:
-    botao unico, sem nada sobreposto (antes, perto do limite, os menus encostavam nos botoes)."""
-    tb = _at(win, 760)
-    assert titlebar.mode_for(760) == titlebar.MODE_SMALL
-    assert tb._menubar.isHidden() and not tb.hamburger.isHidden()
-    assert tb.search.x() > tb.hamburger.geometry().right()
+    botao unico, e o espaco deles vai para a paleta. Um menu largo de proposito garante o "nao
+    cabe" com qualquer fonte (a 760 px, a DejaVu do CI do Arch ainda cabia)."""
+    tb = win.top_bar
+    largo = tb._menubar.addMenu("Menu de largura proposital " * 4)
+    try:
+        tb = _at(win, 760)
+        assert titlebar.mode_for(760) == titlebar.MODE_SMALL
+        assert tb._menubar.isHidden() and not tb.hamburger.isHidden()
+        assert not tb.search.compact
+    finally:
+        tb._menubar.removeAction(largo.menuAction())
+
+
+@pytest.mark.parametrize("width", [720, 760, 800, 880, 960, 1100, 1280, 1440, 1920])
+def test_nada_se_sobrepoe_em_largura_nenhuma(win, width):
+    """Menus (ou o botao deles), paleta e acoes nunca se encostam (antes, perto de 720-780 px, os
+    menus encostavam nos botoes da direita)."""
+    tb = _at(win, width)
+    left = tb.hamburger if not tb.hamburger.isHidden() else tb._menubar
+    assert tb.search.x() > left.geometry().right()
     assert tb.search.geometry().right() < tb.redact.x()
-    assert not tb.search.compact                              # o espaco dos menus vai para a paleta
 
 
 def test_largura_minima_menus_no_hamburguer(win):
